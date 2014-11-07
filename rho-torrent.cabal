@@ -1,0 +1,71 @@
+name:                RhoTorrent
+version:             0.1.0.0
+synopsis:            BitTorrent client
+description:         BitTorrent client
+homepage:            https://github.com/osa1/rho-torrent
+license:             BSD3
+license-file:        LICENSE
+author:              AUTHORS
+maintainer:          omeragacan@gmail.com
+category:            Network
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/osa1/rho-torrent.git
+
+library
+  exposed-modules:
+    Rho.Metainfo
+
+  build-depends:
+      base >=4.5 && <5
+    , QuickCheck == 2.*
+    , bencoding
+    , binary
+    , bytestring
+    , data-default
+    , quickcheck-instances
+
+  hs-source-dirs:      src
+  ghc-options:         -Wall
+  default-language:    Haskell2010
+
+test-suite spec
+  type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  main-is:          Spec.hs
+  hs-source-dirs:   test
+  ghc-options:      -Wall
+
+  other-modules:
+    Rho.MetainfoSpec
+
+  build-depends:
+      base
+    , HUnit
+    , QuickCheck == 2.*
+    , RhoTorrent
+    , bencoding
+    , binary
+    , bytestring
+    , data-default
+    , directory
+    , filepath
+    , hspec
+    , quickcheck-instances
+
+benchmark bench
+  type:             exitcode-stdio-1.0
+  default-language: Haskell2010
+  main-is:          MainBenchmarkSuite.hs
+  hs-source-dirs:   bench
+  ghc-options:      -Wall
+
+  build-depends:
+      base >=4.5 && <5
+    , RhoTorrent
+    , criterion
+    , random

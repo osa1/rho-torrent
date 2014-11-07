@@ -1,0 +1,12 @@
+language: haskell
+
+env:
+ - GHCVER=7.8.3
+
+before_install:
+ - cabal install --only-dependencies --enable-tests
+
+script:
+ - cabal configure --enable-tests --ghc-options=-Werror
+ - cabal build
+ - cabal test
