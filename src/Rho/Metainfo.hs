@@ -5,24 +5,25 @@
 module Rho.Metainfo where
 
 import           Control.Applicative
-import           Control.Monad
-import           Data.BEncode              as BE
-import qualified Data.BEncode.BDict        as BE
-import qualified Data.ByteString           as B
+import           Data.BEncode        as BE
+import qualified Data.BEncode.BDict  as BE
+import qualified Data.ByteString     as B
 import           Data.Typeable
 import           GHC.Generics
+
+import           Rho.Tracker
 
 -- | Metainfo file as specified in
 -- https://wiki.theory.org/BitTorrentSpecification#Metainfo_File_Structure
 data Metainfo = Metainfo
-  { mAnnounce     :: B.ByteString
-  , mAnnounceList :: Maybe [[B.ByteString]]
+  { mAnnounce     :: Tracker
+  , mAnnounceList :: Maybe [[Tracker]]
   , mCreationDate :: Maybe Int
   , mComment      :: Maybe B.ByteString
   , mCreatedBy    :: Maybe B.ByteString
   , mEncoding     :: Maybe B.ByteString
   , mInfo         :: Info
-  } deriving (Show, Eq, Typeable, Generic)
+  } deriving (Show, Typeable, Generic)
 
 data Info = Info
   { iName        :: B.ByteString
@@ -95,15 +96,11 @@ instance BEncode Info where
       readPrivate :: Get Bool
       readPrivate = maybe False id <$> (optional $ field $ req "private")
 
-      readPieces :: Get [B.ByteString]
-      readPieces = do
-        bs <- field $ req "pieces"
-        return $ splitPieces bs
-
       splitPieces :: B.ByteString -> [B.ByteString]
       splitPieces bs
-        | B.length bs < 20 = []
+        | B.length bs < 20 = [] -- TODO: This doesn't look right .. I did this to make testing easier
         | otherwise = let (h, t) = B.splitAt 20 bs in h : splitPieces t
+  fromBEncode bv = Left $ "Can't parse info dict from " ++ show bv
 
 instance BEncode File where
   toBEncode File{..} = toDict $

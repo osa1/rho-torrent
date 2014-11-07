@@ -1,14 +1,18 @@
-{-# LANGUAGE CPP, TupleSections #-}
+{-# LANGUAGE CPP, StandaloneDeriving, TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Rho.MetainfoSpec where
 
 import           Rho.Metainfo
+import           Rho.Tracker
 
 import           Control.Applicative
 import           Control.Monad
 import           Data.BEncode              as BE
 import qualified Data.ByteString           as B
+import           Data.Maybe
+import           Network.HTTP.Client       (parseUrl)
+import           Network.HTTP.Client       (Request)
 import           System.Directory          (getDirectoryContents)
 import           System.FilePath           (takeExtension, (</>))
 import           Test.Hspec
@@ -76,3 +80,20 @@ instance Arbitrary Info where
 instance Arbitrary File where
   arbitrary = File <$> arbitrary <*> arbitrary <*> arbitrary
   shrink = recursivelyShrink
+
+newtype URLString = URLString { unwrapURLString :: String }
+
+instance Arbitrary URLString where
+    arbitrary = return (URLString "http://test.com:1234/announce") -- TODO: this is not tested yet
+    shrink = (:[])
+
+instance Arbitrary Tracker where
+  arbitrary = oneof
+    [ HTTPTracker . fromJust . parseUrl . unwrapURLString <$> arbitrary
+    ]
+
+instance Eq Request where
+    r1 == r2 = reqShow r1 == reqShow r2
+
+deriving instance Eq Tracker
+deriving instance Eq Metainfo

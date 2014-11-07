@@ -2,16 +2,19 @@
 
 module Rho.Tracker
   ( Tracker (..)
+  , reqShow
   , parseTrackerBS
   ) where
 
 import           Control.Applicative              ((<$>), (<|>))
 import           Data.Attoparsec.ByteString
 import           Data.Attoparsec.ByteString.Char8
+import           Data.BEncode
 import           Data.Bits                        (shiftL)
 import qualified Data.ByteString.Char8            as B
+import           Data.Monoid
 import           Data.Word
-import           Network.HTTP.Client              (Request, parseUrl)
+import           Network.HTTP.Client
 import           Network.Socket                   (HostAddress, PortNumber,
                                                    SockAddr (..))
 
@@ -19,6 +22,19 @@ data Tracker
     = HTTPTracker Request
     | UDPTracker SockAddr
     deriving (Show)
+
+reqShow :: Request -> B.ByteString
+reqShow req =
+    "http://" <> host req <> ":" <> B.pack (show (port req)) <> path req <> queryString req
+
+instance BEncode Tracker where
+    toBEncode (HTTPTracker req) = toBEncode $ reqShow req
+    toBEncode (UDPTracker sock) = toBEncode . B.pack $ show sock
+    fromBEncode (BString bs) =
+      maybe (Left $ "Can't parse tracker bencode: " ++ B.unpack bs)
+            Right
+            (parseTrackerBS bs)
+    fromBEncode bv = Left $ "Can't parse tracker bencode: " ++ show bv
 
 -- | Try to parse a host address from given bytestring.
 --
