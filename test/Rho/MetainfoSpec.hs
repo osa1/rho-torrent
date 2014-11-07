@@ -64,11 +64,11 @@ shouldNotParse = TestCase $ do
 -- | Recursively walk filesystem to collect files.
 getFiles :: FilePath -> IO [(FilePath, B.ByteString)]
 getFiles root = getDirectoryContents root >>= fmap concat . mapM (\f -> do
-  let path = root </> f
-  isDir <- doesDirectoryExist path
+  let p = root </> f
+  isDir <- doesDirectoryExist p
   if | head f == '.' -> return []
-     | isDir -> getFiles path
-     | otherwise -> ((:[]) . (path,)) `fmap` B.readFile path)
+     | isDir -> getFiles p
+     | otherwise -> ((:[]) . (p,)) `fmap` B.readFile p)
 
 -- * Arbitrary instances
 
@@ -90,7 +90,7 @@ newtype URLString = URLString { unwrapURLString :: String }
 
 instance Arbitrary URLString where
     arbitrary = return (URLString "http://test.com:1234/announce") -- TODO: this is not tested yet
-    shrink = (:[])
+    shrink _ = []
 
 instance Arbitrary Tracker where
   arbitrary = oneof
