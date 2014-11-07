@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, StandaloneDeriving, TupleSections #-}
+{-# LANGUAGE CPP, MultiWayIf, StandaloneDeriving, TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Rho.MetainfoSpec where
@@ -13,8 +13,9 @@ import qualified Data.ByteString           as B
 import           Data.Maybe
 import           Network.HTTP.Client       (parseUrl)
 import           Network.HTTP.Client       (Request)
-import           System.Directory          (getDirectoryContents)
-import           System.FilePath           (takeExtension, (</>))
+import           System.Directory          (doesDirectoryExist,
+                                            getDirectoryContents)
+import           System.FilePath           ((</>))
 import           Test.Hspec
 import           Test.Hspec.HUnit
 import           Test.Hspec.QuickCheck
@@ -49,21 +50,25 @@ spec = do
 
 shouldParse :: Test
 shouldParse = TestCase $ do
-  tfs <- getTorrentFiles "tests/should_parse"
-  sequence_ $ flip map tfs $ \(f, c) ->
+  tfs <- getFiles "tests/should_parse"
+  sequence_ $ flip map tfs $ \(f, c) -> do
+    putStrLn $ "parsing: " ++ f
     assertBool ("Can't parse torrent file: " ++ f) $ isRight (decode c :: Result Metainfo)
 
 shouldNotParse :: Test
 shouldNotParse = TestCase $ do
-  tfs <- getTorrentFiles "tests/should_not_parse"
+  tfs <- getFiles "tests/should_not_parse"
   sequence_ $ flip map tfs $ \(f, c) ->
     assertBool ("Parsed a broken torrent file: " ++ f) $ isLeft (decode c :: Result Metainfo)
 
-getTorrentFiles :: FilePath -> IO [(FilePath, B.ByteString)]
-getTorrentFiles root =
-  mapM (\p -> (p,) `fmap` B.readFile p) . filter ((==) ".torrent" . takeExtension) . map (root </>)
-    =<< getDirectoryContents root
-
+-- | Recursively walk filesystem to collect files.
+getFiles :: FilePath -> IO [(FilePath, B.ByteString)]
+getFiles root = getDirectoryContents root >>= fmap concat . mapM (\f -> do
+  let path = root </> f
+  isDir <- doesDirectoryExist path
+  if | head f == '.' -> return []
+     | isDir -> getFiles path
+     | otherwise -> ((:[]) . (path,)) `fmap` B.readFile path)
 
 -- * Arbitrary instances
 
