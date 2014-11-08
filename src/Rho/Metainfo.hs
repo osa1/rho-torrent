@@ -5,9 +5,11 @@
 module Rho.Metainfo where
 
 import           Control.Applicative
-import           Data.BEncode        as BE
-import qualified Data.BEncode.BDict  as BE
-import qualified Data.ByteString     as B
+import           Data.BEncode         as BE
+import qualified Data.BEncode.BDict   as BE
+import qualified Data.ByteString      as B
+import qualified Data.ByteString.Lazy as LB
+import           Data.Digest.SHA1
 import           Data.Typeable
 import           GHC.Generics
 
@@ -31,6 +33,7 @@ data Info = Info
   , iPieces      :: [B.ByteString]
   , iPrivate     :: Bool
   , iFiles       :: [File]
+  , iHash        :: Word160
   } deriving (Show, Eq, Typeable, Generic)
 
 data File = File
@@ -40,7 +43,7 @@ data File = File
   } deriving (Show, Eq, Typeable, Generic)
 
 -- | Parse contents of a .torrent file.
-parseMetainfo :: B.ByteString -> Result Metainfo
+parseMetainfo :: B.ByteString -> Either String Metainfo
 parseMetainfo = decode
 
 -- * BEncode instances
@@ -83,7 +86,7 @@ instance BEncode Info where
         pieceLength <- field $ req "piece length"
         pieces <- splitPieces <$> (field $ req "pieces")
         private <- readPrivate
-        return $ Info name pieceLength pieces private [File flen md5sum []]
+        return $ Info name pieceLength pieces private [File flen md5sum []] infoHash
     | otherwise = flip fromDict bv $ do
         -- multi file mode
         files <- field $ req "files"
@@ -91,8 +94,14 @@ instance BEncode Info where
         pieceLength <- field $ req "piece length"
         pieces <- splitPieces <$> (field $ req "pieces")
         private <- readPrivate
-        return $ Info name pieceLength pieces private files
+        return $ Info name pieceLength pieces private files infoHash
     where
+      -- | (20-byte) SHA1 hash of info field.
+      -- We're just hoping that no information is lost/chaged during
+      -- bencode decoding -> encoding.
+      infoHash :: Word160
+      infoHash = hash . LB.unpack . encode $ bv
+
       readPrivate :: Get Bool
       readPrivate = maybe False id <$> (optional $ field $ req "private")
 
