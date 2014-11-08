@@ -18,12 +18,14 @@ source-repository head
 
 library
   exposed-modules:
+    Rho.Comms
     Rho.Magnet
     Rho.Metainfo
     Rho.Tracker
 
   build-depends:
       base >=4.5 && <5
+    , async
     , attoparsec
     , bencoding
     , binary
