@@ -18,19 +18,20 @@ source-repository head
 
 library
   exposed-modules:
+    Rho.Magnet
     Rho.Metainfo
     Rho.Tracker
 
   build-depends:
       base >=4.5 && <5
-    , QuickCheck == 2.*
     , attoparsec
     , bencoding
     , binary
     , bytestring
-    , http-client
+    , Crypto
+    , HTTP
     , network
-    , quickcheck-instances
+    , network-uri
 
   hs-source-dirs:      src
   ghc-options:         -Wall
@@ -44,8 +45,8 @@ executable rho
 
   build-depends:
       base >=4.5 && <5
-    , RhoTorrent
     , bytestring
+    , RhoTorrent
 
 test-suite test
   type:             exitcode-stdio-1.0
@@ -59,9 +60,6 @@ test-suite test
 
   build-depends:
       base
-    , HUnit
-    , QuickCheck == 2.*
-    , RhoTorrent
     , bencoding
     , binary
     , bytestring
@@ -69,8 +67,10 @@ test-suite test
     , directory
     , filepath
     , hspec
-    , http-client
+    , HUnit
+    , QuickCheck == 2.*
     , quickcheck-instances
+    , RhoTorrent
 
 test-suite doctests
   type:             exitcode-stdio-1.0
@@ -90,6 +90,6 @@ benchmark bench
 
   build-depends:
       base >=4.5 && <5
-    , RhoTorrent
     , criterion
     , random
+    , RhoTorrent
