@@ -34,6 +34,9 @@ parseMagnetUrls magnetUrls =
   forM_ magnetUrls $ \magnetUrl ->
     case (parseMagnet magnetUrl) of
       Right Magnet{mTrackers=trackers} ->
+        -- TODO: This is not a problem since magnets can omit trackers,
+        -- but I couldn't find any torrents like this and we doesn't
+        -- support DHT(yet) anyways.
         assertBool ("Can't parse trackers from magnet URL: " ++ B.unpack magnetUrl)
                    (not $ null trackers)
       Left err' ->

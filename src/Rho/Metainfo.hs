@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveDataTypeable, DeriveGeneric, FlexibleInstances,
              OverloadedStrings, RecordWildCards, TemplateHaskell #-}
-{-# OPTIONS_HADDOCK show-extensions #-}
 
 module Rho.Metainfo where
 
