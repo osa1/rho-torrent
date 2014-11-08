@@ -4,13 +4,15 @@ module Rho.Magnet where
 
 import qualified Data.ByteString.Char8 as B
 import           Data.Maybe            (catMaybes)
+import           Network.URI           (unEscapeString)
 
 import           Rho.Tracker
 
 data Magnet = Magnet
   { mHash        :: B.ByteString
+    -- ^ URL-encoded, 20-byte info_hash
   , mTrackers    :: [Tracker]
-  , mDisplayName :: Maybe B.ByteString
+  , mDisplayName :: Maybe String
   } deriving (Show)
 
 parseMagnet :: B.ByteString -> Either String Magnet
@@ -20,8 +22,10 @@ parseMagnet bs = do
       Nothing -> Left "Can't parse xt argument from magnet URL."
       Just xt ->
         let dn = lookup "dn" args
-            tr = catMaybes . map parseTrackerBS $ (map snd . filter ((==) "tr" . fst) $ args)
-        in Right $ Magnet xt tr dn
+            tr = catMaybes . map parseTrackerBS $
+                   -- TODO: redundant bytestring packing/unpacking here
+                   (map (B.pack . unEscapeString . B.unpack . snd) . filter ((==) "tr" . fst) $ args)
+        in Right $ Magnet xt tr ((unEscapeString . B.unpack) `fmap` dn)
 
 -- | Parse `a=b` pairs from a query string. Parsing started from the
 -- position of '?" in the string.

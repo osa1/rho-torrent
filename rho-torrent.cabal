@@ -73,6 +73,10 @@ test-suite test
     , quickcheck-instances
     , RhoTorrent
 
+    -- for scraping magnets/torrents
+    , HTTP
+    , hxt
+
 test-suite doctests
   type:             exitcode-stdio-1.0
   ghc-options:      -threaded
