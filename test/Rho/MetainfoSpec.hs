@@ -10,6 +10,7 @@ import           Control.Applicative
 import           Control.Monad
 import           Data.BEncode              as BE
 import qualified Data.ByteString           as B
+import           Data.Either               (isLeft, isRight)
 import           Data.Maybe
 import           System.Directory          (doesDirectoryExist,
                                             getDirectoryContents)
@@ -20,18 +21,6 @@ import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck           hiding (Result)
 import           Test.QuickCheck.Instances ()
-
-#if MIN_VERSION_base(4,7,0)
-import           Data.Either               (isLeft, isRight)
-#else
-isLeft :: Either a b -> Bool
-isLeft Left{} = True
-isLeft _      = False
-
-isRight :: Either a b -> Bool
-isRight Right{} = True
-isRight _       = False
-#endif
 
 main :: IO ()
 main = hspec spec
