@@ -21,16 +21,17 @@ library
     Rho.Comms
     Rho.Magnet
     Rho.Metainfo
+    Rho.Torrent
     Rho.Tracker
 
   build-depends:
       base >=4.5 && <5
-    , async
-    , bencoding
-    , binary
-    , bytestring
     , Crypto
     , HTTP
+    , async
+    , bencoding
+    , bytestring
+    , containers
     , network
     , network-uri
     , random
@@ -66,9 +67,7 @@ test-suite test
   build-depends:
       base >=4.7 && <5
     , bencoding
-    , binary
     , bytestring
-    , data-default
     , directory
     , filepath
     , hspec

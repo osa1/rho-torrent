@@ -28,8 +28,8 @@ main = do
             putStrLn "initializing comm handler"
             sock <- initCommHandler
             putStrLn "comm handler initialized"
-            sendConnectReq sock trackerAddr
-            putStrLn "request sent, sleeping for 10 seconds"
+            tid <- sendConnectReq sock trackerAddr
+            putStrLn $ "request sent, sleeping for 10 seconds (tid: " ++ show tid ++ ")"
             threadDelay 5000000
             return ()
           ts -> putStrLn $ "I don't like the trackers: " ++ show ts

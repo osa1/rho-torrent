@@ -4,11 +4,13 @@
 module Rho.Metainfo where
 
 import           Control.Applicative
-import           Data.BEncode         as BE
-import qualified Data.BEncode.BDict   as BE
-import qualified Data.ByteString      as B
-import qualified Data.ByteString.Lazy as LB
+import           Data.BEncode            as BE
+import qualified Data.BEncode.BDict      as BE
+import qualified Data.ByteString         as B
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy    as LB
 import           Data.Digest.SHA1
+import           Data.Monoid
 import           Data.Typeable
 import           GHC.Generics
 
@@ -32,7 +34,7 @@ data Info = Info
   , iPieces      :: [B.ByteString]
   , iPrivate     :: Bool
   , iFiles       :: [File]
-  , iHash        :: Word160
+  , iHash        :: B.ByteString
   } deriving (Show, Eq, Typeable, Generic)
 
 data File = File
@@ -98,8 +100,13 @@ instance BEncode Info where
       -- | (20-byte) SHA1 hash of info field.
       -- We're just hoping that no information is lost/chaged during
       -- bencode decoding -> encoding.
-      infoHash :: Word160
-      infoHash = hash . LB.unpack . encode $ bv
+      infoHash :: B.ByteString
+      infoHash = hashToBS . hash . LB.unpack . encode $ bv
+
+      -- | Convert 20-byte hash to big-endian bytestring.
+      hashToBS :: Word160 -> B.ByteString
+      hashToBS (Word160 w1 w2 w3 w4 w5) =
+        LB.toStrict . BB.toLazyByteString . mconcat . map BB.word32BE $ [w1, w2, w3, w4, w5]
 
       readPrivate :: Get Bool
       readPrivate = maybe False id <$> (optional $ field $ req "private")

@@ -1,22 +1,65 @@
+{-# LANGUAGE RankNTypes, TupleSections #-}
+
 module Rho.Comms where
 
+import           Control.Applicative
 import           Control.Concurrent.Async
 import           Control.Concurrent.Chan
 import           Data.Bits
 import qualified Data.ByteString           as B
 import qualified Data.ByteString.Builder   as BB
 import qualified Data.ByteString.Lazy      as LB
+import           Data.IORef
 import           Data.Monoid
 import           Data.Word
 import           Network.Socket            hiding (recv, recvFrom, send, sendTo)
 import           Network.Socket.ByteString
 import           System.Random             (randomIO)
 
-sendConnectReq :: Socket -> SockAddr -> IO Word32
+import           Rho.Magnet
+import           Rho.Metainfo
+import           Rho.Torrent
+import           Rho.Tracker
+
+type TransactionId = Word32
+type ConnectionId  = Word64
+type PeerId        = B.ByteString -- ^ 20-byte
+
+data PeerResponse = PeerResponse
+  { prTransactionId :: TransactionId
+  , prInterval      :: Word32
+  , prLeechers      :: Word32
+  , prSeeders       :: Word32
+  , prPeers         :: [SockAddr]
+  } deriving (Show)
+
+sendConnectReq :: Socket -> SockAddr -> IO TransactionId
 sendConnectReq sock targetAddr = do
     transactionId <- randomIO
     let req = LB.toStrict . BB.toLazyByteString $
                 BB.word64BE 0x41727101980 <> BB.word32BE 0 <> BB.word32BE transactionId
+    sent <- sendTo sock req targetAddr
+    -- TODO: at least add a debug print here to warn when not all bytes are sent
+    return transactionId
+
+sendPeersReq :: Socket -> SockAddr -> PeerId -> ConnectionId -> Torrent -> IO TransactionId
+sendPeersReq sock targetAddr peerId connId torrent = do
+    transactionId <- randomIO
+    let req = LB.toStrict . BB.toLazyByteString . mconcat $
+                [ BB.word64BE connId
+                , BB.word32BE 1 -- action: announce
+                , BB.word32BE transactionId
+                , BB.byteString (infoHash torrent)
+                , BB.byteString peerId
+                , BB.word64BE (downloaded torrent)
+                , BB.word64BE (left torrent)
+                , BB.word64BE (uploaded torrent)
+                , BB.word32BE 2 -- event: started
+                , BB.word32BE 0 -- IP address
+                , BB.word32BE 0 -- key
+                , BB.word32BE (-1) -- numwant
+                , BB.word16BE 5432 -- port FIXME
+                ]
     sent <- sendTo sock req targetAddr
     return transactionId
 
@@ -26,10 +69,11 @@ initCommHandler = do
     bind sock (SockAddrInet (fromIntegral (5432 :: Int)) 0)
 
     dataChan <- spawnSockListener sock
-    _ <- async (runResponseHandler dataChan)
+    _ <- spawnResponseHandler dataChan -- async (runResponseHandler dataChan)
 
     return sock
 
+-- | Socket listener reads stream from the socket and passes it to channel.
 spawnSockListener :: Socket -> IO (Chan (B.ByteString, SockAddr))
 spawnSockListener sock = do
     dataChan <- newChan
@@ -43,9 +87,9 @@ spawnSockListener sock = do
     -- socket closed/main thread terminated.
     sockListener :: Chan (B.ByteString, SockAddr) -> IO ()
     sockListener dataChan = do
-      (contents, source) <- recvFrom sock msg_size
-      putStrLn $ "Got " ++ show (B.length contents) ++ " bytes from: " ++ show source
-      writeChan dataChan (contents, source)
+      (contents, src) <- recvFrom sock msg_size
+      putStrLn $ "Got " ++ show (B.length contents) ++ " bytes from: " ++ show src
+      writeChan dataChan (contents, src)
       sockListener dataChan
 
     -- | Can't see anyting relevant in specs, but while testing I realized
@@ -53,53 +97,144 @@ spawnSockListener sock = do
     -- number here.
     msg_size = 1500
 
-runResponseHandler :: Chan (B.ByteString, SockAddr) -> IO ()
-runResponseHandler dataChan = do
-    (resp, source) <- readChan dataChan
-    putStrLn $ "Got response from " ++ show source
-    case readWord32 resp of
-      Just (0, resp') -> handleConnectResp resp'
-      Just (1, resp') -> handleAnnounceResp resp'
-      Just (2, resp') -> handleScrapeResp resp'
-      Just (n, _) -> putStrLn $ "Unknown response: " ++ show n
-      Nothing -> putStrLn $ "Got ill-formed response"
-    runResponseHandler dataChan
+spawnResponseHandler :: Chan (B.ByteString, SockAddr) -> IO ()
+spawnResponseHandler dataChan = do
+    _ <- async responseHandler
+    return ()
+  where
+    responseHandler :: IO ()
+    responseHandler = do
+        (resp, src) <- readChan dataChan
+        putStrLn $ "Got response from " ++ show src
+        case execParser resp readWord32 of
+          Just (0, resp') -> handleConnectResp resp'
+          Just (1, resp') -> handleAnnounceResp resp'
+          Just (2, resp') -> handleScrapeResp resp'
+          Just (n, _) -> putStrLn $ "Unknown response: " ++ show n
+          Nothing -> putStrLn $ "Got ill-formed response"
+        responseHandler
 
 handleConnectResp :: B.ByteString -> IO ()
-handleConnectResp _ = putStrLn "handling connect response"
+handleConnectResp bs = do
+    case parseResp of
+      Nothing -> putStrLn "Can't parse connect response."
+      Just (tid, cid) -> putStrLn $ "Connection id for transaction id " ++ show tid ++ ": " ++ show cid
+  where
+    parseResp :: Maybe (TransactionId, ConnectionId)
+    parseResp = fmap fst . execParser bs $ do
+      tid <- readWord32
+      cid <- readWord64
+      return (tid, cid)
 
 handleAnnounceResp :: B.ByteString -> IO ()
-handleAnnounceResp _ = putStrLn "handling announce response"
+handleAnnounceResp bs = do
+    putStrLn "handling announce response"
+    case parseResp of
+      Nothing -> putStrLn "Can't parse announce response."
+      Just ret -> putStrLn $ "Announce response: " ++ show ret
+  where
+    parseResp :: Maybe PeerResponse
+    parseResp = fmap fst . execParser bs $ do
+      transactionId <- readWord32
+      interval <- readWord32
+      leechers <- readWord32
+      seeders <- readWord32
+      addrs <- readAddrs
+      return $ PeerResponse transactionId interval leechers seeders addrs
+
+    readAddrs :: Parser [SockAddr]
+    readAddrs = do
+      addr <- readAddr
+      case addr of
+        Nothing -> return []
+        Just addr' -> (addr' :) <$> readAddrs
+
+    readAddr :: Parser (Maybe SockAddr)
+    readAddr = tryP $ do
+      ip <- readWord32
+      port <- readWord16
+      return $ SockAddrInet (fromIntegral port) ip
 
 handleScrapeResp :: B.ByteString -> IO ()
 handleScrapeResp _ = putStrLn "handling scrape response"
 
--- TODO: We're assuming that host is little-endian.
+
+-- * Utils
+
+newtype Parser a = Parser { runParser :: B.ByteString -> Maybe (a, B.ByteString) }
+
+instance Functor Parser where
+    fmap f (Parser p) = Parser $ \bs -> do
+      (v, bs') <- p bs
+      return (f v, bs')
+
+instance Applicative Parser where
+    pure v = Parser $ \bs -> Just (v, bs)
+    Parser fn <*> Parser v = Parser $ \bs -> do
+      (fn', bs') <- fn bs
+      (v', bs'') <- v bs'
+      return (fn' v', bs'')
+
+instance Monad Parser where
+    return = pure
+    Parser p >>= f = Parser $ \bs -> do
+      (v, bs') <- p bs
+      runParser (f v) bs'
+
+execParser :: B.ByteString -> Parser a -> Maybe (a, B.ByteString)
+execParser bs (Parser f) = f bs
+
+tryP :: Parser a -> Parser (Maybe a)
+tryP (Parser p) = Parser $ \bs ->
+    case p bs of
+      Nothing -> Just (Nothing, bs)
+      Just (p', bs') -> Just (Just p', bs')
+
+-- | Try to read Word32.
+--
+-- >>> :{
+--   execParser (B.pack [1, 2, 3, 4])
+--     ((,,,) <$> readWord <*> readWord <*> readWord <*> readWord)
+-- :}
+-- Just ((1,2,3,4),"")
+--
+readWord :: Parser Word8
+readWord = Parser B.uncons
+
+-- | Try to read Word16.
+--
+-- >>> execParser (B.pack [1, 0]) readWord16
+-- Just (256,"")
+--
+readWord16 :: Parser Word16
+readWord16 = do
+    w1 <- readWord
+    w2 <- readWord
+    return $ fromIntegral w1 `shiftL` 8 + fromIntegral w2
 
 -- | Try to read Word32 from big-endian byte string.
 --
--- >>> readWord32 (B.pack [1, 2, 3, 4])
+-- >>> execParser (B.pack [1, 2, 3, 4]) readWord32
 -- Just (16909060,"")
 --
-readWord32 :: B.ByteString -> Maybe (Word32, B.ByteString)
-readWord32 bs = do
-    (w1, bs') <- B.uncons bs
-    (w2, bs'') <- B.uncons bs'
-    (w3, bs''') <- B.uncons bs''
-    (w4, bs'''') <- B.uncons bs'''
-    return (    fromIntegral w1 `shiftL` 24
+readWord32 :: Parser Word32
+readWord32 = do
+    w1 <- readWord
+    w2 <- readWord
+    w3 <- readWord
+    w4 <- readWord
+    return $    fromIntegral w1 `shiftL` 24
               + fromIntegral w2 `shiftL` 16
               + fromIntegral w3 `shiftL` 8
               + fromIntegral w4
-           , bs'''' )
 
 -- | Try to read Word64 from big-endian byte string.
 --
--- >>> readWord64 (B.pack [1, 2, 3, 4, 5, 6, 7, 8, 45])
+-- >>> execParser (B.pack [1, 2, 3, 4, 5, 6, 7, 8, 45]) readWord64
 -- Just (72623859790382856,"-")
 --
-readWord64 :: B.ByteString -> Maybe (Word64, B.ByteString)
-readWord64 bs = do
-    (w1, bs') <- readWord32 bs
-    (w2, bs'') <- readWord32 bs'
-    return (fromIntegral w1 `shiftL` 32 + fromIntegral w2, bs'')
+readWord64 :: Parser Word64
+readWord64 = do
+    w1 <- readWord32
+    w2 <- readWord32
+    return $ fromIntegral w1 `shiftL` 32 + fromIntegral w2
