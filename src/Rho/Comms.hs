@@ -4,19 +4,31 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.Chan
 import           Data.Bits
 import qualified Data.ByteString           as B
+import qualified Data.ByteString.Builder   as BB
+import qualified Data.ByteString.Lazy      as LB
+import           Data.Monoid
 import           Data.Word
 import           Network.Socket            hiding (recv, recvFrom, send, sendTo)
 import           Network.Socket.ByteString
+import           System.Random             (randomIO)
 
-initCommHandler :: IO ()
+sendConnectReq :: Socket -> SockAddr -> IO Word32
+sendConnectReq sock targetAddr = do
+    transactionId <- randomIO
+    let req = LB.toStrict . BB.toLazyByteString $
+                BB.word64BE 0x41727101980 <> BB.word32BE 0 <> BB.word32BE transactionId
+    sent <- sendTo sock req targetAddr
+    return transactionId
+
+initCommHandler :: IO Socket
 initCommHandler = do
     sock <- socket AF_INET Datagram defaultProtocol
     bind sock (SockAddrInet (fromIntegral (5432 :: Int)) 0)
 
     dataChan <- spawnSockListener sock
-    spawnResponseHandler dataChan
+    _ <- async (runResponseHandler dataChan)
 
-    return ()
+    return sock
 
 spawnSockListener :: Socket -> IO (Chan (B.ByteString, SockAddr))
 spawnSockListener sock = do
@@ -41,8 +53,8 @@ spawnSockListener sock = do
     -- number here.
     msg_size = 1500
 
-spawnResponseHandler :: Chan (B.ByteString, SockAddr) -> IO ()
-spawnResponseHandler dataChan = do
+runResponseHandler :: Chan (B.ByteString, SockAddr) -> IO ()
+runResponseHandler dataChan = do
     (resp, source) <- readChan dataChan
     putStrLn $ "Got response from " ++ show source
     case readWord32 resp of
@@ -51,7 +63,7 @@ spawnResponseHandler dataChan = do
       Just (2, resp') -> handleScrapeResp resp'
       Just (n, _) -> putStrLn $ "Unknown response: " ++ show n
       Nothing -> putStrLn $ "Got ill-formed response"
-    spawnResponseHandler dataChan
+    runResponseHandler dataChan
 
 handleConnectResp :: B.ByteString -> IO ()
 handleConnectResp _ = putStrLn "handling connect response"
@@ -61,6 +73,8 @@ handleAnnounceResp _ = putStrLn "handling announce response"
 
 handleScrapeResp :: B.ByteString -> IO ()
 handleScrapeResp _ = putStrLn "handling scrape response"
+
+-- TODO: We're assuming that host is little-endian.
 
 -- | Try to read Word32 from big-endian byte string.
 --

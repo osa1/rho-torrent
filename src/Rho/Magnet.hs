@@ -22,9 +22,9 @@ parseMagnet bs = do
       Nothing -> Left "Can't parse xt argument from magnet URL."
       Just xt ->
         let dn = lookup "dn" args
-            tr = catMaybes . map parseTrackerBS $
+            tr = catMaybes . map (either (const Nothing) Just . parseTrackerBS) $
                    -- TODO: redundant bytestring packing/unpacking here
-                   (map (B.pack . unEscapeString . B.unpack . snd) . filter ((==) "tr" . fst) $ args)
+                   map (B.pack . unEscapeString . B.unpack . snd) . filter ((==) "tr" . fst) $ args
         in Right $ Magnet xt tr ((unEscapeString . B.unpack) `fmap` dn)
 
 -- | Parse `a=b` pairs from a query string. Parsing started from the
