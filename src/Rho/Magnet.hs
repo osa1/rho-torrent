@@ -15,7 +15,6 @@ import           Rho.Tracker
 
 data Magnet = Magnet
   { mHash        :: B.ByteString
-    -- ^ URL-encoded, 20-byte info_hash
   , mTrackers    :: [Tracker]
   , mDisplayName :: Maybe String
   } deriving (Show)
@@ -49,8 +48,8 @@ parseInfoHash = LB.toStrict . BB.toLazyByteString . go
            Just (c2, rest') ->
              (BB.word8 $ fromIntegral $ (digitToInt c1 `shiftL` 4) + digitToInt c2) <> go rest'
 
--- | Parse `a=b` pairs from a query string. Parsing started from the
--- position of '?" in the string.
+-- | Parse `a=b` pairs from a query string. Parsing starts from the
+-- position of '?' in the string.
 --
 -- >>> parseArgs (B.pack "dummy?a=b&c=d")
 -- [("a","b"),("c","d")]
