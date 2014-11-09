@@ -9,6 +9,7 @@ import           Control.Concurrent.MVar
 import           Data.Bits
 import qualified Data.ByteString           as B
 import qualified Data.ByteString.Builder   as BB
+import qualified Data.ByteString.Char8     as BC
 import qualified Data.ByteString.Lazy      as LB
 import           Data.IORef
 import qualified Data.Map                  as M
@@ -132,6 +133,7 @@ spawnResponseHandler dataChan cbs = do
           Just (0, resp') -> handleConnectResp resp' cbs
           Just (1, resp') -> handleAnnounceResp resp'
           Just (2, resp') -> handleScrapeResp resp'
+          Just (3, resp') -> handleErrorResp resp' cbs
           Just (n, _) -> putStrLn $ "Unknown response: " ++ show n
           Nothing -> putStrLn $ "Got ill-formed response"
         responseHandler
@@ -187,6 +189,20 @@ handleAnnounceResp bs = do
 handleScrapeResp :: B.ByteString -> IO ()
 handleScrapeResp _ = putStrLn "handling scrape response"
 
+handleErrorResp :: B.ByteString -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
+handleErrorResp bs cbs = do
+    case parseResp of
+      Nothing -> putStrLn "Can't parse error response"
+      Just (tid, msg) -> do
+        putStrLn $ "Error response for " ++ show tid ++ ": " ++ msg
+        putStrLn $ "Removing callbacks for " ++ show tid
+        modifyMVar_ cbs $ return . M.delete tid
+  where
+    parseResp :: Maybe (TransactionId, String)
+    parseResp = fmap fst . execParser bs $ do
+      transactionId <- readWord32
+      msg <- consume
+      return (transactionId, BC.unpack msg)
 
 -- * Utils
 
@@ -218,6 +234,15 @@ tryP (Parser p) = Parser $ \bs ->
     case p bs of
       Nothing -> Just (Nothing, bs)
       Just (p', bs') -> Just (Just p', bs')
+
+
+-- | Return rest of the input. Parsing will fail after this step.
+--
+-- >>> execParser (B.pack [45, 45, 45, 45]) consume
+-- Just ("----","")
+--
+consume :: Parser B.ByteString
+consume = Parser $ \bs -> Just (bs, B.empty)
 
 -- | Try to read Word32.
 --

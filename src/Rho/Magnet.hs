@@ -2,9 +2,14 @@
 
 module Rho.Magnet where
 
-import qualified Data.ByteString.Char8 as B
-import           Data.Maybe            (catMaybes)
-import           Network.URI           (unEscapeString)
+import           Data.Bits               (shiftL)
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Char8   as B
+import qualified Data.ByteString.Lazy    as LB
+import           Data.Char               (digitToInt)
+import           Data.Maybe              (catMaybes)
+import           Data.Monoid
+import           Network.URI             (unEscapeString)
 
 import           Rho.Tracker
 
@@ -25,7 +30,24 @@ parseMagnet bs = do
             tr = catMaybes . map (either (const Nothing) Just . parseTrackerBS) $
                    -- TODO: redundant bytestring packing/unpacking here
                    map (B.pack . unEscapeString . B.unpack . snd) . filter ((==) "tr" . fst) $ args
-        in Right $ Magnet xt tr ((unEscapeString . B.unpack) `fmap` dn)
+            xt' = parseInfoHash (B.drop 9 xt) -- drop "urn:btih:" prefix and parse
+        in Right $ Magnet xt' tr ((unEscapeString . B.unpack) `fmap` dn)
+
+-- | Parse character representation of info hash(e.g. hex notation, two
+-- chars per byte) to byte representation.
+--
+-- TODO: We probably need some error handling here.
+parseInfoHash :: B.ByteString -> B.ByteString
+parseInfoHash = LB.toStrict . BB.toLazyByteString . go
+ where
+   go bs =
+     case B.uncons bs of
+       Nothing -> mempty
+       Just (c1, rest) ->
+         case B.uncons rest of
+           Nothing -> error "error while parsing info hash"
+           Just (c2, rest') ->
+             (BB.word8 $ fromIntegral $ (digitToInt c1 `shiftL` 4) + digitToInt c2) <> go rest'
 
 -- | Parse `a=b` pairs from a query string. Parsing started from the
 -- position of '?" in the string.
