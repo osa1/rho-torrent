@@ -52,6 +52,7 @@ executable rho
     , RhoTorrent
     -- temp
     , network
+    , random
 
 test-suite test
   type:             exitcode-stdio-1.0

@@ -5,11 +5,13 @@ module Rho.Comms where
 import           Control.Applicative
 import           Control.Concurrent.Async
 import           Control.Concurrent.Chan
+import           Control.Concurrent.MVar
 import           Data.Bits
 import qualified Data.ByteString           as B
 import qualified Data.ByteString.Builder   as BB
 import qualified Data.ByteString.Lazy      as LB
 import           Data.IORef
+import qualified Data.Map                  as M
 import           Data.Monoid
 import           Data.Word
 import           Network.Socket            hiding (recv, recvFrom, send, sendTo)
@@ -25,6 +27,8 @@ type TransactionId = Word32
 type ConnectionId  = Word64
 type PeerId        = B.ByteString -- ^ 20-byte
 
+type ConnectionCallback = ConnectionId -> IO ()
+
 data PeerResponse = PeerResponse
   { prTransactionId :: TransactionId
   , prInterval      :: Word32
@@ -33,45 +37,61 @@ data PeerResponse = PeerResponse
   , prPeers         :: [SockAddr]
   } deriving (Show)
 
-sendConnectReq :: Socket -> SockAddr -> IO TransactionId
-sendConnectReq sock targetAddr = do
+sendConnectReq
+  :: Socket -> SockAddr
+  -> MVar (M.Map TransactionId ConnectionCallback)
+  -> ConnectionCallback
+  -> IO TransactionId
+sendConnectReq sock targetAddr cbs cb = do
     transactionId <- randomIO
+    -- set the callback before sending request, request may arrive too
+    -- early (e.g. before setting the callback)
+    modifyMVar_ cbs $ return . M.insert transactionId cb
+    -- send the request
     let req = LB.toStrict . BB.toLazyByteString $
                 BB.word64BE 0x41727101980 <> BB.word32BE 0 <> BB.word32BE transactionId
     sent <- sendTo sock req targetAddr
     -- TODO: at least add a debug print here to warn when not all bytes are sent
     return transactionId
 
-sendPeersReq :: Socket -> SockAddr -> PeerId -> ConnectionId -> Torrent -> IO TransactionId
-sendPeersReq sock targetAddr peerId connId torrent = do
+sendPeersReq
+  :: Socket -> SockAddr -> PeerId -> Torrent
+  -> MVar (M.Map TransactionId ConnectionCallback)
+  -> IO TransactionId
+sendPeersReq sock targetAddr peerId torrent cbs = do
     transactionId <- randomIO
-    let req = LB.toStrict . BB.toLazyByteString . mconcat $
-                [ BB.word64BE connId
-                , BB.word32BE 1 -- action: announce
-                , BB.word32BE transactionId
-                , BB.byteString (infoHash torrent)
-                , BB.byteString peerId
-                , BB.word64BE (downloaded torrent)
-                , BB.word64BE (left torrent)
-                , BB.word64BE (uploaded torrent)
-                , BB.word32BE 2 -- event: started
-                , BB.word32BE 0 -- IP address
-                , BB.word32BE 0 -- key
-                , BB.word32BE (-1) -- numwant
-                , BB.word16BE 5432 -- port FIXME
-                ]
-    sent <- sendTo sock req targetAddr
+    _ <- sendConnectReq sock targetAddr cbs $ \connId -> do
+      let req = LB.toStrict . BB.toLazyByteString . mconcat $
+                  [ BB.word64BE connId
+                  , BB.word32BE 1 -- action: announce
+                  , BB.word32BE transactionId
+                  , BB.byteString (infoHash torrent)
+                  , BB.byteString peerId
+                  , BB.word64BE (downloaded torrent)
+                  , BB.word64BE (left torrent)
+                  , BB.word64BE (uploaded torrent)
+                  , BB.word32BE 2 -- event: started
+                  , BB.word32BE 0 -- IP address
+                  , BB.word32BE 0 -- key
+                  , BB.word32BE (-1) -- numwant
+                  , BB.word16BE 5432 -- port FIXME
+                  ]
+      sent <- sendTo sock req targetAddr
+      -- TODO: maybe check if sent == length of msg
+      return ()
+    -- return transaction id of announce request
     return transactionId
 
-initCommHandler :: IO Socket
+initCommHandler :: IO (Socket, MVar (M.Map TransactionId ConnectionCallback))
 initCommHandler = do
     sock <- socket AF_INET Datagram defaultProtocol
     bind sock (SockAddrInet (fromIntegral (5432 :: Int)) 0)
 
+    cbs <- newMVar M.empty
     dataChan <- spawnSockListener sock
-    _ <- spawnResponseHandler dataChan -- async (runResponseHandler dataChan)
+    _ <- spawnResponseHandler dataChan cbs -- async (runResponseHandler dataChan)
 
-    return sock
+    return (sock, cbs)
 
 -- | Socket listener reads stream from the socket and passes it to channel.
 spawnSockListener :: Socket -> IO (Chan (B.ByteString, SockAddr))
@@ -97,8 +117,10 @@ spawnSockListener sock = do
     -- number here.
     msg_size = 1500
 
-spawnResponseHandler :: Chan (B.ByteString, SockAddr) -> IO ()
-spawnResponseHandler dataChan = do
+spawnResponseHandler
+  :: Chan (B.ByteString, SockAddr)
+  -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
+spawnResponseHandler dataChan cbs = do
     _ <- async responseHandler
     return ()
   where
@@ -107,18 +129,25 @@ spawnResponseHandler dataChan = do
         (resp, src) <- readChan dataChan
         putStrLn $ "Got response from " ++ show src
         case execParser resp readWord32 of
-          Just (0, resp') -> handleConnectResp resp'
+          Just (0, resp') -> handleConnectResp resp' cbs
           Just (1, resp') -> handleAnnounceResp resp'
           Just (2, resp') -> handleScrapeResp resp'
           Just (n, _) -> putStrLn $ "Unknown response: " ++ show n
           Nothing -> putStrLn $ "Got ill-formed response"
         responseHandler
 
-handleConnectResp :: B.ByteString -> IO ()
-handleConnectResp bs = do
+handleConnectResp :: B.ByteString -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
+handleConnectResp bs cbs = do
     case parseResp of
       Nothing -> putStrLn "Can't parse connect response."
-      Just (tid, cid) -> putStrLn $ "Connection id for transaction id " ++ show tid ++ ": " ++ show cid
+      Just (tid, cid) -> do
+        putStrLn $ "Connection id for transaction id " ++ show tid ++ ": " ++ show cid
+        cbMap <- readMVar cbs
+        case M.lookup tid cbMap of
+          Nothing -> putStrLn "Can't find tid in callback map. Ignoring response."
+          Just cb -> do
+            putStrLn "Found a callback. Running..."
+            cb cid
   where
     parseResp :: Maybe (TransactionId, ConnectionId)
     parseResp = fmap fst . execParser bs $ do
