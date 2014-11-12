@@ -16,6 +16,9 @@ data Torrent = Torrent
 mkTorrentFromMagnet :: Magnet -> Torrent
 mkTorrentFromMagnet m = Torrent (Right m) 0 0 0
 
+mkTorrentFromMetainfo :: Metainfo -> Torrent
+mkTorrentFromMetainfo m = Torrent (Left m) 0 0 0
+
 infoHash :: Torrent -> B.ByteString
 infoHash Torrent{source=Right Magnet{mHash=hash}} = hash
 infoHash Torrent{source=Left Metainfo{mInfo=Info{iHash=hash}}} = hash

@@ -1,5 +1,6 @@
 {-# LANGUAGE RankNTypes, TupleSections #-}
 
+-- | Communications with HTTP/UDP trackers.
 module Rho.Comms where
 
 import           Control.Applicative
@@ -11,18 +12,20 @@ import qualified Data.ByteString           as B
 import qualified Data.ByteString.Builder   as BB
 import qualified Data.ByteString.Char8     as BC
 import qualified Data.ByteString.Lazy      as LB
-import           Data.IORef
+import           Data.List                 (intercalate)
 import qualified Data.Map                  as M
 import           Data.Monoid
 import           Data.Word
+import           Network.Browser
+import           Network.HTTP
 import           Network.Socket            hiding (recv, recvFrom, send, sendTo)
 import           Network.Socket.ByteString
+import           Network.URI
 import           System.Random             (randomIO)
 
-import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.Torrent
-import           Rho.Tracker
+import           Rho.Utils
 
 type TransactionId = Word32
 type ConnectionId  = Word64
@@ -37,6 +40,34 @@ data PeerResponse = PeerResponse
   , prSeeders       :: Word32
   , prPeers         :: [SockAddr]
   } deriving (Show)
+
+-- FIXME: ain't working. there may be problems with info_hash generation.
+sendGetRequest :: B.ByteString -> URI -> Torrent -> Metainfo -> IO (Async (URI, Response String))
+sendGetRequest peerId uri torrent metainfo = do
+    putStrLn $ "info_hash: " ++ show (B.length (iHash (mInfo metainfo)))
+    async $ browse $ do
+      setAllowRedirects True -- handle HTTP redirects
+      request $ defaultGETRequest $ updateURI uri
+  where
+    getReqStr = defaultGETRequest uri
+
+    updateURI :: URI -> URI
+    updateURI uri =
+      let sepchar = if null (uriQuery uri) then '?' else '&' in
+      uri{uriQuery = sepchar : intercalate "&" (map (\(k, v) -> k ++ '=' : v) args)}
+
+    args :: [(String, String)]
+    args =
+      [ ("info_hash", urlEncodeBytes . iHash . mInfo $ metainfo)
+      , ("peer_id", urlEncodeBytes peerId)
+      , ("port", "5432") -- FIXME
+      , ("uploaded", show $ uploaded torrent)
+      , ("downloaded", show $ downloaded torrent)
+      , ("left", show $ left torrent)
+      , ("compact", "1")
+      , ("supportcrypto", "1")
+      , ("event", "started")
+      ]
 
 sendConnectReq
   :: Socket -> SockAddr
@@ -83,16 +114,19 @@ sendPeersReq sock targetAddr peerId torrent cbs = do
     -- return transaction id of announce request
     return transactionId
 
-initCommHandler :: IO (Socket, MVar (M.Map TransactionId ConnectionCallback))
+initCommHandler :: IO (Socket,
+                       MVar (M.Map TransactionId ConnectionCallback),
+                       MVar (M.Map TransactionId PeerResponse))
 initCommHandler = do
     sock <- socket AF_INET Datagram defaultProtocol
     bind sock (SockAddrInet (fromIntegral (5432 :: Int)) 0)
 
     cbs <- newMVar M.empty
+    peerRps <- newMVar M.empty
     dataChan <- spawnSockListener sock
-    _ <- spawnResponseHandler dataChan cbs -- async (runResponseHandler dataChan)
+    _ <- spawnResponseHandler dataChan cbs peerRps
 
-    return (sock, cbs)
+    return (sock, cbs, peerRps)
 
 -- | Socket listener reads stream from the socket and passes it to channel.
 spawnSockListener :: Socket -> IO (Chan (B.ByteString, SockAddr))
@@ -120,8 +154,10 @@ spawnSockListener sock = do
 
 spawnResponseHandler
   :: Chan (B.ByteString, SockAddr)
-  -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
-spawnResponseHandler dataChan cbs = do
+  -> MVar (M.Map TransactionId ConnectionCallback)
+  -> MVar (M.Map TransactionId PeerResponse)
+  -> IO ()
+spawnResponseHandler dataChan cbs peerRps = do
     _ <- async responseHandler
     return ()
   where
@@ -131,7 +167,7 @@ spawnResponseHandler dataChan cbs = do
         putStrLn $ "Got response from " ++ show src
         case execParser resp readWord32 of
           Just (0, resp') -> handleConnectResp resp' cbs
-          Just (1, resp') -> handleAnnounceResp resp'
+          Just (1, resp') -> handleAnnounceResp resp' peerRps
           Just (2, resp') -> handleScrapeResp resp'
           Just (3, resp') -> handleErrorResp resp' cbs
           Just (n, _) -> putStrLn $ "Unknown response: " ++ show n
@@ -157,12 +193,14 @@ handleConnectResp bs cbs = do
       cid <- readWord64
       return (tid, cid)
 
-handleAnnounceResp :: B.ByteString -> IO ()
-handleAnnounceResp bs = do
+handleAnnounceResp :: B.ByteString -> MVar (M.Map TransactionId PeerResponse) -> IO ()
+handleAnnounceResp bs peerRps = do
     putStrLn "handling announce response"
     case parseResp of
       Nothing -> putStrLn "Can't parse announce response."
-      Just ret -> putStrLn $ "Announce response: " ++ show ret
+      Just ret -> do
+        modifyMVar_ peerRps $ return . M.insert (prTransactionId ret) ret
+        putStrLn $ "Announce response: " ++ show ret
   where
     parseResp :: Maybe PeerResponse
     parseResp = fmap fst . execParser bs $ do

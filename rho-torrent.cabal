@@ -21,20 +21,23 @@ library
     Rho.Comms
     Rho.Magnet
     Rho.Metainfo
+    Rho.PeerComms
     Rho.Torrent
     Rho.Tracker
+    Rho.Utils
 
   build-depends:
       base >=4.5 && <5
-    , Crypto
-    , HTTP
     , async
     , bencoding
     , bytestring
     , containers
+    , Crypto
+    , HTTP
     , network
     , network-uri
     , random
+    , time
 
   hs-source-dirs:      src
   ghc-options:         -Wall
@@ -48,7 +51,9 @@ executable rho
 
   build-depends:
       base >=4.7 && <5
+    , async
     , bytestring
+    , containers
     , RhoTorrent
     -- temp
     , network
