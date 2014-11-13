@@ -18,6 +18,7 @@ import qualified Data.ByteString.Lazy     as LB
 import qualified Data.Map                 as M
 import           Data.Monoid
 import           Data.Word
+import           Network.HTTP.Base
 import           Network.Socket
 import           System.Environment       (getArgs)
 import           System.Random            (randomIO)
@@ -70,7 +71,7 @@ runTorrent filePath = do
       Right m@Metainfo{mAnnounce=HTTPTracker uri} -> do
         putStrLn $ "info_hash: " ++ show (iHash $ mInfo m)
         peerId <- generatePeerId
-        req <- sendGetRequest peerId uri (mkTorrentFromMetainfo m) m
+        req <- async $ sendGetRequest peerId uri (mkTorrentFromMetainfo m) m
         resp <- wait req
         print resp
 

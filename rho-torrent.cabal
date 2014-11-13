@@ -21,6 +21,7 @@ library
     Rho.Comms
     Rho.Magnet
     Rho.Metainfo
+    Rho.Parser
     Rho.PeerComms
     Rho.Torrent
     Rho.Tracker
@@ -54,6 +55,7 @@ executable rho
     , async
     , bytestring
     , containers
+    , HTTP
     , RhoTorrent
     -- temp
     , network

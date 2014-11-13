@@ -1,8 +1,12 @@
 -- | ... because every project needs one.
 module Rho.Utils where
 
-import           Data.Bits
-import qualified Data.ByteString.Char8 as B
+import           Control.Monad
+import qualified Data.BEncode          as BE
+import qualified Data.BEncode.BDict    as BE
+import qualified Data.BEncode.Types    as BE
+import qualified Data.ByteString       as B
+import qualified Data.ByteString.Char8 as BC
 import           Data.Char
 import           Data.Word
 
@@ -29,7 +33,7 @@ import           Data.Word
 --
 urlEncodeBytes :: B.ByteString -> String
 urlEncodeBytes bs =
-    case B.uncons bs of
+    case BC.uncons bs of
       Nothing -> ""
       Just (ch, t)
         | (isAscii ch && isAlphaNum ch) || ch `elem` "-_.~" -> ch : urlEncodeBytes t
@@ -47,3 +51,17 @@ urlEncodeBytes bs =
 
      o_0 = fro '0'
      o_A = fro 'A'
+
+getField :: BE.BEncode a => BE.BValue -> B.ByteString -> Either String a
+getField (BE.BDict dict) f = join $ BE.fromBEncode `fmap` searchDict dict
+  where
+    searchDict :: BE.BDict -> Either String BE.BValue
+    searchDict BE.Nil = Left $ "Field " ++ BC.unpack f ++ " not in dict."
+    searchDict (BE.Cons k v t)
+      | k == f = return v
+      | otherwise = searchDict t
+getField _ _ = Left "Can't search field in a non-dictionary bencode value."
+
+opt :: Either a b -> Maybe b
+opt (Right ret) = Just ret
+opt (Left _) = Nothing

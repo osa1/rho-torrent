@@ -6,14 +6,11 @@ module Rho.Tracker
   , parseTrackerBS
   ) where
 
-import           Control.Applicative              ((<$>))
+import           Control.Applicative   ((<$>))
 import           Data.BEncode
-import           Data.Bits                        (shiftL)
-import qualified Data.ByteString.Char8            as B
+import qualified Data.ByteString.Char8 as B
 import           Data.Monoid
-import           Data.Word
-import           Network.Socket                   (HostAddress, PortNumber,
-                                                   SockAddr (..))
+import           Network.Socket        (PortNumber)
 import           Network.URI
 
 data Tracker
