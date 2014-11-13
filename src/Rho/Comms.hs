@@ -32,8 +32,7 @@ import           Rho.Utils
 type PeerId        = B.ByteString -- ^ 20-byte
 
 data PeerResponse = PeerResponse
-  { prTransactionId :: TransactionId
-  , prInterval      :: Word32
+  { prInterval      :: Word32
   , prLeechers      :: Maybe Word32
   , prSeeders       :: Maybe Word32
   , prPeers         :: [SockAddr]
@@ -87,8 +86,7 @@ peerRequestHTTP peerId uri torrent metainfo = do
               peers_bs <- getField bv "peers"
               peers <- maybe (Left "Can't parse peers.") (Right . fst) $
                          execParser peers_bs readAddrs
-              return $ PeerResponse 0
-                                    (fromMaybe interval minInterval)
+              return $ PeerResponse (fromMaybe interval minInterval)
                                     incomplete
                                     complete
                                     peers
@@ -249,21 +247,21 @@ handleAnnounceResp bs peerRps = do
     putStrLn "handling announce response"
     case parseResp of
       Nothing -> putStrLn "Can't parse announce response."
-      Just ret -> do
+      Just (tid, ret) -> do
         respVar <- modifyMVar peerRps $
-          \m -> return (M.delete (prTransactionId ret) m, M.lookup (prTransactionId ret) m)
+          \m -> return (M.delete tid m, M.lookup tid m)
         case respVar of
           Nothing -> putStrLn "Got unexpected announce response."
           Just respVar' -> putMVar respVar' ret
   where
-    parseResp :: Maybe PeerResponse
+    parseResp :: Maybe (TransactionId, PeerResponse)
     parseResp = fmap fst . execParser bs $ do
-      transactionId <- readWord32
+      tid <- readWord32
       interval <- readWord32
       leechers <- readWord32
       seeders <- readWord32
       addrs <- readAddrs
-      return $ PeerResponse transactionId interval (Just leechers) (Just seeders) addrs
+      return (tid, PeerResponse interval (Just leechers) (Just seeders) addrs)
 
 readAddrs :: Parser [SockAddr]
 readAddrs = do
