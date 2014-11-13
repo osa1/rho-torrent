@@ -29,11 +29,7 @@ import           Rho.Parser
 import           Rho.Torrent
 import           Rho.Utils
 
-type TransactionId = Word32
-type ConnectionId  = Word64
 type PeerId        = B.ByteString -- ^ 20-byte
-
-type ConnectionCallback = ConnectionId -> IO ()
 
 data PeerResponse = PeerResponse
   { prTransactionId :: TransactionId
@@ -45,9 +41,12 @@ data PeerResponse = PeerResponse
 
 type TrackerRespError = String
 
-sendGetRequest
+
+-- * Connections with HTTP trackers
+
+peerRequestHTTP
   :: B.ByteString -> URI -> Torrent -> Metainfo -> IO (Either TrackerRespError PeerResponse)
-sendGetRequest peerId uri torrent metainfo = do
+peerRequestHTTP peerId uri torrent metainfo = do
     putStrLn $ "info_hash: " ++ show (B.length (iHash (mInfo metainfo)))
     (_, resp) <- browse $ do
       setAllowRedirects True -- handle HTTP redirects
@@ -94,11 +93,53 @@ sendGetRequest peerId uri torrent metainfo = do
                                     complete
                                     peers
 
+
+-- * Connections with UDP trackers
+
+type TransactionId = Word32
+type ConnectionId  = Word64
+
+type ConnectionCallback = ConnectionId -> IO ()
+
+-- We need some state to manage UDP communications with trackers.
+data UDPCommHandler = UDPCommHandler
+  { sock         :: Socket
+  , connCbs      :: MVar (M.Map TransactionId ConnectionCallback)
+    -- ^ callbacks to call after successfully parsing ConnectionId
+    -- from connect responses
+  , announceVars :: MVar (M.Map TransactionId (MVar PeerResponse))
+    -- ^ channels to send peer responses after successfully parsing
+    -- announce responses
+  }
+
+initUDPCommHandler :: IO UDPCommHandler
+initUDPCommHandler = do
+    sock <- socket AF_INET Datagram defaultProtocol
+    bind sock (SockAddrInet (fromIntegral (5432 :: Int)) 0)
+
+    cbs <- newMVar M.empty
+    peerRps <- newMVar M.empty
+
+    -- data chan is used to push UDP packages to response handler
+    dataChan <- spawnSockListener sock
+    _ <- spawnResponseHandler dataChan cbs peerRps
+
+    return $ UDPCommHandler sock cbs peerRps
+
+-- | WARNING: This blocks. Use with `async`.
+peerRequestUDP :: UDPCommHandler -> SockAddr -> PeerId -> Torrent -> IO PeerResponse
+peerRequestUDP commHandler targetAddr peerId torrent = do
+    var <- newEmptyMVar
+    sendConnectReq (sock commHandler) targetAddr (connCbs commHandler) $
+      sendAnnounceReq (sock commHandler) targetAddr peerId torrent (announceVars commHandler) var
+    -- TODO: handle errrors (at least timeouts)
+    takeMVar var
+
 sendConnectReq
   :: Socket -> SockAddr
   -> MVar (M.Map TransactionId ConnectionCallback)
   -> ConnectionCallback
-  -> IO TransactionId
+  -> IO ()
 sendConnectReq sock targetAddr cbs cb = do
     transactionId <- randomIO
     -- set the callback before sending request, request may arrive too
@@ -109,21 +150,16 @@ sendConnectReq sock targetAddr cbs cb = do
                 BB.word64BE 0x41727101980 <> BB.word32BE 0 <> BB.word32BE transactionId
     sent <- sendTo sock req targetAddr
     -- TODO: at least add a debug print here to warn when not all bytes are sent
-    return transactionId
+    return ()
 
-sendPeersReq
+sendAnnounceReq
   :: Socket -> SockAddr -> PeerId -> Torrent
-  -> MVar (M.Map TransactionId ConnectionCallback)
-  -> IO TransactionId
-sendPeersReq sock targetAddr peerId torrent cbs = do
+  -> MVar (M.Map TransactionId (MVar PeerResponse))
+  -> MVar PeerResponse
+  -> ConnectionId -> IO ()
+sendAnnounceReq skt trackerAddr peerId torrent peerRps var connId = do
     transactionId <- randomIO
-    _ <- sendConnectReq sock targetAddr cbs $
-           sendAnnounceReq sock targetAddr peerId torrent transactionId
-    -- return transaction id of announce request
-    return transactionId
-
-sendAnnounceReq :: Socket -> SockAddr -> PeerId -> Torrent -> TransactionId -> ConnectionId -> IO ()
-sendAnnounceReq sock trackerAddr peerId torrent transactionId connId = do
+    modifyMVar_ peerRps $ return . M.insert transactionId var
     let req = LB.toStrict . BB.toLazyByteString . mconcat $
                 [ BB.word64BE connId
                 , BB.word32BE 1 -- action: announce
@@ -139,27 +175,13 @@ sendAnnounceReq sock trackerAddr peerId torrent transactionId connId = do
                 , BB.word32BE (-1) -- numwant
                 , BB.word16BE 5432 -- port FIXME
                 ]
-    sent <- sendTo sock req trackerAddr
+    sent <- sendTo skt req trackerAddr
     -- TODO: maybe check if sent == length of msg
     return ()
 
-initCommHandler :: IO (Socket,
-                       MVar (M.Map TransactionId ConnectionCallback),
-                       MVar (M.Map TransactionId PeerResponse))
-initCommHandler = do
-    sock <- socket AF_INET Datagram defaultProtocol
-    bind sock (SockAddrInet (fromIntegral (5432 :: Int)) 0)
-
-    cbs <- newMVar M.empty
-    peerRps <- newMVar M.empty
-    dataChan <- spawnSockListener sock
-    _ <- spawnResponseHandler dataChan cbs peerRps
-
-    return (sock, cbs, peerRps)
-
 -- | Socket listener reads stream from the socket and passes it to channel.
 spawnSockListener :: Socket -> IO (Chan (B.ByteString, SockAddr))
-spawnSockListener sock = do
+spawnSockListener skt = do
     dataChan <- newChan
     _ <- async (sockListener dataChan)
     return dataChan
@@ -171,7 +193,7 @@ spawnSockListener sock = do
     -- socket closed/main thread terminated.
     sockListener :: Chan (B.ByteString, SockAddr) -> IO ()
     sockListener dataChan = do
-      (contents, src) <- recvFrom sock msg_size
+      (contents, src) <- recvFrom skt msg_size
       putStrLn $ "Got " ++ show (B.length contents) ++ " bytes from: " ++ show src
       writeChan dataChan (contents, src)
       sockListener dataChan
@@ -184,7 +206,7 @@ spawnSockListener sock = do
 spawnResponseHandler
   :: Chan (B.ByteString, SockAddr)
   -> MVar (M.Map TransactionId ConnectionCallback)
-  -> MVar (M.Map TransactionId PeerResponse)
+  -> MVar (M.Map TransactionId (MVar PeerResponse))
   -> IO ()
 spawnResponseHandler dataChan cbs peerRps = do
     _ <- async responseHandler
@@ -222,14 +244,17 @@ handleConnectResp bs cbs = do
       cid <- readWord64
       return (tid, cid)
 
-handleAnnounceResp :: B.ByteString -> MVar (M.Map TransactionId PeerResponse) -> IO ()
+handleAnnounceResp :: B.ByteString -> MVar (M.Map TransactionId (MVar PeerResponse)) -> IO ()
 handleAnnounceResp bs peerRps = do
     putStrLn "handling announce response"
     case parseResp of
       Nothing -> putStrLn "Can't parse announce response."
       Just ret -> do
-        modifyMVar_ peerRps $ return . M.insert (prTransactionId ret) ret
-        putStrLn $ "Announce response: " ++ show ret
+        respVar <- modifyMVar peerRps $
+          \m -> return (M.delete (prTransactionId ret) m, M.lookup (prTransactionId ret) m)
+        case respVar of
+          Nothing -> putStrLn "Got unexpected announce response."
+          Just respVar' -> putMVar respVar' ret
   where
     parseResp :: Maybe PeerResponse
     parseResp = fmap fst . execParser bs $ do

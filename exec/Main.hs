@@ -44,19 +44,13 @@ runMagnet magnetStr = do
             addrInfo <- getAddrInfo (Just defaultHints) (Just $ B.unpack addr_str) (Just $ show port)
             let trackerAddr = addrAddress (last addrInfo)
             putStrLn "initializing comm handler"
-            (sock, cbs, peerRps) <- initCommHandler
+            commHandler <- initUDPCommHandler
             putStrLn "comm handler initialized"
-            tid <- sendPeersReq sock trackerAddr peerId (mkTorrentFromMagnet m) cbs
-            putStrLn $ "request sent, sleeping for 5 seconds (tid: " ++ show tid ++ ")"
-            threadDelay 5000000
+            peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMagnet m)
             putStrLn $ "Sending handshake to peers..."
-            peerRps' <- readMVar peerRps
             peerStatus <- newMVar M.empty
-            case M.lookup tid peerRps' of
-              Nothing -> putStrLn "can't find peer response"
-              Just PeerResponse{prPeers=peers} ->
-                forM_ peers $ \peer -> do
-                  async $ handshake peer mHash peerId peerStatus
+            forM_ (prPeers peers) $ \peer -> do
+              async $ handshake peer mHash peerId peerStatus
 
             threadDelay 50000000
 
@@ -71,7 +65,7 @@ runTorrent filePath = do
       Right m@Metainfo{mAnnounce=HTTPTracker uri} -> do
         putStrLn $ "info_hash: " ++ show (iHash $ mInfo m)
         peerId <- generatePeerId
-        req <- async $ sendGetRequest peerId uri (mkTorrentFromMetainfo m) m
+        req <- peerRequestHTTP peerId uri (mkTorrentFromMetainfo m) m
         resp <- wait req
         print resp
 
