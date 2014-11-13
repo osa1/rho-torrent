@@ -117,27 +117,31 @@ sendPeersReq
   -> IO TransactionId
 sendPeersReq sock targetAddr peerId torrent cbs = do
     transactionId <- randomIO
-    _ <- sendConnectReq sock targetAddr cbs $ \connId -> do
-      let req = LB.toStrict . BB.toLazyByteString . mconcat $
-                  [ BB.word64BE connId
-                  , BB.word32BE 1 -- action: announce
-                  , BB.word32BE transactionId
-                  , BB.byteString (infoHash torrent)
-                  , BB.byteString peerId
-                  , BB.word64BE (downloaded torrent)
-                  , BB.word64BE (left torrent)
-                  , BB.word64BE (uploaded torrent)
-                  , BB.word32BE 2 -- event: started
-                  , BB.word32BE 0 -- IP address
-                  , BB.word32BE 0 -- key
-                  , BB.word32BE (-1) -- numwant
-                  , BB.word16BE 5432 -- port FIXME
-                  ]
-      sent <- sendTo sock req targetAddr
-      -- TODO: maybe check if sent == length of msg
-      return ()
+    _ <- sendConnectReq sock targetAddr cbs $
+           sendAnnounceReq sock targetAddr peerId torrent transactionId
     -- return transaction id of announce request
     return transactionId
+
+sendAnnounceReq :: Socket -> SockAddr -> PeerId -> Torrent -> TransactionId -> ConnectionId -> IO ()
+sendAnnounceReq sock trackerAddr peerId torrent transactionId connId = do
+    let req = LB.toStrict . BB.toLazyByteString . mconcat $
+                [ BB.word64BE connId
+                , BB.word32BE 1 -- action: announce
+                , BB.word32BE transactionId
+                , BB.byteString (infoHash torrent)
+                , BB.byteString peerId
+                , BB.word64BE (downloaded torrent)
+                , BB.word64BE (left torrent)
+                , BB.word64BE (uploaded torrent)
+                , BB.word32BE 2 -- event: started
+                , BB.word32BE 0 -- IP address
+                , BB.word32BE 0 -- key
+                , BB.word32BE (-1) -- numwant
+                , BB.word16BE 5432 -- port FIXME
+                ]
+    sent <- sendTo sock req trackerAddr
+    -- TODO: maybe check if sent == length of msg
+    return ()
 
 initCommHandler :: IO (Socket,
                        MVar (M.Map TransactionId ConnectionCallback),
