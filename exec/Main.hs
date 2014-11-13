@@ -66,8 +66,13 @@ runTorrent filePath = do
         putStrLn $ "info_hash: " ++ show (iHash $ mInfo m)
         peerId <- generatePeerId
         req <- peerRequestHTTP peerId uri (mkTorrentFromMetainfo m) m
-        resp <- wait req
-        print resp
+        case req of
+          Left err -> putStrLn $ "Error happened: " ++ err
+          Right peerResp -> do
+            peerStatus <- newMVar M.empty
+            forM_ (prPeers peerResp) $ \peer -> do
+              async $ handshake peer (iHash $ mInfo m) peerId peerStatus
+            threadDelay 50000000
 
 -- | Generate 20-byte peer id.
 --
