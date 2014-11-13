@@ -83,6 +83,9 @@ peerRequestHTTP peerId uri torrent metainfo = do
                   _trackerId = opt $ getField bv "tracker id" :: Maybe B.ByteString
                   complete = opt $ getField bv "complete"
                   incomplete = opt $ getField bv "incomplete"
+              -- TOOD: peers_bs is either a dictionary or a byte string
+              -- (in case of compact form). currently only compact form
+              -- is handled.
               peers_bs <- getField bv "peers"
               peers <- maybe (Left "Can't parse peers.") (Right . fst) $
                          execParser peers_bs readAddrs
@@ -272,9 +275,9 @@ readAddrs = do
   where
     readAddr :: Parser (Maybe SockAddr)
     readAddr = tryP $ do
-      ip <- readWord32
-      port <- readWord16
-      return $ SockAddrInet (fromIntegral port) ip
+      ip <- readWord32LE
+      port <- readWord16LE
+      return $ SockAddrInet (PortNum port) ip
 
 handleScrapeResp :: B.ByteString -> IO ()
 handleScrapeResp _ = putStrLn "handling scrape response"

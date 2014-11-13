@@ -54,16 +54,16 @@ consume = Parser $ \bs -> Just (bs, B.empty)
 readWord :: Parser Word8
 readWord = Parser B.uncons
 
--- | Try to read Word16.
+-- | Try to read little-endian Word16 from big-endian byte string.
 --
--- >>> execParser (B.pack [1, 0]) readWord16
--- Just (256,"")
+-- >>> execParser (B.pack [1, 0]) readWord16LE
+-- Just (1,"")
 --
-readWord16 :: Parser Word16
-readWord16 = do
+readWord16LE :: Parser Word16
+readWord16LE = do
     w1 <- readWord
     w2 <- readWord
-    return $ fromIntegral w1 `shiftL` 8 + fromIntegral w2
+    return $ fromIntegral w2 `shiftL` 8 + fromIntegral w1
 
 -- | Try to read Word32 from big-endian byte string.
 --
@@ -80,6 +80,18 @@ readWord32 = do
               + fromIntegral w2 `shiftL` 16
               + fromIntegral w3 `shiftL` 8
               + fromIntegral w4
+
+-- | Try to read little-endian Word32 from big-endian byte string.
+readWord32LE :: Parser Word32
+readWord32LE = do
+    w1 <- readWord
+    w2 <- readWord
+    w3 <- readWord
+    w4 <- readWord
+    return $    fromIntegral w4 `shiftL` 24
+              + fromIntegral w3 `shiftL` 16
+              + fromIntegral w2 `shiftL` 8
+              + fromIntegral w1
 
 -- | Try to read Word64 from big-endian byte string.
 --
