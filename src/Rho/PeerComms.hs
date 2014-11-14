@@ -6,6 +6,8 @@ module Rho.PeerComms where
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Monad
+import qualified Data.BEncode              as BE
+import           Data.Bits
 import qualified Data.ByteString           as B
 import qualified Data.ByteString.Builder   as BB
 import qualified Data.ByteString.Char8     as BC
@@ -21,6 +23,7 @@ import           Network.Socket.ByteString
 import           System.IO.Error
 
 import           Rho.Parser
+import           Rho.Utils
 
 data PeerConn = PeerConn
   { pcPeerChoking    :: Bool
@@ -74,7 +77,10 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     let msg = LB.toStrict . BB.toLazyByteString . mconcat $
                 [ BB.word8 19 -- pstr len: standard for BitTorrent protocol
                 , BB.byteString "BitTorrent protocol" -- pstr
-                , BB.byteString $ B.pack [0, 0, 0, 0, 0, 0, 0, 0]
+                , BB.byteString $ B.pack
+                    [0, 0, 0, 0, 0,
+                     0 .&. 0x10, -- we support extension protocol
+                     0, 0]
                 , BB.byteString infoHash
                 , BB.byteString peerId
                 ]
@@ -92,17 +98,14 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     errHandler err@IOError{ioe_type=TimeExpired} = putStrLn $ "Timeout happened: " ++ show err
     errHandler err = putStrLn $ "Unhandled error: " ++ show err
 
-    parseHandshake :: B.ByteString -> Either String (B.ByteString, B.ByteString)
+    parseHandshake :: B.ByteString -> Either String (B.ByteString, B.ByteString, Maybe PeerMsg)
     parseHandshake bs =
       case execParser bs handshakeParser of
         Just ((pstr, infoHash, peerId), rest) -> do
-          -- assert ("Handshake response has extra data of len " ++ show (B.length rest)) (B.null rest)
-          -- TODO: handle extra data. maybe there are some extension
-          -- protocols?
           assert ("Unknown pstr: " ++ BC.unpack pstr) (pstr == "BitTorrent protocol")
           assert ("info_hash length is wrong: " ++ show (B.length infoHash)) (B.length infoHash == 20)
           assert ("peer_id length is wrong: " ++ show (B.length peerId)) (B.length peerId == 20)
-          return (infoHash, peerId)
+          return (infoHash, peerId, parsePeerMsg rest)
         Nothing -> Left "Can't parse handshake message."
       where
         assert :: String -> Bool -> Either String ()
@@ -136,6 +139,17 @@ data PeerMsg
            Word32 -- ^ offset in piece
            Word32 -- ^ length
   | Port PortNumber
+  | Extended ExtendedPeerMsg
+  deriving (Show)
+
+data ExtendedPeerMsg
+  -- Messages from BEP 9
+  = MetadataRequest Word32 -- ^ piece index
+  | MetadataData
+        Word32 -- ^ piece index
+        Word64 -- ^ total size, in bytes
+        B.ByteString -- ^ data
+  | MetadataReject Word32 -- ^ piece index
   deriving (Show)
 
 parsePeerMsg :: B.ByteString -> Maybe PeerMsg
@@ -162,4 +176,35 @@ parsePeerMsg bs = fmap fst $ execParser bs $ do
       7 -> Piece <$> readWord32 <*> readWord32 <*> consume
       8 -> Cancel <$> readWord32 <*> readWord32 <*> readWord32
       9 -> Port . PortNum <$> readWord16LE
+      20 -> Extended <$> parseExtendedPeerMsg len
       _ -> fail $ "Unknown peer message id: " ++ show msgId
+
+parseExtendedPeerMsg :: Word32 -> Parser ExtendedPeerMsg
+parseExtendedPeerMsg len = do
+    extendedMsgType <- readWord -- could that be anything other than `1`?
+    if extendedMsgType == 1
+      then do
+        -- TODO: redundant bytecode unpacking/packing here?
+        payload <- replicateM (fromIntegral $ len - 2) readWord
+        bc <- p $ BE.decode (B.pack payload)
+        mdict <- p $ getField bc "m"
+        case getField mdict "ut_metadata" of
+          Left _ -> fail "Can't read ut_metadata"
+          Right (BE.BInteger 3) -> parseMsg bc
+          Right b -> fail $ "Unknown bencode in ut_metadata: " ++ show b
+      else fail $ "Unknown extended message type: " ++ show extendedMsgType
+  where
+    p :: Either String a -> Parser a
+    p = either fail return
+
+    parseMsg :: BE.BValue -> Parser ExtendedPeerMsg
+    parseMsg bc = do
+      msgType <- p $ getField bc "msg_type" :: Parser Integer
+      case msgType of
+        0 -> MetadataRequest <$> p (getField bc "piece")
+        1 ->
+          MetadataData <$> p (getField bc "piece")
+                       <*> p (getField bc "total_size")
+                       <*> consume
+        2 -> MetadataReject <$> p (getField bc "piece")
+        _ -> fail $ "Unknown ut_metadata type: " ++ show msgType
