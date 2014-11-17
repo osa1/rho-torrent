@@ -24,6 +24,7 @@ import           Network.Socket            hiding (KeepAlive, recv, recvFrom,
 import           Network.Socket.ByteString
 import           System.IO.Error
 
+import qualified Rho.Bitfield              as BF
 import           Rho.Parser
 import           Rho.Utils
 
@@ -198,7 +199,7 @@ data PeerMsg
   | Interested
   | NotInterested
   | Have Word32
-  | Bitfield B.ByteString
+  | Bitfield BF.Bitfield
   | Request Word32 -- ^ piece index
             Word32 -- ^ offset in piece
             Word32 -- ^ length
@@ -241,7 +242,7 @@ parsePeerMsg bs = fmap fst $ execParser bs $ do
         Have <$> readWord32
       5 ->
         -- TODO: check for errors
-        Bitfield . B.pack <$> replicateM (fromIntegral len - 1) readWord
+        Bitfield . BF.Bitfield . B.pack <$> replicateM (fromIntegral len - 1) readWord
       6 -> Request <$> readWord32 <*> readWord32 <*> readWord32
       7 -> Piece <$> readWord32 <*> readWord32 <*> consume
       8 -> Cancel <$> readWord32 <*> readWord32 <*> readWord32

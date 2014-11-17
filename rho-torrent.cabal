@@ -18,6 +18,7 @@ source-repository head
 
 library
   exposed-modules:
+    Rho.Bitfield
     Rho.Comms
     Rho.Magnet
     Rho.Metainfo
