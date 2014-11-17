@@ -52,8 +52,12 @@ runMagnet magnetStr = do
             forM_ (prPeers peers) $ \peer -> do
               async $ handshake peerComms peer mHash peerId
             threadDelay 30000000
-            putStr "Peers: "
-            putStrLn . show . M.size =<< readMVar (pchPeers peerComms)
+            connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
+            putStrLn $ "Peers: " ++ show (length connectedPeers)
+            putStrLn "sending extended handshakes to get metainfo"
+            forM_ connectedPeers $ \peerConn -> do
+              async $ requestMetainfo peerConn
+            threadDelay 30000000
           ts -> putStrLn $ "I don't like the trackers: " ++ show ts
 
 runTorrent :: FilePath -> IO ()

@@ -24,6 +24,8 @@ library
     Rho.Metainfo
     Rho.Parser
     Rho.PeerComms
+    Rho.PeerComms.Handshake
+    Rho.PeerComms.Message
     Rho.Torrent
     Rho.Tracker
     Rho.Utils
@@ -70,8 +72,10 @@ test-suite test
   ghc-options:      -Wall
 
   other-modules:
+    Rho.BitfieldSpec
     Rho.MagnetSpec
     Rho.MetainfoSpec
+    Rho.PeerCommsSpec
 
   build-depends:
       base >=4.7 && <5
