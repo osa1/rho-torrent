@@ -5,6 +5,8 @@ module Rho.PeerComms where
 
 import           Control.Applicative
 import           Control.Concurrent
+import           Control.Concurrent.Async
+import           Control.Concurrent.Chan
 import           Control.Monad
 import qualified Data.BEncode              as BE
 import           Data.Bits
@@ -36,40 +38,83 @@ data PeerConn = PeerConn
     -- ^ we're interested in something that peer has to offer
   , pcPeerId         :: B.ByteString
   , pcOffers         :: [B.ByteString]
-    -- ^ torrent that the peer offers
+    -- ^ torrents that the peer offers
   , pcSock           :: Socket
+    -- ^ socket connected to the peer
   } deriving (Show)
 
-data HandshakeStatus
-    = HandshakeSent POSIXTime
-    | HandshakeEstablished POSIXTime
+data PeerCommHandler = PeerCommHandler
+  { pchPeers :: MVar (M.Map SockAddr PeerConn)
+  , pchSock  :: Socket
+    -- ^ socket used to listen incoming messages
+  }
 
-initPeerCommsHandler :: IO Socket
+initPeerCommsHandler :: IO PeerCommHandler
 initPeerCommsHandler = do
+    peers <- newMVar M.empty
+    -- used to pass bytes from socket listener to message handler
+    msgChan <- newChan
+    sock <- spawnPeerMsgListener msgChan
+    async $ peerMsgHandler peers msgChan
+    return $ PeerCommHandler peers sock
+
+spawnPeerMsgListener :: Chan (SockAddr, Socket, B.ByteString) -> IO Socket
+spawnPeerMsgListener msgChan = do
     sock <- socket AF_INET Stream defaultProtocol
-    bind sock (SockAddrInet (fromIntegral (5433 :: Int)) 0)
+    bind sock (SockAddrInet (fromIntegral (5433 :: Int)) 0) -- TODO: hard-coded port
+    async $ peerMsgListener sock
     return sock
+  where
+    peerMsgListener sock = do
+      (peerSocket, peerAddr) <- accept sock
+      msg <- recv peerSocket 10000
+      writeChan msgChan (peerAddr, peerSocket, msg)
+      peerMsgListener sock
 
-handshake
-  :: SockAddr -> B.ByteString -> B.ByteString
-  -> MVar (M.Map SockAddr HandshakeStatus)
-  -> IO ()
-handshake addr infoHash peerId hss = do
-    peerStatus <- takeMVar hss
-    ct <- getPOSIXTime
-    case M.lookup addr peerStatus of
-      Just (HandshakeSent t) -> do
-        putStrLn $ "Handshake sent " ++ show (round $ ct - t) ++ " seconds ago. Skipping."
-        putMVar hss peerStatus
-      Just (HandshakeEstablished t) -> do
-        putStrLn $ "Connection established " ++ show (round $ ct - t) ++ " seconds ago. Skipping."
-        putMVar hss peerStatus
-      Nothing -> do
-        putStrLn $ "New peer. Initializing handshake."
-        putMVar hss (M.insert addr (HandshakeSent ct) peerStatus)
-        sendHandshake addr infoHash peerId
+peerMsgHandler
+    :: MVar (M.Map SockAddr PeerConn)
+    -> Chan (SockAddr, Socket, B.ByteString)
+    -> IO ()
+peerMsgHandler peers msgChan = do
+    (peerAddr, peerSock, peerMsg) <- readChan msgChan
+    -- have we established a connection with the peer?
+    peers' <- readMVar peers
+    case M.lookup peerAddr peers' of
+      Nothing ->
+        -- message has to be handshake
+        case parseHandshake peerMsg of
+          Left err -> putStrLn $ "Can't parse handshake: " ++ err
+          Right (_infoHash, _peerId, _msg) -> do
+            -- TODO: we don't seed yet
+            putStrLn "Ignoring an incoming handshake."
+      Just peerConn ->
+        case parsePeerMsg peerMsg of
+          Nothing -> putStrLn "Can't parse peer msg."
+          Just msg -> putStrLn $ "Parsed a peer msg: " ++ show msg
+    peerMsgHandler peers msgChan
 
-sendHandshake :: SockAddr -> B.ByteString -> B.ByteString -> IO ()
+handshake :: PeerCommHandler -> SockAddr -> B.ByteString -> B.ByteString -> IO ()
+handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
+    ret <- sendHandshake addr infoHash peerId
+    case ret of
+      Left err -> putStrLn $ "Can't establish connection: " ++ err
+      Right (sock, infoHash, peerId, _msg) -> do
+        -- TODO: handle msg
+        modifyMVar_ peers $ \peers' ->
+          case M.lookup addr peers' of
+            Nothing -> do
+              -- first time handshaking with the peer
+              -- TODO: check info_hash
+              putStrLn "Handshake successful"
+              return $ M.insert addr (PeerConn True False True False peerId [infoHash] sock) peers'
+            Just pc -> do
+              -- probably learned about a new torrent
+              putStrLn "Handshake successful"
+              return $ M.insert addr pc{pcOffers = infoHash : pcOffers pc} peers'
+
+sendHandshake
+    :: SockAddr -> B.ByteString -> B.ByteString
+    -> IO (Either String (Socket, B.ByteString, B.ByteString, Maybe PeerMsg))
 sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet aNY_PORT 0)
@@ -84,42 +129,42 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
                 , BB.byteString infoHash
                 , BB.byteString peerId
                 ]
-    putStrLn $ "Handshake msg length: " ++ show (B.length msg)
     connect sock addr
-    putStrLn "connected..."
     sent <- send sock msg
-    -- I don't know how a peer is supposed to answer this, just try to read
-    -- anything
-    contents <- recv sock 1000
-    putStrLn $ "Read contents: " ++ show (parseHandshake contents) ++ " from: " ++ show addr
+    msg <- recv sock 10000
+    case parseHandshake msg of
+      Left err -> return $ Left err
+      Right (infoHash, peerId, msg) -> return $ Right (sock, infoHash, peerId, msg)
   where
-    errHandler :: IOError -> IO ()
-    errHandler err@IOError{ioe_type=NoSuchThing} = putStrLn $ "Problems with connection: " ++ show err
-    errHandler err@IOError{ioe_type=TimeExpired} = putStrLn $ "Timeout happened: " ++ show err
-    errHandler err = putStrLn $ "Unhandled error: " ++ show err
+    errHandler err@IOError{ioe_type=NoSuchThing} =
+      return $ Left $ "Problems with connection: " ++ show err
+    errHandler err@IOError{ioe_type=TimeExpired} =
+      return $ Left $ "Timeout happened: " ++ show err
+    errHandler err =
+      return $ Left $ "Unhandled error: " ++ show err
 
-    parseHandshake :: B.ByteString -> Either String (B.ByteString, B.ByteString, Maybe PeerMsg)
-    parseHandshake bs =
-      case execParser bs handshakeParser of
-        Just ((pstr, infoHash, peerId), rest) -> do
-          assert ("Unknown pstr: " ++ BC.unpack pstr) (pstr == "BitTorrent protocol")
-          assert ("info_hash length is wrong: " ++ show (B.length infoHash)) (B.length infoHash == 20)
-          assert ("peer_id length is wrong: " ++ show (B.length peerId)) (B.length peerId == 20)
-          return (infoHash, peerId, parsePeerMsg rest)
-        Nothing -> Left "Can't parse handshake message."
-      where
-        assert :: String -> Bool -> Either String ()
-        assert _ True = Right ()
-        assert err False = Left err
+parseHandshake :: B.ByteString -> Either String (B.ByteString, B.ByteString, Maybe PeerMsg)
+parseHandshake bs =
+    case execParser bs handshakeParser of
+      Just ((pstr, infoHash, peerId), rest) -> do
+        assert ("Unknown pstr: " ++ BC.unpack pstr) (pstr == "BitTorrent protocol")
+        assert ("info_hash length is wrong: " ++ show (B.length infoHash)) (B.length infoHash == 20)
+        assert ("peer_id length is wrong: " ++ show (B.length peerId)) (B.length peerId == 20)
+        return (infoHash, peerId, parsePeerMsg rest)
+      Nothing -> Left "Can't parse handshake message."
+  where
+    assert :: String -> Bool -> Either String ()
+    assert _ True = Right ()
+    assert err False = Left err
 
-    handshakeParser :: Parser (B.ByteString, B.ByteString, B.ByteString)
-    handshakeParser = do
-      pstrLen <- readWord
-      pstr <- replicateM (fromIntegral pstrLen) readWord
-      _ <- replicateM 8 readWord
-      infoHash <- replicateM 20 readWord
-      peerId <- replicateM 20 readWord
-      return (B.pack pstr, B.pack infoHash, B.pack peerId)
+handshakeParser :: Parser (B.ByteString, B.ByteString, B.ByteString)
+handshakeParser = do
+    pstrLen <- readWord
+    pstr <- replicateM (fromIntegral pstrLen) readWord
+    _ <- replicateM 8 readWord
+    infoHash <- replicateM 20 readWord
+    peerId <- replicateM 20 readWord
+    return (B.pack pstr, B.pack infoHash, B.pack peerId)
 
 data PeerMsg
   = KeepAlive

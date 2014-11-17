@@ -48,13 +48,12 @@ runMagnet magnetStr = do
             putStrLn "comm handler initialized"
             peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMagnet m)
             putStrLn $ "Sending handshake to peers..."
-            peerStatus <- newMVar M.empty
+            peerComms <- initPeerCommsHandler
             forM_ (prPeers peers) $ \peer -> do
-              async $ handshake peer mHash peerId peerStatus
-
-            threadDelay 50000000
-
-            return ()
+              async $ handshake peerComms peer mHash peerId
+            threadDelay 30000000
+            putStr "Peers: "
+            putStrLn . show . M.size =<< readMVar (pchPeers peerComms)
           ts -> putStrLn $ "I don't like the trackers: " ++ show ts
 
 runTorrent :: FilePath -> IO ()
@@ -69,10 +68,12 @@ runTorrent filePath = do
         case req of
           Left err -> putStrLn $ "Error happened: " ++ err
           Right peerResp -> do
-            peerStatus <- newMVar M.empty
+            peerComms <- initPeerCommsHandler
             forM_ (prPeers peerResp) $ \peer -> do
-              async $ handshake peer (iHash $ mInfo m) peerId peerStatus
-            threadDelay 50000000
+              async $ handshake peerComms peer (iHash $ mInfo m) peerId
+            threadDelay 30000000
+            putStr "Peers: "
+            putStrLn . show . M.size =<< readMVar (pchPeers peerComms)
 
 -- | Generate 20-byte peer id.
 --
