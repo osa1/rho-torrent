@@ -51,7 +51,7 @@ data PeerCommHandler = PeerCommHandler
     -- ^ socket used to listen incoming messages
   }
 
--- \ Initialize listeners, data structures etc. for peer communications.
+-- | Initialize listeners, data structures etc. for peer communications.
 initPeerCommsHandler :: IO PeerCommHandler
 initPeerCommsHandler = do
     -- state of all connected peers
@@ -65,7 +65,7 @@ initPeerCommsHandler = do
     async $ peerMsgHandler peers msgChan
     return $ PeerCommHandler peers msgChan
 
--- \ Accept incoming connections and spawn a connected socket listener for
+-- | Accept incoming connections and spawn a connected socket listener for
 -- evrey accepted connection.
 spawnPeerSockListener :: Socket -> Chan (SockAddr, Socket, B.ByteString) -> IO (Async ())
 spawnPeerSockListener sock msgChan = async loop
@@ -75,7 +75,7 @@ spawnPeerSockListener sock msgChan = async loop
       spawnConnectedSockListener peerSocket peerAddr msgChan
       loop
 
--- \ Listen socket of a connected peer and send bytes to channel.
+-- | Listen socket of a connected peer and send bytes to channel.
 spawnConnectedSockListener
     :: Socket -> SockAddr -> Chan (SockAddr, Socket, B.ByteString) -> IO (Async ())
 spawnConnectedSockListener sock sockAddr msgChan = async loop
@@ -87,7 +87,7 @@ spawnConnectedSockListener sock sockAddr msgChan = async loop
         writeChan msgChan (sockAddr, sock, msg)
         loop
 
--- \ Parse incoming bytes and update data structures.
+-- | Parse incoming bytes and update data structures.
 peerMsgHandler :: MVar (M.Map SockAddr PeerConn) -> Chan (SockAddr, Socket, B.ByteString) -> IO ()
 peerMsgHandler peers msgChan = do
     (peerAddr, peerSock, peerMsg) <- readChan msgChan
@@ -135,7 +135,7 @@ handshake PeerCommHandler{pchPeers=peers, pchMsgChan=msgChan} addr infoHash peer
               return $ M.insert addr pc{pcOffers = infoHash : pcOffers pc} peers'
         writeChan msgChan (addr, sock, msg)
 
--- \ Send a handshake message to given target using a fresh socket. Return
+-- | Send a handshake message to given target using a fresh socket. Return
 -- the connected socket in case of a success. (e.g. receiving answer to
 -- handshake)
 sendHandshake
