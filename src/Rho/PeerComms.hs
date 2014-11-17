@@ -26,7 +26,7 @@ data PeerConn = PeerConn
     -- ^ we're choking the peer
   , pcInterested     :: Bool
     -- ^ we're interested in something that peer has to offer
-  , pcPeerId         :: B.ByteString
+  , pcPeerId         :: PeerId
   , pcOffers         :: [B.ByteString]
     -- ^ torrents that the peer offers
   , pcSock           :: Socket
@@ -109,7 +109,7 @@ requestMetainfo PeerConn{pcSock=sock} = do
     sent <- send sock msg
     unless (sent == B.length msg) $ putStrLn "Problem while sending extended handshake"
 
-handshake :: PeerCommHandler -> SockAddr -> B.ByteString -> B.ByteString -> IO ()
+handshake :: PeerCommHandler -> SockAddr -> B.ByteString -> PeerId -> IO ()
 handshake PeerCommHandler{pchPeers=peers, pchMsgChan=msgChan} addr infoHash peerId = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
@@ -137,8 +137,8 @@ handshake PeerCommHandler{pchPeers=peers, pchMsgChan=msgChan} addr infoHash peer
 -- the connected socket in case of a success. (e.g. receiving answer to
 -- handshake)
 sendHandshake
-    :: SockAddr -> B.ByteString -> B.ByteString
-    -> IO (Either String (Socket, B.ByteString, B.ByteString, B.ByteString))
+    :: SockAddr -> B.ByteString -> PeerId
+    -> IO (Either String (Socket, B.ByteString, PeerId, B.ByteString))
 sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet aNY_PORT 0)

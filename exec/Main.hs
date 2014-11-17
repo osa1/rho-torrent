@@ -5,6 +5,7 @@ import           Rho.Comms
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms
+import           Rho.PeerComms.Handshake
 import           Rho.Torrent
 import           Rho.Tracker
 
@@ -84,6 +85,6 @@ runTorrent filePath = do
 -- I don't need how this is really used. All I can see is that we send
 -- this to trackers in annonuce request but why not generate a fresh
 -- peer id for every request? Looked pretty useless to me.
-generatePeerId :: IO B.ByteString
+generatePeerId :: IO PeerId
 generatePeerId =
-    LB.toStrict . BB.toLazyByteString . mconcat . map BB.word8 <$> replicateM 20 randomIO
+    PeerId . LB.toStrict . BB.toLazyByteString . mconcat . map BB.word8 <$> replicateM 20 randomIO

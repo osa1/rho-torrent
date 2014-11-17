@@ -12,8 +12,11 @@ import           Data.Monoid
 
 import           Rho.Parser
 
-mkHandshake :: B.ByteString -> B.ByteString -> B.ByteString
-mkHandshake infoHash peerId =
+-- | 20-byte peer_id
+newtype PeerId = PeerId B.ByteString deriving (Show, Eq)
+
+mkHandshake :: B.ByteString -> PeerId -> B.ByteString
+mkHandshake infoHash (PeerId peerId) =
     LB.toStrict . BB.toLazyByteString . mconcat $
       [ BB.word8 19 -- pstr len: standard for BitTorrent protocol
       , BB.byteString "BitTorrent protocol" -- pstr
@@ -25,13 +28,11 @@ mkHandshake infoHash peerId =
       , BB.byteString peerId
       ]
 
-parseHandshake :: B.ByteString -> Either String (B.ByteString, B.ByteString, B.ByteString)
+parseHandshake :: B.ByteString -> Either String (B.ByteString, PeerId, B.ByteString)
 parseHandshake bs =
     case execParser bs handshakeParser of
       Just ((pstr, infoHash, peerId), rest) -> do
         assert ("Unknown pstr: " ++ BC.unpack pstr) (pstr == "BitTorrent protocol")
-        assert ("info_hash length is wrong: " ++ show (B.length infoHash)) (B.length infoHash == 20)
-        assert ("peer_id length is wrong: " ++ show (B.length peerId)) (B.length peerId == 20)
         return (infoHash, peerId, rest)
       Nothing -> Left "Can't parse handshake message."
   where
@@ -39,11 +40,11 @@ parseHandshake bs =
     assert _   True  = Right ()
     assert err False = Left err
 
-    handshakeParser :: Parser (B.ByteString, B.ByteString, B.ByteString)
+    handshakeParser :: Parser (B.ByteString, B.ByteString, PeerId)
     handshakeParser = do
       pstrLen <- readWord
       pstr <- replicateM (fromIntegral pstrLen) readWord
       _ <- replicateM 8 readWord
       infoHash <- replicateM 20 readWord
       peerId <- replicateM 20 readWord
-      return (B.pack pstr, B.pack infoHash, B.pack peerId)
+      return (B.pack pstr, B.pack infoHash, PeerId $ B.pack peerId)

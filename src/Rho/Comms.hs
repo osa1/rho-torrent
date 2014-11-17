@@ -26,16 +26,15 @@ import           System.Random             (randomIO)
 
 import           Rho.Metainfo
 import           Rho.Parser
+import           Rho.PeerComms.Handshake
 import           Rho.Torrent
 import           Rho.Utils
 
-type PeerId        = B.ByteString -- ^ 20-byte
-
 data PeerResponse = PeerResponse
-  { prInterval      :: Word32
-  , prLeechers      :: Maybe Word32
-  , prSeeders       :: Maybe Word32
-  , prPeers         :: [SockAddr]
+  { prInterval :: Word32
+  , prLeechers :: Maybe Word32
+  , prSeeders  :: Maybe Word32
+  , prPeers    :: [SockAddr]
   } deriving (Show)
 
 type TrackerRespError = String
@@ -44,8 +43,8 @@ type TrackerRespError = String
 -- * Connections with HTTP trackers
 
 peerRequestHTTP
-  :: B.ByteString -> URI -> Torrent -> Metainfo -> IO (Either TrackerRespError PeerResponse)
-peerRequestHTTP peerId uri torrent metainfo = do
+  :: PeerId -> URI -> Torrent -> Metainfo -> IO (Either TrackerRespError PeerResponse)
+peerRequestHTTP (PeerId peerId) uri torrent metainfo = do
     putStrLn $ "info_hash: " ++ show (B.length (iHash (mInfo metainfo)))
     (_, resp) <- browse $ do
       setAllowRedirects True -- handle HTTP redirects
@@ -158,7 +157,7 @@ sendAnnounceReq
   -> MVar (M.Map TransactionId (MVar PeerResponse))
   -> MVar PeerResponse
   -> ConnectionId -> IO ()
-sendAnnounceReq skt trackerAddr peerId torrent peerRps var connId = do
+sendAnnounceReq skt trackerAddr (PeerId peerId) torrent peerRps var connId = do
     transactionId <- randomIO
     modifyMVar_ peerRps $ return . M.insert transactionId var
     let req = LB.toStrict . BB.toLazyByteString . mconcat $
