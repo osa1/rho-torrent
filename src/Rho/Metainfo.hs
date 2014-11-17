@@ -14,6 +14,7 @@ import           Data.Monoid
 import           Data.Typeable
 import           GHC.Generics
 
+import           Rho.InfoHash
 import           Rho.Tracker
 
 -- | Metainfo file as specified in
@@ -34,7 +35,7 @@ data Info = Info
   , iPieces      :: [B.ByteString]
   , iPrivate     :: Bool
   , iFiles       :: [File]
-  , iHash        :: B.ByteString
+  , iHash        :: InfoHash
   } deriving (Show, Eq, Typeable, Generic)
 
 data File = File
@@ -100,8 +101,8 @@ instance BEncode Info where
       -- | (20-byte) SHA1 hash of info field.
       -- We're just hoping that no information is lost/chaged during
       -- bencode decoding -> encoding.
-      infoHash :: B.ByteString
-      infoHash = hashToBS . hash . LB.unpack . encode $ bv
+      infoHash :: InfoHash
+      infoHash = InfoHash . hashToBS . hash . LB.unpack . encode $ bv
 
       -- | Convert 20-byte hash to big-endian bytestring.
       hashToBS :: Word160 -> B.ByteString

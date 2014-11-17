@@ -3,6 +3,7 @@
 
 module Rho.MetainfoSpec where
 
+import           Rho.InfoHash
 import           Rho.Metainfo
 import           Rho.Tracker
 import           Rho.Utils
@@ -61,7 +62,7 @@ regressions = TestList $ map TestCase [regression1]
       case mi of
         Left msg -> assertFailure $ "Can't parse " ++ path ++ ": " ++ msg
         Right metainfo -> do
-          let info_hash = B.pack
+          let info_hash = InfoHash $ B.pack
                 [ 0x08, 0x89, 0xCF, 0x68, 0xCF, 0x4A, 0x7A, 0xB7, 0xF1, 0xDB,
                   0x69, 0xC2, 0xFF, 0xAB, 0xE3, 0xDB, 0xFE, 0x53, 0xD0, 0x95 ]
           assertBool "info_hash is wrong" $ iHash (mInfo metainfo) == info_hash

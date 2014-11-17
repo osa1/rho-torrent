@@ -24,6 +24,7 @@ import           Network.Socket.ByteString
 import           Network.URI
 import           System.Random             (randomIO)
 
+import           Rho.InfoHash
 import           Rho.Metainfo
 import           Rho.Parser
 import           Rho.PeerComms.Handshake
@@ -45,7 +46,7 @@ type TrackerRespError = String
 peerRequestHTTP
   :: PeerId -> URI -> Torrent -> Metainfo -> IO (Either TrackerRespError PeerResponse)
 peerRequestHTTP (PeerId peerId) uri torrent metainfo = do
-    putStrLn $ "info_hash: " ++ show (B.length (iHash (mInfo metainfo)))
+    putStrLn $ "info_hash: " ++ show (B.length (unwrapInfoHash (iHash (mInfo metainfo))))
     (_, resp) <- browse $ do
       setAllowRedirects True -- handle HTTP redirects
       request $ defaultGETRequest $ updateURI uri
@@ -58,7 +59,7 @@ peerRequestHTTP (PeerId peerId) uri torrent metainfo = do
 
     args :: [(String, String)]
     args =
-      [ ("info_hash", urlEncodeBytes . iHash . mInfo $ metainfo)
+      [ ("info_hash", urlEncodeBytes . unwrapInfoHash . iHash . mInfo $ metainfo)
       , ("peer_id", urlEncodeBytes peerId)
       , ("port", "5432") -- FIXME
       , ("uploaded", show $ uploaded torrent)
@@ -164,7 +165,7 @@ sendAnnounceReq skt trackerAddr (PeerId peerId) torrent peerRps var connId = do
                 [ BB.word64BE connId
                 , BB.word32BE 1 -- action: announce
                 , BB.word32BE transactionId
-                , BB.byteString (infoHash torrent)
+                , BB.byteString (unwrapInfoHash $ infoHash torrent)
                 , BB.byteString peerId
                 , BB.word64BE (downloaded torrent)
                 , BB.word64BE (left torrent)

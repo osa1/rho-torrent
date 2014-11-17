@@ -10,13 +10,14 @@ import qualified Data.ByteString.Char8   as BC
 import qualified Data.ByteString.Lazy    as LB
 import           Data.Monoid
 
+import           Rho.InfoHash
 import           Rho.Parser
 
 -- | 20-byte peer_id
 newtype PeerId = PeerId B.ByteString deriving (Show, Eq)
 
-mkHandshake :: B.ByteString -> PeerId -> B.ByteString
-mkHandshake infoHash (PeerId peerId) =
+mkHandshake :: InfoHash -> PeerId -> B.ByteString
+mkHandshake (InfoHash infoHash) (PeerId peerId) =
     LB.toStrict . BB.toLazyByteString . mconcat $
       [ BB.word8 19 -- pstr len: standard for BitTorrent protocol
       , BB.byteString "BitTorrent protocol" -- pstr
@@ -28,7 +29,7 @@ mkHandshake infoHash (PeerId peerId) =
       , BB.byteString peerId
       ]
 
-parseHandshake :: B.ByteString -> Either String (B.ByteString, PeerId, B.ByteString)
+parseHandshake :: B.ByteString -> Either String (InfoHash, PeerId, B.ByteString)
 parseHandshake bs =
     case execParser bs handshakeParser of
       Just ((pstr, infoHash, peerId), rest) -> do
@@ -40,11 +41,11 @@ parseHandshake bs =
     assert _   True  = Right ()
     assert err False = Left err
 
-    handshakeParser :: Parser (B.ByteString, B.ByteString, PeerId)
+    handshakeParser :: Parser (B.ByteString, InfoHash, PeerId)
     handshakeParser = do
       pstrLen <- readWord
       pstr <- replicateM (fromIntegral pstrLen) readWord
       _ <- replicateM 8 readWord
       infoHash <- replicateM 20 readWord
       peerId <- replicateM 20 readWord
-      return (B.pack pstr, B.pack infoHash, PeerId $ B.pack peerId)
+      return (B.pack pstr, InfoHash $ B.pack infoHash, PeerId $ B.pack peerId)

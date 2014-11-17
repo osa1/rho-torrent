@@ -11,10 +11,11 @@ import           Data.Maybe              (catMaybes)
 import           Data.Monoid
 import           Network.URI             (unEscapeString)
 
+import           Rho.InfoHash
 import           Rho.Tracker
 
 data Magnet = Magnet
-  { mHash        :: B.ByteString
+  { mHash        :: InfoHash
   , mTrackers    :: [Tracker]
   , mDisplayName :: Maybe String
   } deriving (Show)
@@ -35,9 +36,10 @@ parseMagnet bs = do
 -- | Parse character representation of info hash(e.g. hex notation, two
 -- chars per byte) to byte representation.
 --
--- TODO: We probably need some error handling here.
-parseInfoHash :: B.ByteString -> B.ByteString
-parseInfoHash = LB.toStrict . BB.toLazyByteString . go
+-- TODO: We probably need some error handling here. Make sure info_hash is
+-- 20-byte long.
+parseInfoHash :: B.ByteString -> InfoHash
+parseInfoHash = InfoHash . LB.toStrict . BB.toLazyByteString . go
  where
    go bs =
      case B.uncons bs of

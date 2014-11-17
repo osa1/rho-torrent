@@ -14,6 +14,7 @@ import           Network.Socket            hiding (KeepAlive, recv, recvFrom,
 import           Network.Socket.ByteString
 import           System.IO.Error
 
+import           Rho.InfoHash
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 
@@ -27,7 +28,7 @@ data PeerConn = PeerConn
   , pcInterested     :: Bool
     -- ^ we're interested in something that peer has to offer
   , pcPeerId         :: PeerId
-  , pcOffers         :: [B.ByteString]
+  , pcOffers         :: [InfoHash]
     -- ^ torrents that the peer offers
   , pcSock           :: Socket
     -- ^ socket connected to the peer
@@ -109,7 +110,7 @@ requestMetainfo PeerConn{pcSock=sock} = do
     sent <- send sock msg
     unless (sent == B.length msg) $ putStrLn "Problem while sending extended handshake"
 
-handshake :: PeerCommHandler -> SockAddr -> B.ByteString -> PeerId -> IO ()
+handshake :: PeerCommHandler -> SockAddr -> InfoHash -> PeerId -> IO ()
 handshake PeerCommHandler{pchPeers=peers, pchMsgChan=msgChan} addr infoHash peerId = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
@@ -137,8 +138,8 @@ handshake PeerCommHandler{pchPeers=peers, pchMsgChan=msgChan} addr infoHash peer
 -- the connected socket in case of a success. (e.g. receiving answer to
 -- handshake)
 sendHandshake
-    :: SockAddr -> B.ByteString -> PeerId
-    -> IO (Either String (Socket, B.ByteString, PeerId, B.ByteString))
+    :: SockAddr -> InfoHash -> PeerId
+    -> IO (Either String (Socket, InfoHash, PeerId, B.ByteString))
 sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet aNY_PORT 0)

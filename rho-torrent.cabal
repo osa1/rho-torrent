@@ -20,6 +20,7 @@ library
   exposed-modules:
     Rho.Bitfield
     Rho.Comms
+    Rho.InfoHash
     Rho.Magnet
     Rho.Metainfo
     Rho.Parser
