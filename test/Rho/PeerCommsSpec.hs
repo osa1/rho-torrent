@@ -7,6 +7,7 @@ import           Control.Applicative
 import           Control.Monad
 import qualified Data.ByteString         as B
 import qualified Data.Map                as M
+import           Data.Word
 
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
@@ -28,7 +29,7 @@ spec = do
     modifyMaxSuccess (const 100) $ prop "printing-parsing handshake" $ \(infoHash, peerId) ->
       parseHandshake (mkHandshake infoHash peerId) == Right (infoHash, peerId, "")
 
-    modifyMaxSuccess (const 100000) $ prop "printing-parsing messages (not extended)" $ \msg ->
+    modifyMaxSuccess (const 1000000) $ prop "printing-parsing messages" $ \msg ->
       (mkPeerMsg testMsgTable msg >>= parsePeerMsg) == Right msg
 
 testMsgTable = M.fromList [(UtMetadata, 3)]
@@ -62,7 +63,17 @@ instance Arbitrary PeerMsg where
       , Cancel <$> arbitrary <*> arbitrary <*> arbitrary
       -- TODO: fix this
       -- , Port . fromIntegral <$> (arbitrary :: Gen Word16)
-      -- TODO: add Extended
+      , Extended <$> arbitrary
       ]
 
     shrink _ = [] -- TODO: maybe implement this
+
+instance Arbitrary ExtendedPeerMsg where
+    arbitrary = oneof
+      [ ExtendedHandshake testMsgTable . (:[]) . UtMetadataSize <$> arbitrary
+      , MetadataRequest <$> arbitrary
+      , MetadataData <$> arbitrary <*> arbitrary <*> genBytes 10
+      , MetadataReject <$> arbitrary
+      ]
+
+    shrink _ = undefined
