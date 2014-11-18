@@ -5,13 +5,14 @@ module Rho.PeerCommsSpec where
 
 import           Control.Applicative
 import           Control.Monad
-import qualified Data.ByteString           as B
+import qualified Data.ByteString         as B
+import qualified Data.Map                as M
 
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
-import           Test.QuickCheck           hiding (Result)
+import           Test.QuickCheck         hiding (Result)
 
-import qualified Rho.Bitfield              as BF
+import qualified Rho.Bitfield            as BF
 import           Rho.InfoHash
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
@@ -21,14 +22,14 @@ main = hspec spec
 
 spec :: Spec
 spec = do
-  describe "handshake" $ do
+  describe "messaging with peers" $ do
     -- no need to test a lot of times since only thing that'll chance is
     -- info_hash and peer_id
     modifyMaxSuccess (const 100) $ prop "printing-parsing handshake" $ \(infoHash, peerId) ->
       parseHandshake (mkHandshake infoHash peerId) == Right (infoHash, peerId, "")
 
-    modifyMaxSuccess (const 100000) $ prop "printing-parsing messages" $ \msg ->
-      parsePeerMsg (mkPeerMsg msg) == Just msg
+    modifyMaxSuccess (const 100000) $ prop "printing-parsing messages (not extended)" $ \msg ->
+      parsePeerMsg M.empty (mkPeerMsg msg) == Just msg
 
 genBytes :: Int -> Gen B.ByteString
 genBytes n = B.pack `fmap` replicateM n arbitrary

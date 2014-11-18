@@ -13,6 +13,7 @@ import qualified Data.BEncode            as BE
 import qualified Data.ByteString         as B
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy    as LB
+import qualified Data.Map                as M
 import           Data.Monoid
 import           Data.Word
 import           Network.Socket          hiding (KeepAlive)
@@ -42,9 +43,18 @@ data PeerMsg
   | Extended ExtendedPeerMsg
   deriving (Show, Eq)
 
+-- | Extended peer message ids as determined in handshake.
+type ExtendedPeerMsgTable = M.Map Word8 ExtendedPeerMsgType
+
+data ExtendedPeerMsgType
+  = UtMetadata Word32 -- ^ BEP 9, size of metadata
+  deriving (Show, Eq)
+
 data ExtendedPeerMsg
+  = ExtendedHandshake ExtendedPeerMsgTable
+  | UnknownExtendedMsg Word8
   -- Messages from BEP 9
-  = MetadataRequest Word32 -- ^ piece index
+  | MetadataRequest Word32 -- ^ piece index
   | MetadataData
         Word32 -- ^ piece index
         Word64 -- ^ total size, in bytes
@@ -80,8 +90,8 @@ mkPeerMsg' (Port (PortNum w16)) =
     [BB.word32BE 3, BB.word8 9, BB.word16LE w16 {- TODO: not sure about endianness of port -}]
 -- TODO: implement extensions
 
-parsePeerMsg :: B.ByteString -> Maybe PeerMsg
-parsePeerMsg bs = fmap fst $ execParser bs $ do
+parsePeerMsg :: ExtendedPeerMsgTable -> B.ByteString -> Maybe PeerMsg
+parsePeerMsg msgTable bs = fmap fst $ execParser bs $ do
     len <- readWord32
     if len == 0
       then return KeepAlive
@@ -104,35 +114,46 @@ parsePeerMsg bs = fmap fst $ execParser bs $ do
       7 -> Piece <$> readWord32 <*> readWord32 <*> consume
       8 -> Cancel <$> readWord32 <*> readWord32 <*> readWord32
       9 -> Port . PortNum <$> readWord16LE
-      20 -> Extended <$> parseExtendedPeerMsg len
+      20 -> Extended <$> parseExtendedPeerMsg msgTable len
       _ -> fail $ "Unknown peer message id: " ++ show msgId
 
-parseExtendedPeerMsg :: Word32 -> Parser ExtendedPeerMsg
-parseExtendedPeerMsg len = do
-    extendedMsgType <- readWord -- could that be anything other than `1`?
-    if extendedMsgType == 1
-      then do
-        -- TODO: redundant bytecode unpacking/packing here?
-        payload <- replicateM (fromIntegral $ len - 2) readWord
-        bc <- p $ BE.decode (B.pack payload)
-        mdict <- p $ getField bc "m"
-        case getField mdict "ut_metadata" of
-          Left _ -> fail "Can't read ut_metadata"
-          Right (BE.BInteger 3) -> parseMsg bc
-          Right b -> fail $ "Unknown bencode in ut_metadata: " ++ show b
-      else fail $ "Unknown extended message type: " ++ show extendedMsgType
+parseExtendedPeerMsg :: ExtendedPeerMsgTable -> Word32 -> Parser ExtendedPeerMsg
+parseExtendedPeerMsg extendedMsgTable len = do
+    extendedMsgType <- readWord
+    -- TODO: redundant bytestring unpacking/packing here
+    payload <- B.pack <$> replicateM (fromIntegral len - 2) readWord
+    if extendedMsgType == 0
+      then ExtendedHandshake <$> parseExtendedHandshake payload
+      else parseExtendedMsg extendedMsgType payload
   where
     p :: Either String a -> Parser a
     p = either fail return
 
-    parseMsg :: BE.BValue -> Parser ExtendedPeerMsg
-    parseMsg bc = do
-      msgType <- p $ getField bc "msg_type" :: Parser Integer
+    parseExtendedHandshake :: B.ByteString -> Parser ExtendedPeerMsgTable
+    parseExtendedHandshake payload = do
+      bc <- p $ BE.decode payload
+      mdict <- p $ getField bc "m"
+      case getField mdict "ut_metadata" of
+        Left _ -> return M.empty
+        Right (BE.BInteger i) -> do
+          size <- p $ getField bc "metadata_size" :: Parser Word32
+          return $ M.singleton (fromIntegral i) (UtMetadata size)
+        Right bv -> fail $ "ut_metadata value is not a number: " ++ show bv
+
+    parseExtendedMsg :: Word8 -> B.ByteString -> Parser ExtendedPeerMsg
+    parseExtendedMsg t payload =
+      case M.lookup t extendedMsgTable of
+        Nothing -> return $ UnknownExtendedMsg t
+        Just (UtMetadata _) -> parseUtMetadataMsg payload
+
+    parseUtMetadataMsg :: B.ByteString -> Parser ExtendedPeerMsg
+    parseUtMetadataMsg payload = do
+      bc <- p $ BE.decode payload
+      msgType <- p $ getField bc "msg_type" :: Parser Word8
       case msgType of
         0 -> MetadataRequest <$> p (getField bc "piece")
-        1 ->
-          MetadataData <$> p (getField bc "piece")
-                       <*> p (getField bc "total_size")
-                       <*> consume
+        1 -> MetadataData <$> p (getField bc "piece")
+                          <*> p (getField bc "total_size")
+                          <*> consume
         2 -> MetadataReject <$> p (getField bc "piece")
         _ -> fail $ "Unknown ut_metadata type: " ++ show msgType

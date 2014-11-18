@@ -82,6 +82,7 @@ test-suite test
       base >=4.7 && <5
     , bencoding
     , bytestring
+    , containers
     , directory
     , filepath
     , hspec

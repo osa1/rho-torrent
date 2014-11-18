@@ -99,7 +99,8 @@ handlePeerMsg peers peerAddr peerSock peerMsg = do
             -- TODO: we don't seed yet
             putStrLn "Ignoring an incoming handshake."
       Just peerConn ->
-        case parsePeerMsg peerMsg of
+        -- TODO: handle peer msg tables
+        case parsePeerMsg M.empty peerMsg of
           Nothing -> putStrLn "Can't parse peer msg."
           Just msg -> putStrLn $ "Parsed a peer msg: " ++ show msg
 
