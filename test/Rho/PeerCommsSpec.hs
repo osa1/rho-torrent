@@ -29,7 +29,9 @@ spec = do
       parseHandshake (mkHandshake infoHash peerId) == Right (infoHash, peerId, "")
 
     modifyMaxSuccess (const 100000) $ prop "printing-parsing messages (not extended)" $ \msg ->
-      parsePeerMsg M.empty (mkPeerMsg msg) == Just msg
+      (mkPeerMsg testMsgTable msg >>= parsePeerMsg) == Right msg
+
+testMsgTable = M.fromList [(UtMetadata, 3)]
 
 genBytes :: Int -> Gen B.ByteString
 genBytes n = B.pack `fmap` replicateM n arbitrary

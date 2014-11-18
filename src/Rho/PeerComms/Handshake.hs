@@ -32,10 +32,10 @@ mkHandshake (InfoHash infoHash) (PeerId peerId) =
 parseHandshake :: B.ByteString -> Either String (InfoHash, PeerId, B.ByteString)
 parseHandshake bs =
     case execParser bs handshakeParser of
-      Just ((pstr, infoHash, peerId), rest) -> do
+      Right ((pstr, infoHash, peerId), rest) -> do
         assert ("Unknown pstr: " ++ BC.unpack pstr) (pstr == "BitTorrent protocol")
         return (infoHash, peerId, rest)
-      Nothing -> Left "Can't parse handshake message."
+      Left err -> Left $ "Can't parse handshake message: " ++ err
   where
     assert :: String -> Bool -> Either String ()
     assert _   True  = Right ()

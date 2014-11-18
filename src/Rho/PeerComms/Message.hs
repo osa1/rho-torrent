@@ -1,15 +1,11 @@
 {-# LANGUAGE NondecreasingIndentation, OverloadedStrings #-}
 
-module Rho.PeerComms.Message
-  ( PeerMsg (..)
-  , ExtendedPeerMsg (..)
-  , mkPeerMsg
-  , parsePeerMsg
-  ) where
+module Rho.PeerComms.Message where
 
 import           Control.Applicative
 import           Control.Monad
 import qualified Data.BEncode            as BE
+import qualified Data.BEncode.BDict      as BE
 import qualified Data.ByteString         as B
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy    as LB
@@ -44,14 +40,33 @@ data PeerMsg
   deriving (Show, Eq)
 
 -- | Extended peer message ids as determined in handshake.
-type ExtendedPeerMsgTable = M.Map Word8 ExtendedPeerMsgType
+type ExtendedPeerMsgTable = M.Map ExtendedPeerMsgType Word8
 
 data ExtendedPeerMsgType
-  = UtMetadata Word32 -- ^ BEP 9, size of metadata
+  = UtMetadata -- ^ BEP 9
+  deriving (Show, Eq, Ord)
+
+-- | BDict keys of extended peer message types to be used while generating
+-- m-dictionaries.
+extendedPeerMsgTypeKey :: ExtendedPeerMsgType -> BE.BKey {- = B.ByteString -}
+extendedPeerMsgTypeKey UtMetadata = "ut_metadata"
+
+uT_METADATA_KEY :: Word8
+uT_METADATA_KEY = 3
+
+-- | We keep extra data of extensions in handshakes in a separate data
+-- type. Ugly, but I don't know any better ways to handle this right now.
+data ExtendedMsgTypeData
+  = UtMetadataSize Word32
   deriving (Show, Eq)
 
 data ExtendedPeerMsg
-  = ExtendedHandshake ExtendedPeerMsgTable
+  = ExtendedHandshake
+      ExtendedPeerMsgTable
+      -- ^ extended message id table parsed from handshake
+      [ExtendedMsgTypeData]
+      -- ^ extra data about extended message types.
+      -- (metadata_size from ut_metadata etc.)
   | UnknownExtendedMsg Word8
   -- Messages from BEP 9
   | MetadataRequest Word32 -- ^ piece index
@@ -62,36 +77,84 @@ data ExtendedPeerMsg
   | MetadataReject Word32 -- ^ piece index
   deriving (Show, Eq)
 
-mkPeerMsg :: PeerMsg -> B.ByteString
-mkPeerMsg = LB.toStrict . BB.toLazyByteString . mconcat . mkPeerMsg'
+mkPeerMsg :: ExtendedPeerMsgTable -> PeerMsg -> Either String B.ByteString
+mkPeerMsg msgTbl msg = (LB.toStrict . BB.toLazyByteString . mconcat) <$> mkPeerMsg' msgTbl msg
 
-mkPeerMsg' :: PeerMsg -> [BB.Builder]
-mkPeerMsg' KeepAlive = [BB.word32BE 0]
-mkPeerMsg' Choke = [BB.word32BE 1, BB.word8 0]
-mkPeerMsg' Unchoke = [BB.word32BE 1, BB.word8 1]
-mkPeerMsg' Interested = [BB.word32BE 1, BB.word8 2]
-mkPeerMsg' NotInterested = [BB.word32BE 1, BB.word8 3]
-mkPeerMsg' (Have piece) = [BB.word32BE 5, BB.word8 4, BB.word32BE piece]
-mkPeerMsg' (Bitfield (BF.Bitfield bf)) =
+mkPeerMsg' :: ExtendedPeerMsgTable -> PeerMsg -> Either String [BB.Builder]
+mkPeerMsg' _ KeepAlive = return [BB.word32BE 0]
+mkPeerMsg' _ Choke = return [BB.word32BE 1, BB.word8 0]
+mkPeerMsg' _ Unchoke = return [BB.word32BE 1, BB.word8 1]
+mkPeerMsg' _ Interested = return [BB.word32BE 1, BB.word8 2]
+mkPeerMsg' _ NotInterested = return [BB.word32BE 1, BB.word8 3]
+mkPeerMsg' _ (Have piece) = return [BB.word32BE 5, BB.word8 4, BB.word32BE piece]
+mkPeerMsg' _ (Bitfield (BF.Bitfield bf)) = return
     [ BB.word32BE (fromIntegral $ 1 + B.length bf)
     , BB.word8 5
     , BB.byteString bf ]
-mkPeerMsg' (Request pidx offset len) =
+mkPeerMsg' _ (Request pidx offset len) = return
     [BB.word32BE 13, BB.word8 6, BB.word32BE pidx, BB.word32BE offset, BB.word32BE len]
-mkPeerMsg' (Piece pidx offset piece) =
+mkPeerMsg' _ (Piece pidx offset piece) = return
     [ BB.word32BE (fromIntegral $ 9 + B.length piece)
     , BB.word8 7
     , BB.word32BE pidx
     , BB.word32BE offset
     , BB.byteString piece ]
-mkPeerMsg' (Cancel pidx offset len) =
+mkPeerMsg' _ (Cancel pidx offset len) = return
     [BB.word32BE 13, BB.word8 8, BB.word32BE pidx, BB.word32BE offset, BB.word32BE len]
-mkPeerMsg' (Port (PortNum w16)) =
+mkPeerMsg' _ (Port (PortNum w16)) = return
     [BB.word32BE 3, BB.word8 9, BB.word16LE w16 {- TODO: not sure about endianness of port -}]
--- TODO: implement extensions
+-- TODO: ut_metadata message generators have duplicate code
+mkPeerMsg' _ (Extended (ExtendedHandshake tbl tblData)) =
+    let mDictFields :: [(B.ByteString, BE.BValue)]
+        mDictFields = map (\(k, v) -> (extendedPeerMsgTypeKey k, BE.toBEncode v)) $ M.toList tbl
+        fields      :: [(B.ByteString, BE.BValue)]
+        fields      = extendedMsgDataFields tblData
+        -- TODO: sort fields
+        mDict           = BE.fromAscList mDictFields
+        resp            = BE.fromAscList $ ("m", BE.BDict mDict) : fields
+        bcString        = LB.toStrict $ BE.encode resp in
+    return [ BB.word32BE (fromIntegral $ 2 + B.length bcString)
+           , BB.word8 20, BB.word8 0, BB.byteString bcString ]
+  where
+    extendedMsgDataFields :: [ExtendedMsgTypeData] -> [(B.ByteString, BE.BValue)]
+    extendedMsgDataFields = concatMap f
+      where
+        f :: ExtendedMsgTypeData -> [(B.ByteString, BE.BValue)]
+        f (UtMetadataSize s) = [("metadata_size", BE.toBEncode s)]
+mkPeerMsg' _ (Extended UnknownExtendedMsg{}) = Left "Can't generate message for UnknownExtendedMsg"
+mkPeerMsg' tbl (Extended (MetadataRequest pidx)) =
+    case M.lookup UtMetadata tbl of
+      Nothing -> Left "Can't find ut_metadata id in peer message id table."
+      Just i  ->
+        let bcString = LB.toStrict $ BE.encode $ BE.fromAscList
+                         [ ("msg_type", BE.BInteger 0), ("piece", BE.toBEncode pidx) ] in
+        return [ BB.word32BE (fromIntegral $ 2 + B.length bcString)
+               , BB.word8 20, BB.word8 i
+               , BB.byteString bcString ]
+mkPeerMsg' tbl (Extended (MetadataData pidx totalSize piece)) =
+    case M.lookup UtMetadata tbl of
+      Nothing -> Left "Can't find ut_metadata id in peer message id table."
+      Just i  ->
+        let bcString = LB.toStrict $ BE.encode $ BE.fromAscList
+                         [ ("msg_type", BE.BInteger 1)
+                         , ("piece", BE.toBEncode pidx)
+                         , ("total_size", BE.toBEncode totalSize) ] in
+        return [ BB.word32BE (fromIntegral $ 2 + B.length bcString)
+               , BB.word8 20, BB.word8 i
+               , BB.byteString bcString
+               , BB.byteString piece ]
+mkPeerMsg' tbl (Extended (MetadataReject pidx)) =
+    case M.lookup UtMetadata tbl of
+      Nothing -> Left "Can't find ut_metadata id in peer message id table."
+      Just i  ->
+        let bcString = LB.toStrict $ BE.encode $ BE.fromAscList
+                         [ ("msg_type", BE.BInteger 2) , ("piece", BE.toBEncode pidx) ] in
+        return [ BB.word32BE (fromIntegral $ 2 + B.length bcString)
+               , BB.word8 20, BB.word8 i
+               , BB.byteString bcString ]
 
-parsePeerMsg :: ExtendedPeerMsgTable -> B.ByteString -> Maybe PeerMsg
-parsePeerMsg msgTable bs = fmap fst $ execParser bs $ do
+parsePeerMsg :: B.ByteString -> Either String PeerMsg
+parsePeerMsg bs = fmap fst $ execParser bs $ do
     len <- readWord32
     if len == 0
       then return KeepAlive
@@ -114,37 +177,36 @@ parsePeerMsg msgTable bs = fmap fst $ execParser bs $ do
       7 -> Piece <$> readWord32 <*> readWord32 <*> consume
       8 -> Cancel <$> readWord32 <*> readWord32 <*> readWord32
       9 -> Port . PortNum <$> readWord16LE
-      20 -> Extended <$> parseExtendedPeerMsg msgTable len
+      20 -> Extended <$> parseExtendedPeerMsg len
       _ -> fail $ "Unknown peer message id: " ++ show msgId
 
-parseExtendedPeerMsg :: ExtendedPeerMsgTable -> Word32 -> Parser ExtendedPeerMsg
-parseExtendedPeerMsg extendedMsgTable len = do
+parseExtendedPeerMsg :: Word32 -> Parser ExtendedPeerMsg
+parseExtendedPeerMsg len = do
     extendedMsgType <- readWord
     -- TODO: redundant bytestring unpacking/packing here
     payload <- B.pack <$> replicateM (fromIntegral len - 2) readWord
     if extendedMsgType == 0
-      then ExtendedHandshake <$> parseExtendedHandshake payload
+      then uncurry ExtendedHandshake <$> parseExtendedHandshake payload
       else parseExtendedMsg extendedMsgType payload
   where
     p :: Either String a -> Parser a
     p = either fail return
 
-    parseExtendedHandshake :: B.ByteString -> Parser ExtendedPeerMsgTable
+    parseExtendedHandshake :: B.ByteString -> Parser (ExtendedPeerMsgTable, [ExtendedMsgTypeData])
     parseExtendedHandshake payload = do
       bc <- p $ BE.decode payload
       mdict <- p $ getField bc "m"
       case getField mdict "ut_metadata" of
-        Left _ -> return M.empty
+        Left _ -> return (M.empty, [])
         Right (BE.BInteger i) -> do
           size <- p $ getField bc "metadata_size" :: Parser Word32
-          return $ M.singleton (fromIntegral i) (UtMetadata size)
+          return (M.singleton UtMetadata (fromIntegral i), [UtMetadataSize size])
         Right bv -> fail $ "ut_metadata value is not a number: " ++ show bv
 
     parseExtendedMsg :: Word8 -> B.ByteString -> Parser ExtendedPeerMsg
-    parseExtendedMsg t payload =
-      case M.lookup t extendedMsgTable of
-        Nothing -> return $ UnknownExtendedMsg t
-        Just (UtMetadata _) -> parseUtMetadataMsg payload
+    parseExtendedMsg t payload
+      | t == uT_METADATA_KEY = parseUtMetadataMsg payload
+      | otherwise = return $ UnknownExtendedMsg t
 
     parseUtMetadataMsg :: B.ByteString -> Parser ExtendedPeerMsg
     parseUtMetadataMsg payload = do

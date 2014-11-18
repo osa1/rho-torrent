@@ -100,9 +100,9 @@ handlePeerMsg peers peerAddr peerSock peerMsg = do
             putStrLn "Ignoring an incoming handshake."
       Just peerConn ->
         -- TODO: handle peer msg tables
-        case parsePeerMsg M.empty peerMsg of
-          Nothing -> putStrLn "Can't parse peer msg."
-          Just msg -> putStrLn $ "Parsed a peer msg: " ++ show msg
+        case parsePeerMsg peerMsg of
+          Left err  -> putStrLn $ "Can't parse peer msg: " ++ err
+          Right msg -> putStrLn $ "Parsed a peer msg: " ++ show msg
 
 -- | Send extended handshake to request metainfo.
 requestMetainfo :: PeerConn -> IO ()

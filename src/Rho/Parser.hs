@@ -6,7 +6,7 @@ import           Data.Bits
 import qualified Data.ByteString     as B
 import           Data.Word
 
-newtype Parser a = Parser { runParser :: B.ByteString -> Maybe (a, B.ByteString) }
+newtype Parser a = Parser { runParser :: B.ByteString -> Either String (a, B.ByteString) }
 
 instance Functor Parser where
     fmap f (Parser p) = Parser $ \bs -> do
@@ -14,7 +14,7 @@ instance Functor Parser where
       return (f v, bs')
 
 instance Applicative Parser where
-    pure v = Parser $ \bs -> Just (v, bs)
+    pure v = Parser $ \bs -> return (v, bs)
     Parser fn <*> Parser v = Parser $ \bs -> do
       (fn', bs') <- fn bs
       (v', bs'') <- v bs'
@@ -25,24 +25,24 @@ instance Monad Parser where
     Parser p >>= f = Parser $ \bs -> do
       (v, bs') <- p bs
       runParser (f v) bs'
-    fail _ = Parser $ \bs -> Nothing
+    fail err = Parser $ \bs -> Left err
 
-execParser :: B.ByteString -> Parser a -> Maybe (a, B.ByteString)
+execParser :: B.ByteString -> Parser a -> Either String (a, B.ByteString)
 execParser bs (Parser f) = f bs
 
 tryP :: Parser a -> Parser (Maybe a)
 tryP (Parser p) = Parser $ \bs ->
     case p bs of
-      Nothing -> Just (Nothing, bs)
-      Just (p', bs') -> Just (Just p', bs')
+      Left _ -> Right (Nothing, bs)
+      Right (p', bs') -> Right (Just p', bs')
 
 -- | Return rest of the input. Parsing will fail after this step.
 --
 -- >>> execParser (B.pack [45, 45, 45, 45]) consume
--- Just ("----","")
+-- Right ("----","")
 --
 consume :: Parser B.ByteString
-consume = Parser $ \bs -> Just (bs, B.empty)
+consume = Parser $ \bs -> return (bs, B.empty)
 
 -- | Try to read Word32.
 --
@@ -50,15 +50,18 @@ consume = Parser $ \bs -> Just (bs, B.empty)
 --   execParser (B.pack [1, 2, 3, 4])
 --     ((,,,) <$> readWord <*> readWord <*> readWord <*> readWord)
 -- :}
--- Just ((1,2,3,4),"")
+-- Right ((1,2,3,4),"")
 --
 readWord :: Parser Word8
-readWord = Parser B.uncons
+readWord = Parser $ \bs ->
+    case B.uncons bs of
+      Nothing        -> Left "Can't read word: end of string."
+      Just (b, rest) -> return (b, rest)
 
 -- | Try to read little-endian Word16 from big-endian byte string.
 --
 -- >>> execParser (B.pack [1, 0]) readWord16LE
--- Just (1,"")
+-- Right (1,"")
 --
 readWord16LE :: Parser Word16
 readWord16LE = do
@@ -69,7 +72,7 @@ readWord16LE = do
 -- | Try to read Word32 from big-endian byte string.
 --
 -- >>> execParser (B.pack [1, 2, 3, 4]) readWord32
--- Just (16909060,"")
+-- Right (16909060,"")
 --
 readWord32 :: Parser Word32
 readWord32 = do
@@ -97,7 +100,7 @@ readWord32LE = do
 -- | Try to read Word64 from big-endian byte string.
 --
 -- >>> execParser (B.pack [1, 2, 3, 4, 5, 6, 7, 8, 45]) readWord64
--- Just (72623859790382856,"-")
+-- Right (72623859790382856,"-")
 --
 readWord64 :: Parser Word64
 readWord64 = do

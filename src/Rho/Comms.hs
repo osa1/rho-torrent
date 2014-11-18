@@ -87,8 +87,7 @@ peerRequestHTTP (PeerId peerId) uri torrent metainfo = do
               -- (in case of compact form). currently only compact form
               -- is handled.
               peers_bs <- getField bv "peers"
-              peers <- maybe (Left "Can't parse peers.") (Right . fst) $
-                         execParser peers_bs readAddrs
+              peers <- fmap fst $ execParser peers_bs readAddrs
               return $ PeerResponse (fromMaybe interval minInterval)
                                     incomplete
                                     complete
@@ -218,19 +217,19 @@ spawnResponseHandler dataChan cbs peerRps = do
         (resp, src) <- readChan dataChan
         putStrLn $ "Got response from " ++ show src
         case execParser resp readWord32 of
-          Just (0, resp') -> handleConnectResp resp' cbs
-          Just (1, resp') -> handleAnnounceResp resp' peerRps
-          Just (2, resp') -> handleScrapeResp resp'
-          Just (3, resp') -> handleErrorResp resp' cbs
-          Just (n, _) -> putStrLn $ "Unknown response: " ++ show n
-          Nothing -> putStrLn $ "Got ill-formed response"
+          Right (0, resp') -> handleConnectResp resp' cbs
+          Right (1, resp') -> handleAnnounceResp resp' peerRps
+          Right (2, resp') -> handleScrapeResp resp'
+          Right (3, resp') -> handleErrorResp resp' cbs
+          Right (n, _)     -> putStrLn $ "Unknown response: " ++ show n
+          Left err         -> putStrLn $ "Got ill-formed response: " ++ err
         responseHandler
 
 handleConnectResp :: B.ByteString -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
 handleConnectResp bs cbs = do
     case parseResp of
-      Nothing -> putStrLn "Can't parse connect response."
-      Just (tid, cid) -> do
+      Left err         -> putStrLn $ "Can't parse connect response: " ++ err
+      Right (tid, cid) -> do
         putStrLn $ "Connection id for transaction id " ++ show tid ++ ": " ++ show cid
         cbMap <- readMVar cbs
         case M.lookup tid cbMap of
@@ -239,7 +238,7 @@ handleConnectResp bs cbs = do
             putStrLn "Found a callback. Running..."
             cb cid
   where
-    parseResp :: Maybe (TransactionId, ConnectionId)
+    parseResp :: Either String (TransactionId, ConnectionId)
     parseResp = fmap fst . execParser bs $ do
       tid <- readWord32
       cid <- readWord64
@@ -249,15 +248,15 @@ handleAnnounceResp :: B.ByteString -> MVar (M.Map TransactionId (MVar PeerRespon
 handleAnnounceResp bs peerRps = do
     putStrLn "handling announce response"
     case parseResp of
-      Nothing -> putStrLn "Can't parse announce response."
-      Just (tid, ret) -> do
+      Left err         -> putStrLn $ "Can't parse announce response: " ++ err
+      Right (tid, ret) -> do
         respVar <- modifyMVar peerRps $
           \m -> return (M.delete tid m, M.lookup tid m)
         case respVar of
           Nothing -> putStrLn "Got unexpected announce response."
           Just respVar' -> putMVar respVar' ret
   where
-    parseResp :: Maybe (TransactionId, PeerResponse)
+    parseResp :: Either String (TransactionId, PeerResponse)
     parseResp = fmap fst . execParser bs $ do
       tid <- readWord32
       interval <- readWord32
@@ -285,13 +284,13 @@ handleScrapeResp _ = putStrLn "handling scrape response"
 handleErrorResp :: B.ByteString -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
 handleErrorResp bs cbs = do
     case parseResp of
-      Nothing -> putStrLn "Can't parse error response"
-      Just (tid, msg) -> do
+      Left err         -> putStrLn $ "Can't parse error response: " ++ err
+      Right (tid, msg) -> do
         putStrLn $ "Error response for " ++ show tid ++ ": " ++ msg
         putStrLn $ "Removing callbacks for " ++ show tid
         modifyMVar_ cbs $ return . M.delete tid
   where
-    parseResp :: Maybe (TransactionId, String)
+    parseResp :: Either String (TransactionId, String)
     parseResp = fmap fst . execParser bs $ do
       transactionId <- readWord32
       msg <- consume
