@@ -1,11 +1,19 @@
 {-# LANGUAGE NondecreasingIndentation, OverloadedStrings #-}
 
-module Rho.PeerComms.Message where
+module Rho.PeerComms.Message
+  ( PeerMsg (..)
+  , ExtendedPeerMsg (..)
+  , mkPeerMsg
+  , parsePeerMsg
+  ) where
 
 import           Control.Applicative
 import           Control.Monad
 import qualified Data.BEncode            as BE
 import qualified Data.ByteString         as B
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy    as LB
+import           Data.Monoid
 import           Data.Word
 import           Network.Socket          hiding (KeepAlive)
 
@@ -32,7 +40,7 @@ data PeerMsg
            Word32 -- ^ length
   | Port PortNumber
   | Extended ExtendedPeerMsg
-  deriving (Show)
+  deriving (Show, Eq)
 
 data ExtendedPeerMsg
   -- Messages from BEP 9
@@ -42,7 +50,35 @@ data ExtendedPeerMsg
         Word64 -- ^ total size, in bytes
         B.ByteString -- ^ data
   | MetadataReject Word32 -- ^ piece index
-  deriving (Show)
+  deriving (Show, Eq)
+
+mkPeerMsg :: PeerMsg -> B.ByteString
+mkPeerMsg = LB.toStrict . BB.toLazyByteString . mconcat . mkPeerMsg'
+
+mkPeerMsg' :: PeerMsg -> [BB.Builder]
+mkPeerMsg' KeepAlive = [BB.word32BE 0]
+mkPeerMsg' Choke = [BB.word32BE 1, BB.word8 0]
+mkPeerMsg' Unchoke = [BB.word32BE 1, BB.word8 1]
+mkPeerMsg' Interested = [BB.word32BE 1, BB.word8 2]
+mkPeerMsg' NotInterested = [BB.word32BE 1, BB.word8 3]
+mkPeerMsg' (Have piece) = [BB.word32BE 5, BB.word8 4, BB.word32BE piece]
+mkPeerMsg' (Bitfield (BF.Bitfield bf)) =
+    [ BB.word32BE (fromIntegral $ 1 + B.length bf)
+    , BB.word8 5
+    , BB.byteString bf ]
+mkPeerMsg' (Request pidx offset len) =
+    [BB.word32BE 13, BB.word8 6, BB.word32BE pidx, BB.word32BE offset, BB.word32BE len]
+mkPeerMsg' (Piece pidx offset piece) =
+    [ BB.word32BE (fromIntegral $ 9 + B.length piece)
+    , BB.word8 7
+    , BB.word32BE pidx
+    , BB.word32BE offset
+    , BB.byteString piece ]
+mkPeerMsg' (Cancel pidx offset len) =
+    [BB.word32BE 13, BB.word8 8, BB.word32BE pidx, BB.word32BE offset, BB.word32BE len]
+mkPeerMsg' (Port (PortNum w16)) =
+    [BB.word32BE 3, BB.word8 9, BB.word16LE w16 {- TODO: not sure about endianness of port -}]
+-- TODO: implement extensions
 
 parsePeerMsg :: B.ByteString -> Maybe PeerMsg
 parsePeerMsg bs = fmap fst $ execParser bs $ do
