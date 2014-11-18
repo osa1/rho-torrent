@@ -32,6 +32,7 @@ data PeerConn = PeerConn
     -- ^ torrents that the peer offers
   , pcSock           :: Socket
     -- ^ socket connected to the peer
+  , pcExtendedMsgTbl :: ExtendedPeerMsgTable
   } deriving (Show)
 
 data PeerCommHandler = PeerCommHandler
@@ -125,7 +126,8 @@ handshake PeerCommHandler{pchPeers=peers, pchMsgChan=msgChan} addr infoHash peer
               spawnConnectedSockListener sock addr msgChan
               -- TODO: check info_hash
               putStrLn "Handshake successful"
-              return $ M.insert addr (PeerConn True False True False peerId [infoHash] sock) peers'
+              let peerConn = PeerConn True False True False peerId [infoHash] sock M.empty
+              return $ M.insert addr peerConn peers'
             Just pc -> do
               -- probably learned about a new torrent
               putStrLn "Handshake successful"
