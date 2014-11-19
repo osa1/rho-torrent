@@ -35,12 +35,11 @@ data PeerConn = PeerConn
   , pcExtendedMsgTbl :: ExtendedPeerMsgTable
   } deriving (Show)
 
+-- | Stat of peers, shared between workers.
+type PeersState = MVar (M.Map SockAddr PeerConn)
+
 data PeerCommHandler = PeerCommHandler
-  { pchPeers   :: MVar (M.Map SockAddr PeerConn)
-  , pchMsgChan :: Chan (SockAddr, Socket, B.ByteString)
-  -- , pchSock  :: Socket
-    -- ^ socket used to listen incoming messages
-  }
+  { pchPeers :: PeersState }
 
 -- | Initialize listeners, data structures etc. for peer communications.
 initPeerCommsHandler :: IO PeerCommHandler
@@ -50,92 +49,86 @@ initPeerCommsHandler = do
     -- sock for incoming connections
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet (fromIntegral (5433 :: Int)) 0) -- TODO: hard-coded port
-    -- channel from from socket listeners to message handler
-    msgChan <- newChan
-    _ <- spawnPeerSockListener sock msgChan
-    async $ peerMsgHandler peers msgChan
-    return $ PeerCommHandler peers msgChan
+    -- We don't block the thread that listens for incoming handshakes
+    void $ async $ listenPeerSocket sock peers
+    return $ PeerCommHandler peers
 
 -- | Accept incoming connections and spawn a connected socket listener for
 -- every accepted connection.
-spawnPeerSockListener :: Socket -> Chan (SockAddr, Socket, B.ByteString) -> IO (Async ())
-spawnPeerSockListener sock msgChan = async loop
-  where
-    loop = do
-      (peerSocket, peerAddr) <- accept sock
-      spawnConnectedSockListener peerSocket peerAddr msgChan
-      loop
-
--- | Listen socket of a connected peer and send bytes to channel.
-spawnConnectedSockListener
-    :: Socket -> SockAddr -> Chan (SockAddr, Socket, B.ByteString) -> IO (Async ())
-spawnConnectedSockListener sock sockAddr msgChan = async loop
-  where
-    loop = do
-      msg <- recv sock 10000
-      -- empty message == closed connection
-      if B.null msg
-        then putStrLn "Closing connection with a peer."
-        else do
-          writeChan msgChan (sockAddr, sock, msg)
-          loop
-
--- | Parse incoming bytes and update data structures.
-peerMsgHandler :: MVar (M.Map SockAddr PeerConn) -> Chan (SockAddr, Socket, B.ByteString) -> IO ()
-peerMsgHandler peers msgChan = do
-    (peerAddr, peerSock, peerMsg) <- readChan msgChan
-    handlePeerMsg peers peerAddr peerSock peerMsg
-    peerMsgHandler peers msgChan
-
-handlePeerMsg :: MVar (M.Map SockAddr PeerConn) -> SockAddr -> Socket -> B.ByteString -> IO ()
-handlePeerMsg peers peerAddr peerSock peerMsg = do
+listenPeerSocket :: Socket -> PeersState -> IO ()
+listenPeerSocket sock peers = do
+    (peerSock, peerAddr) <- accept sock
     -- have we established a connection with the peer?
     peers' <- readMVar peers
-    case M.lookup peerAddr peers' of
-      Nothing ->
-        -- message has to be handshake
-        case parseHandshake peerMsg of
-          Left err -> putStrLn $ "Can't parse handshake: " ++ err
-          Right (_infoHash, _peerId, _msg) -> do
-            -- TODO: we don't seed yet
-            putStrLn "Ignoring an incoming handshake."
-      Just peerConn ->
-        -- TODO: handle peer msg tables
-        case parsePeerMsg peerMsg of
-          Left err  -> putStrLn $ "Can't parse peer msg: " ++ err
-          Right msg -> putStrLn $ "Parsed a peer msg: " ++ show msg
+    if M.member peerAddr peers'
+      then
+        void $ async $ listenConnectedSock peerSock peerAddr peers
+      else
+        -- we should have a handshake message as first thing
+        void $ async $ listenHandshake peerSock peerAddr peers
+    listenPeerSocket sock peers
 
--- | Send extended handshake to request metainfo.
-requestMetainfo :: PeerConn -> IO ()
-requestMetainfo PeerConn{pcSock=sock} = do
-    let msg = "d8:msg_typei0e5:piecei0ee"
-    sent <- send sock msg
-    unless (sent == B.length msg) $ putStrLn "Problem while sending extended handshake"
+-- | Wait for an incoming handshake, update peers state upon successfully
+-- parsing the handshake and continue listening the connected socket.
+listenHandshake :: Socket -> SockAddr -> PeersState -> IO ()
+listenHandshake peerSock _peerAddr _peers = void $ async $ do
+    msg <- recv peerSock 1000
+    case parseHandshake msg of
+      Left err -> putStrLn $ "Can't parse handshake: " ++ err
+      Right (_infoHash, _peerId, _extra) -> do
+        -- TODO: we don't seed yet
+        putStrLn "Ignoring an incoming handshake."
+
+-- | Listen a connected socket and handle incoming messages.
+listenConnectedSock :: Socket -> SockAddr -> PeersState -> IO ()
+listenConnectedSock sock sockAddr peers = flip catchIOError errHandler $ do
+    msg <- recv sock 10000
+    -- empty message == connection closed
+    if B.null msg
+      then do
+        putStrLn $ "Connection closed with peer: " ++ show sockAddr
+        closeConn
+      else do
+        handleMessage msg sock sockAddr peers
+        listenConnectedSock sock sockAddr peers
+  where
+    errHandler err = do
+      putStrLn $ "Error happened while listening a socket: " ++ show err
+                  ++ ". Closing the connection."
+      closeConn
+
+    closeConn = modifyMVar_ peers $ return . M.delete sockAddr
+
+handleMessage :: B.ByteString -> Socket -> SockAddr -> PeersState -> IO ()
+handleMessage msg _sock _sockAddr _peers = do
+    case parsePeerMsg msg of
+      Left err -> putStrLn $ "Can't parse peer message: " ++ err
+      Right pmsg -> putStrLn $ "Parsed peer msg: " ++ show pmsg
 
 handshake :: PeerCommHandler -> SockAddr -> InfoHash -> PeerId -> IO ()
-handshake PeerCommHandler{pchPeers=peers, pchMsgChan=msgChan} addr infoHash peerId = do
+handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
       Left err -> putStrLn $ "Can't establish connection: " ++ err
-      Right (sock, infoHash, peerId, msg) -> do
-        modifyMVar_ peers $ \peers' ->
-          case M.lookup addr peers' of
-            Nothing -> do
-              -- first time handshaking with the peer, spawn a socket
-              -- listener
-              spawnConnectedSockListener sock addr msgChan
-              -- TODO: check info_hash
-              putStrLn "Handshake successful"
-              let peerConn = PeerConn True False True False peerId [infoHash] sock M.empty
-              return $ M.insert addr peerConn peers'
-            Just pc -> do
-              -- probably learned about a new torrent
-              putStrLn "Handshake successful"
-              -- we already knew about this peer, so there should be
-              -- a thread listening for messages from this socket. no need
-              -- to create a new one.
-              return $ M.insert addr pc{pcOffers = infoHash : pcOffers pc} peers'
-        writeChan msgChan (addr, sock, msg)
+      Right (sock, infoHash', peerId', extra) -> do
+        putStrLn "Handshake successful"
+        peers' <- takeMVar peers
+        case M.lookup addr peers' of
+          Nothing -> do
+            -- first time handshaking with the peer, spawn a socket
+            -- listener
+            void $ async $ listenConnectedSock sock addr peers
+            -- TODO: check info_hash
+            let peerConn = PeerConn True False True False peerId [infoHash] sock M.empty
+            putMVar peers $ M.insert addr peerConn peers'
+          Just pc -> do
+            -- probably learned about a new torrent
+            -- since we already knew about this peer, there should be
+            -- a thread listening for messages from this socket. no need
+            -- to create a new one.
+            putMVar peers $ M.insert addr pc{pcOffers = infoHash : pcOffers pc} peers'
+            -- handle extra message
+            handleMessage extra (pcSock pc) addr peers
 
 -- | Send a handshake message to given target using a fresh socket. Return
 -- the connected socket in case of a success. (e.g. receiving answer to
@@ -150,10 +143,10 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     let msg = mkHandshake infoHash peerId
     connect sock addr
     sent <- send sock msg
-    msg <- recv sock 10000
-    case parseHandshake msg of
+    bytes <- recv sock 10000
+    case parseHandshake bytes of
       Left err -> return $ Left err
-      Right (infoHash, peerId, msg) -> return $ Right (sock, infoHash, peerId, msg)
+      Right (infoHash', peerId', extra) -> return $ Right (sock, infoHash', peerId', extra)
   where
     errHandler err@IOError{ioe_type=NoSuchThing} =
       return $ Left $ "Problems with connection: " ++ show err
