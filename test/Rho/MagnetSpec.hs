@@ -47,6 +47,7 @@ scrapeMagnets :: IO ()
 scrapeMagnets = do
     putStrLn "Fetching torrent site contents."
     (_, rsp) <- browse $ do
+      setOutHandler (const $ return ())
       setAllowRedirects True
       -- hopefully this URL will continue serving HD-movies listing
       request $ getRequest "http://thepiratebay.se/top/207"

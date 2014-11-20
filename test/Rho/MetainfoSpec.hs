@@ -43,7 +43,6 @@ shouldParse :: Test
 shouldParse = TestCase $ do
   tfs <- getFiles "tests/should_parse"
   sequence_ $ flip map tfs $ \(f, c) -> do
-    putStrLn $ "parsing: " ++ f
     assertBool ("Can't parse torrent file: " ++ f) $ isRight (decode c :: Result Metainfo)
 
 shouldNotParse :: Test
