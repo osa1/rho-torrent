@@ -15,6 +15,7 @@ import           Network.Socket.ByteString
 import           System.IO.Error
 import qualified System.Log.Logger         as L
 
+import           Rho.Bitfield
 import           Rho.InfoHash
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
@@ -29,12 +30,17 @@ data PeerConn = PeerConn
   , pcInterested     :: Bool
     -- ^ we're interested in something that peer has to offer
   , pcPeerId         :: PeerId
-  , pcOffers         :: [InfoHash]
-    -- ^ torrents that the peer offers
+  , pcOffers         :: InfoHash
+    -- ^ torrent that the peer offers
+  , pcPieces         :: Maybe Bitfield
+    -- TODO: remove Maybe and initialize with empty bitfield
   , pcSock           :: Socket
     -- ^ socket connected to the peer
   , pcExtendedMsgTbl :: ExtendedPeerMsgTable
   } deriving (Show)
+
+newPeerConn :: PeerId -> InfoHash -> Socket -> PeerConn
+newPeerConn peerId infoHash sock = PeerConn True False True False peerId infoHash Nothing sock M.empty
 
 -- | Stat of peers, shared between workers.
 type PeersState = MVar (M.Map SockAddr PeerConn)
@@ -123,14 +129,12 @@ handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
             -- listener
             void $ async $ listenConnectedSock sock addr peers
             -- TODO: check info_hash
-            let peerConn = PeerConn True False True False peerId [infoHash] sock M.empty
+            let peerConn = newPeerConn peerId' infoHash' sock
             putMVar peers $ M.insert addr peerConn peers'
           Just pc -> do
-            -- probably learned about a new torrent
-            -- since we already knew about this peer, there should be
-            -- a thread listening for messages from this socket. no need
-            -- to create a new one.
-            putMVar peers $ M.insert addr pc{pcOffers = infoHash : pcOffers pc} peers'
+            -- TODO: I don't know how can this happen. We already
+            -- established a connection. Just reset the peer info.
+            putMVar peers $ M.insert addr (newPeerConn peerId' infoHash' sock) peers'
             -- handle extra message
             handleMessage extra (pcSock pc) addr peers
 
