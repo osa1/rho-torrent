@@ -8,6 +8,7 @@ import           Control.Concurrent.Async
 import           Control.Monad
 import qualified Data.ByteString           as B
 import qualified Data.Map                  as M
+import           Data.Maybe
 import           GHC.IO.Exception
 import           Network.Socket            hiding (KeepAlive, recv, recvFrom,
                                             send, sendTo)
@@ -15,7 +16,7 @@ import           Network.Socket.ByteString
 import           System.IO.Error
 import qualified System.Log.Logger         as L
 
-import           Rho.Bitfield
+import qualified Rho.Bitfield              as BF
 import           Rho.InfoHash
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
@@ -32,7 +33,7 @@ data PeerConn = PeerConn
   , pcPeerId         :: PeerId
   , pcOffers         :: InfoHash
     -- ^ torrent that the peer offers
-  , pcPieces         :: Maybe Bitfield
+  , pcPieces         :: Maybe BF.Bitfield
     -- TODO: remove Maybe and initialize with empty bitfield
   , pcSock           :: Socket
     -- ^ socket connected to the peer
@@ -109,10 +110,24 @@ listenConnectedSock sock sockAddr peers = flip catchIOError errHandler $ do
     closeConn = modifyMVar_ peers $ return . M.delete sockAddr
 
 handleMessage :: B.ByteString -> Socket -> SockAddr -> PeersState -> IO ()
-handleMessage msg _sock _sockAddr _peers = do
+handleMessage msg _sock peerAddr peers = do
     case parsePeerMsg msg of
       Left err -> warning $ "Can't parse peer message: " ++ err ++ " msg: " ++ show (B.unpack msg)
-      Right pmsg -> putStrLn $ "Parsed peer msg: " ++ show pmsg
+      Right (Bitfield bf) ->
+        withPeer $ \peers' pc ->
+          return (M.insert peerAddr (pc{pcPieces = Just bf}) peers')
+      Right (Have piece) ->
+        withPeer $ \peers' pc -> do
+          let bf' = Just $ BF.set (fromMaybe BF.empty $ pcPieces pc) (fromIntegral piece)
+          return (M.insert peerAddr (pc{pcPieces = bf'}) peers')
+      Right pmsg -> putStrLn $ "Unhandled peer msg: " ++ show pmsg
+  where
+    withPeer :: (M.Map SockAddr PeerConn -> PeerConn -> IO (M.Map SockAddr PeerConn)) -> IO ()
+    withPeer f =
+      modifyMVar_ peers $ \peers' ->
+        case M.lookup peerAddr peers' of
+          Nothing -> errorLog "Can't find peer in peers state" >> return peers'
+          Just pc -> f peers' pc
 
 handshake :: PeerCommHandler -> SockAddr -> InfoHash -> PeerId -> IO ()
 handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
@@ -175,3 +190,6 @@ logger = "Rho.PeerComms"
 
 warning :: String -> IO ()
 warning = L.warningM logger
+
+errorLog :: String -> IO ()
+errorLog = L.errorM logger
