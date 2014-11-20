@@ -113,15 +113,21 @@ handleMessage :: B.ByteString -> Socket -> SockAddr -> PeersState -> IO ()
 handleMessage msg _sock peerAddr peers = do
     case parsePeerMsg msg of
       Left err -> warning $ "Can't parse peer message: " ++ err ++ " msg: " ++ show (B.unpack msg)
-      Right (Bitfield bf) ->
-        withPeer $ \peers' pc ->
-          return (M.insert peerAddr (pc{pcPieces = Just bf}) peers')
+      Right KeepAlive -> return () -- TODO: should I ignore keep-alives?
+      Right (Bitfield bf) -> modifyPeerState $ \pc -> pc{pcPieces = Just bf}
       Right (Have piece) ->
-        withPeer $ \peers' pc -> do
+        modifyPeerState $ \pc ->
           let bf' = Just $ BF.set (fromMaybe BF.empty $ pcPieces pc) (fromIntegral piece)
-          return (M.insert peerAddr (pc{pcPieces = bf'}) peers')
+          in pc{pcPieces = bf'}
+      Right Choke -> modifyPeerState $ \pc -> pc{pcPeerChoking = True}
+      Right Unchoke -> modifyPeerState $ \pc -> pc{pcPeerChoking = False}
+      Right Interested -> modifyPeerState $ \pc -> pc{pcPeerInterested = True}
+      Right NotInterested -> modifyPeerState $ \pc -> pc{pcPeerInterested = False}
       Right pmsg -> putStrLn $ "Unhandled peer msg: " ++ show pmsg
   where
+    modifyPeerState :: (PeerConn -> PeerConn) -> IO ()
+    modifyPeerState m = withPeer $ \peers' pc -> return (M.insert peerAddr (m pc) peers')
+
     withPeer :: (M.Map SockAddr PeerConn -> PeerConn -> IO (M.Map SockAddr PeerConn)) -> IO ()
     withPeer f =
       modifyMVar_ peers $ \peers' ->
