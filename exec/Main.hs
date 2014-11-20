@@ -13,19 +13,24 @@ import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
-import qualified Data.ByteString.Builder  as BB
-import qualified Data.ByteString.Char8    as B
-import qualified Data.ByteString.Lazy     as LB
-import qualified Data.Map                 as M
+import qualified Data.ByteString.Builder   as BB
+import qualified Data.ByteString.Char8     as B
+import qualified Data.ByteString.Lazy      as LB
+import qualified Data.Map                  as M
 import           Data.Monoid
 import           Data.Word
 import           Network.HTTP.Base
 import           Network.Socket
-import           System.Environment       (getArgs)
-import           System.Random            (randomIO)
+import           System.Environment        (getArgs)
+import           System.Log.Formatter
+import           System.Log.Handler
+import           System.Log.Handler.Simple
+import           System.Log.Logger
+import           System.Random             (randomIO)
 
 main :: IO ()
 main = do
+    installLogger
     args <- getArgs
     case args of
       ["--magnet", magnetStr] -> runMagnet magnetStr
@@ -88,3 +93,9 @@ runTorrent filePath = do
 generatePeerId :: IO PeerId
 generatePeerId =
     PeerId . LB.toStrict . BB.toLazyByteString . mconcat . map BB.word8 <$> replicateM 20 randomIO
+
+installLogger :: IO ()
+installLogger = do
+    lh <- fileHandler "logs.log" DEBUG
+    let h = setFormatter lh (simpleLogFormatter "[$time : $loggername : $prio] $msg")
+    updateGlobalLogger "Rho" (addHandler h . removeHandler)

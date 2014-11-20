@@ -38,6 +38,7 @@ library
     , bytestring
     , containers
     , Crypto
+    , hslogger
     , HTTP
     , network
     , network-uri
@@ -59,6 +60,7 @@ executable rho
     , async
     , bytestring
     , containers
+    , hslogger
     , HTTP
     , RhoTorrent
     -- temp

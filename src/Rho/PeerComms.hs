@@ -13,6 +13,7 @@ import           Network.Socket            hiding (KeepAlive, recv, recvFrom,
                                             send, sendTo)
 import           Network.Socket.ByteString
 import           System.IO.Error
+import qualified System.Log.Logger         as L
 
 import           Rho.InfoHash
 import           Rho.PeerComms.Handshake
@@ -73,11 +74,13 @@ listenPeerSocket sock peers = do
 listenHandshake :: Socket -> SockAddr -> PeersState -> IO ()
 listenHandshake peerSock _peerAddr _peers = void $ async $ do
     msg <- recv peerSock 1000
-    case parseHandshake msg of
-      Left err -> putStrLn $ "Can't parse handshake: " ++ err
-      Right (_infoHash, _peerId, _extra) -> do
-        -- TODO: we don't seed yet
-        putStrLn "Ignoring an incoming handshake."
+    unless (B.null msg) $
+      case parseHandshake msg of
+        Left err ->
+          warning $ "Can't parse handshake: " ++ err ++ " msg: " ++ show (B.unpack msg)
+        Right (_infoHash, _peerId, _extra) -> do
+          -- TODO: we don't seed yet
+          putStrLn "Ignoring an incoming handshake."
 
 -- | Listen a connected socket and handle incoming messages.
 listenConnectedSock :: Socket -> SockAddr -> PeersState -> IO ()
@@ -102,14 +105,15 @@ listenConnectedSock sock sockAddr peers = flip catchIOError errHandler $ do
 handleMessage :: B.ByteString -> Socket -> SockAddr -> PeersState -> IO ()
 handleMessage msg _sock _sockAddr _peers = do
     case parsePeerMsg msg of
-      Left err -> putStrLn $ "Can't parse peer message: " ++ err
+      Left err -> warning $ "Can't parse peer message: " ++ err ++ " msg: " ++ show (B.unpack msg)
       Right pmsg -> putStrLn $ "Parsed peer msg: " ++ show pmsg
 
 handshake :: PeerCommHandler -> SockAddr -> InfoHash -> PeerId -> IO ()
 handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
-      Left err -> putStrLn $ "Can't establish connection: " ++ err
+      Left err ->
+        putStrLn $ "Handshake failed: " ++ err
       Right (sock, infoHash', peerId', extra) -> do
         putStrLn "Handshake successful"
         peers' <- takeMVar peers
@@ -144,9 +148,13 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     connect sock addr
     sent <- send sock msg
     bytes <- recv sock 10000
-    case parseHandshake bytes of
-      Left err -> return $ Left err
-      Right (infoHash', peerId', extra) -> return $ Right (sock, infoHash', peerId', extra)
+    if B.null bytes
+      then return $ Left $ "Handshake refused"
+      else case parseHandshake bytes of
+             Left err -> do
+               warning $ err ++ " msg: " ++ show (B.unpack bytes)
+               return $ Left err
+             Right (infoHash', peerId', extra) -> return $ Right (sock, infoHash', peerId', extra)
   where
     errHandler err@IOError{ioe_type=NoSuchThing} =
       return $ Left $ "Problems with connection: " ++ show err
@@ -154,3 +162,12 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
       return $ Left $ "Timeout happened: " ++ show err
     errHandler err =
       return $ Left $ "Unhandled error: " ++ show err
+
+-- * Logging stuff
+
+-- | Logger used in this module.
+logger :: String
+logger = "Rho.PeerComms"
+
+warning :: String -> IO ()
+warning = L.warningM logger
