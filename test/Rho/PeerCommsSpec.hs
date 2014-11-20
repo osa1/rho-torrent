@@ -29,7 +29,7 @@ spec = do
     modifyMaxSuccess (const 100) $ prop "printing-parsing handshake" $ \(infoHash, peerId) ->
       parseHandshake (mkHandshake infoHash peerId) == Right (infoHash, peerId, "")
 
-    modifyMaxSuccess (const 1000000) $ prop "printing-parsing messages" $ \msg ->
+    modifyMaxSuccess (const 10000) $ prop "printing-parsing messages" $ \msg ->
       (mkPeerMsg testMsgTable msg >>= parsePeerMsg) == Right msg
 
 testMsgTable = M.fromList [(UtMetadata, 3)]
