@@ -23,7 +23,7 @@ mkHandshake (InfoHash infoHash) (PeerId peerId) =
       , BB.byteString "BitTorrent protocol" -- pstr
       , BB.byteString $ B.pack
           [0, 0, 0, 0, 0,
-           0 .&. 0x10, -- we support extension protocol
+           0 .|. 0x10, -- we support extension protocol
            0, 0]
       , BB.byteString infoHash
       , BB.byteString peerId
