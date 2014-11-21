@@ -9,6 +9,7 @@ import           Control.Monad
 import qualified Data.ByteString           as B
 import qualified Data.Map                  as M
 import           Data.Maybe
+import           Data.Word
 import           GHC.IO.Exception
 import           Network.Socket            hiding (KeepAlive, recv, recvFrom,
                                             send, sendTo)
@@ -37,11 +38,17 @@ data PeerConn = PeerConn
     -- TODO: remove Maybe and initialize with empty bitfield
   , pcSock           :: Socket
     -- ^ socket connected to the peer
+  , pcExtended       :: ExtendedMsgSupport
+    -- ^ Supports BEP10
   , pcExtendedMsgTbl :: ExtendedPeerMsgTable
+    -- ^ BEP10, extension table
+  , pcMetadataSize   :: Maybe Word32
+    -- ^ BEP9, metadata_size key of ut_metadata handshake
   } deriving (Show)
 
-newPeerConn :: PeerId -> InfoHash -> Socket -> PeerConn
-newPeerConn peerId infoHash sock = PeerConn True False True False peerId infoHash Nothing sock M.empty
+newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> PeerConn
+newPeerConn peerId infoHash extension sock =
+    PeerConn True False True False peerId infoHash Nothing sock extension M.empty Nothing
 
 -- | Stat of peers, shared between workers.
 type PeersState = MVar (M.Map SockAddr PeerConn)
@@ -85,7 +92,7 @@ listenHandshake peerSock _peerAddr _peers = void $ async $ do
       case parseHandshake msg of
         Left err ->
           warning $ "Can't parse handshake: " ++ err ++ " msg: " ++ show (B.unpack msg)
-        Right (_infoHash, _peerId, _extra) -> do
+        Right _ -> do
           -- TODO: we don't seed yet
           putStrLn "Ignoring an incoming handshake."
 
@@ -123,6 +130,9 @@ handleMessage msg _sock peerAddr peers = do
       Right Unchoke -> modifyPeerState $ \pc -> pc{pcPeerChoking = False}
       Right Interested -> modifyPeerState $ \pc -> pc{pcPeerInterested = True}
       Right NotInterested -> modifyPeerState $ \pc -> pc{pcPeerInterested = False}
+      Right (Extended (ExtendedHandshake tbl [UtMetadataSize size])) -> do
+        putStrLn "Got extended handshake."
+        modifyPeerState $ \pc -> pc{pcExtendedMsgTbl = tbl, pcMetadataSize = Just size}
       Right pmsg -> putStrLn $ "Unhandled peer msg: " ++ show pmsg
   where
     modifyPeerState :: (PeerConn -> PeerConn) -> IO ()
@@ -141,8 +151,8 @@ handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
     case ret of
       Left err ->
         putStrLn $ "Handshake failed: " ++ err
-      Right (sock, infoHash', peerId', extra) -> do
-        putStrLn "Handshake successful"
+      Right (sock, hs) -> do
+        putStrLn $ "Handshake successful. Extension support: " ++ show (hExtension hs)
         peers' <- takeMVar peers
         case M.lookup addr peers' of
           Nothing -> do
@@ -150,21 +160,21 @@ handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
             -- listener
             void $ async $ listenConnectedSock sock addr peers
             -- TODO: check info_hash
-            let peerConn = newPeerConn peerId' infoHash' sock
+            let peerConn = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
             putMVar peers $ M.insert addr peerConn peers'
           Just pc -> do
             -- TODO: I don't know how can this happen. We already
             -- established a connection. Just reset the peer info.
-            putMVar peers $ M.insert addr (newPeerConn peerId' infoHash' sock) peers'
+            putMVar peers $
+              M.insert addr (newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock) peers'
             -- handle extra message
-            handleMessage extra (pcSock pc) addr peers
+            warning $ "Extra message: " ++ show (B.unpack (hExtra hs))
+            handleMessage (hExtra hs) (pcSock pc) addr peers
 
 -- | Send a handshake message to given target using a fresh socket. Return
 -- the connected socket in case of a success. (e.g. receiving answer to
 -- handshake)
-sendHandshake
-    :: SockAddr -> InfoHash -> PeerId
-    -> IO (Either String (Socket, InfoHash, PeerId, B.ByteString))
+sendHandshake :: SockAddr -> InfoHash -> PeerId -> IO (Either String (Socket, Handshake))
 sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet aNY_PORT 0)
@@ -179,7 +189,7 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
              Left err -> do
                warning $ err ++ " msg: " ++ show (B.unpack bytes)
                return $ Left err
-             Right (infoHash', peerId', extra) -> return $ Right (sock, infoHash', peerId', extra)
+             Right hs -> return $ Right (sock, hs)
   where
     errHandler err@IOError{ioe_type=NoSuchThing} =
       return $ Left $ "Problems with connection: " ++ show err

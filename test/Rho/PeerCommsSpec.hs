@@ -27,12 +27,10 @@ spec = do
     -- no need to test a lot of times since only thing that'll chance is
     -- info_hash and peer_id
     modifyMaxSuccess (const 100) $ prop "printing-parsing handshake" $ \(infoHash, peerId) ->
-      parseHandshake (mkHandshake infoHash peerId) == Right (infoHash, peerId, "")
+      parseHandshake (mkHandshake infoHash peerId) == Right (Handshake infoHash peerId Supports "")
 
     modifyMaxSuccess (const 10000) $ prop "printing-parsing messages" $ \msg ->
-      (mkPeerMsg testMsgTable msg >>= parsePeerMsg) == Right msg
-
-testMsgTable = M.fromList [(UtMetadata, 3)]
+      (mkPeerMsg defaultMsgTable msg >>= parsePeerMsg) == Right msg
 
 genBytes :: Int -> Gen B.ByteString
 genBytes n = B.pack `fmap` replicateM n arbitrary
@@ -70,7 +68,8 @@ instance Arbitrary PeerMsg where
 
 instance Arbitrary ExtendedPeerMsg where
     arbitrary = oneof
-      [ ExtendedHandshake testMsgTable . (:[]) . UtMetadataSize <$> arbitrary
+      [ ExtendedHandshake defaultMsgTable . (:[]) . UtMetadataSize <$> arbitrary
+      , return $ ExtendedHandshake defaultMsgTable []
       , MetadataRequest <$> arbitrary
       , MetadataData <$> arbitrary <*> arbitrary <*> genBytes 10
       , MetadataReject <$> arbitrary

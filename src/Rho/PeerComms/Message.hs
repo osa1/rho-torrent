@@ -60,6 +60,9 @@ data ExtendedMsgTypeData
   = UtMetadataSize Word32
   deriving (Show, Eq)
 
+defaultMsgTable :: ExtendedPeerMsgTable
+defaultMsgTable = M.fromList [(UtMetadata, 3)]
+
 data ExtendedPeerMsg
   = ExtendedHandshake
       ExtendedPeerMsgTable
@@ -199,8 +202,15 @@ parseExtendedPeerMsg len = do
       case getField mdict "ut_metadata" of
         Left _ -> return (M.empty, [])
         Right (BE.BInteger i) -> do
-          size <- p $ getField bc "metadata_size" :: Parser Word32
-          return (M.singleton UtMetadata (fromIntegral i), [UtMetadataSize size])
+          -- even though the spec doesn't mention it, `metadata_size` is
+          -- actually optinal. e.g. when a client who requesting the info
+          -- sends this message, it has to omit `metadata_size` because it
+          -- doesn't know it.
+          let metainfoData = case getField bc "metadata_size" of
+                               Left _ -> []
+                               Right (BE.BInteger i) -> [UtMetadataSize (fromIntegral i)]
+                               Right _ -> [] -- TODO: error?
+          return (M.singleton UtMetadata (fromIntegral i), metainfoData)
         Right bv -> fail $ "ut_metadata value is not a number: " ++ show bv
 
     parseExtendedMsg :: Word8 -> B.ByteString -> Parser ExtendedPeerMsg

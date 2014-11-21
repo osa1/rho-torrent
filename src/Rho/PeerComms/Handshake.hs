@@ -16,6 +16,15 @@ import           Rho.Parser
 -- | 20-byte peer_id
 newtype PeerId = PeerId B.ByteString deriving (Show, Eq)
 
+data ExtendedMsgSupport = Supports | DoesntSupport deriving (Show, Eq)
+
+data Handshake = Handshake
+  { hInfoHash  :: InfoHash
+  , hPeerId    :: PeerId
+  , hExtension :: ExtendedMsgSupport
+  , hExtra     :: B.ByteString -- ^ extra data came after the handshake message
+  } deriving (Show, Eq)
+
 mkHandshake :: InfoHash -> PeerId -> B.ByteString
 mkHandshake (InfoHash infoHash) (PeerId peerId) =
     LB.toStrict . BB.toLazyByteString . mconcat $
@@ -29,23 +38,24 @@ mkHandshake (InfoHash infoHash) (PeerId peerId) =
       , BB.byteString peerId
       ]
 
-parseHandshake :: B.ByteString -> Either String (InfoHash, PeerId, B.ByteString)
+parseHandshake :: B.ByteString -> Either String Handshake
 parseHandshake bs =
     case execParser bs handshakeParser of
-      Right ((pstr, infoHash, peerId), rest) -> do
+      Right ((pstr, infoHash, peerId, extension), rest) -> do
         assert ("Unknown pstr: " ++ BC.unpack pstr) (pstr == "BitTorrent protocol")
-        return (infoHash, peerId, rest)
+        return $ Handshake infoHash peerId extension rest
       Left err -> Left $ "Can't parse handshake message: " ++ err
   where
     assert :: String -> Bool -> Either String ()
     assert _   True  = Right ()
     assert err False = Left err
 
-    handshakeParser :: Parser (B.ByteString, InfoHash, PeerId)
+    handshakeParser :: Parser (B.ByteString, InfoHash, PeerId, ExtendedMsgSupport)
     handshakeParser = do
       pstrLen <- readWord
       pstr <- replicateM (fromIntegral pstrLen) readWord
-      _ <- replicateM 8 readWord
+      reserveds <- replicateM 8 readWord
+      let extension = if testBit (reserveds !! 5) 4 then Supports else DoesntSupport
       infoHash <- replicateM 20 readWord
       peerId <- replicateM 20 readWord
-      return (B.pack pstr, InfoHash $ B.pack infoHash, PeerId $ B.pack peerId)
+      return (B.pack pstr, InfoHash $ B.pack infoHash, PeerId $ B.pack peerId, extension)
