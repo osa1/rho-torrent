@@ -23,10 +23,8 @@ import           Rho.Parser
 import           Rho.PeerComms.Handshake
 import           Rho.Torrent
 import           Rho.TrackerComms.PeerResponse
+import           Rho.TrackerComms.UDP.Message
 import           Rho.Utils
-
-type TransactionId = Word32
-type ConnectionId  = Word64
 
 type ConnectionCallback = ConnectionId -> IO ()
 
@@ -156,7 +154,7 @@ spawnResponseHandler dataChan cbs peerRps = do
 
 handleConnectResp :: B.ByteString -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
 handleConnectResp bs cbs = do
-    case parseResp of
+    case parseConnectResp bs of
       Left err         -> putStrLn $ "Can't parse connect response: " ++ err
       Right (tid, cid) -> do
         putStrLn $ "Connection id for transaction id " ++ show tid ++ ": " ++ show cid
@@ -166,17 +164,11 @@ handleConnectResp bs cbs = do
           Just cb -> do
             putStrLn "Found a callback. Running..."
             cb cid
-  where
-    parseResp :: Either String (TransactionId, ConnectionId)
-    parseResp = fmap fst . execParser bs $ do
-      tid <- readWord32
-      cid <- readWord64
-      return (tid, cid)
 
 handleAnnounceResp :: B.ByteString -> MVar (M.Map TransactionId (MVar PeerResponse)) -> IO ()
 handleAnnounceResp bs peerRps = do
     putStrLn "handling announce response"
-    case parseResp of
+    case parseAnnounceResp bs of
       Left err         -> putStrLn $ "Can't parse announce response: " ++ err
       Right (tid, ret) -> do
         respVar <- modifyMVar peerRps $
@@ -184,30 +176,15 @@ handleAnnounceResp bs peerRps = do
         case respVar of
           Nothing -> putStrLn "Got unexpected announce response."
           Just respVar' -> putMVar respVar' ret
-  where
-    parseResp :: Either String (TransactionId, PeerResponse)
-    parseResp = fmap fst . execParser bs $ do
-      tid <- readWord32
-      interval <- readWord32
-      leechers <- readWord32
-      seeders <- readWord32
-      addrs <- readAddrs
-      return (tid, PeerResponse interval (Just leechers) (Just seeders) addrs)
 
 handleScrapeResp :: B.ByteString -> IO ()
 handleScrapeResp _ = putStrLn "handling scrape response"
 
 handleErrorResp :: B.ByteString -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
 handleErrorResp bs cbs = do
-    case parseResp of
+    case parseErrorResp bs of
       Left err         -> putStrLn $ "Can't parse error response: " ++ err
       Right (tid, msg) -> do
         putStrLn $ "Error response for " ++ show tid ++ ": " ++ msg
         putStrLn $ "Removing callbacks for " ++ show tid
         modifyMVar_ cbs $ return . M.delete tid
-  where
-    parseResp :: Either String (TransactionId, String)
-    parseResp = fmap fst . execParser bs $ do
-      transactionId <- readWord32
-      msg <- consume
-      return (transactionId, BC.unpack msg)

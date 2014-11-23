@@ -8,4 +8,4 @@ data PeerResponse = PeerResponse
   , prLeechers :: Maybe Word32
   , prSeeders  :: Maybe Word32
   , prPeers    :: [SockAddr]
-  } deriving (Show)
+  } deriving (Show, Eq)
