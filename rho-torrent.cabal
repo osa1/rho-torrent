@@ -19,7 +19,6 @@ source-repository head
 library
   exposed-modules:
     Rho.Bitfield
-    Rho.Comms
     Rho.InfoHash
     Rho.Magnet
     Rho.Metainfo
@@ -29,6 +28,9 @@ library
     Rho.PeerComms.Message
     Rho.Torrent
     Rho.Tracker
+    Rho.TrackerComms.HTTP
+    Rho.TrackerComms.PeerResponse
+    Rho.TrackerComms.UDP
     Rho.Utils
 
   build-depends:

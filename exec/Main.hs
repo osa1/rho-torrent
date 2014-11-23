@@ -1,32 +1,35 @@
 {-# LANGUAGE RecordWildCards #-}
 module Main where
 
-import           Rho.Comms
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms
 import           Rho.PeerComms.Handshake
+import           Rho.PeerComms.Message
 import           Rho.Torrent
 import           Rho.Tracker
+import           Rho.TrackerComms.HTTP
+import           Rho.TrackerComms.PeerResponse
+import           Rho.TrackerComms.UDP
 
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
-import qualified Data.ByteString.Builder   as BB
-import qualified Data.ByteString.Char8     as B
-import qualified Data.ByteString.Lazy      as LB
-import qualified Data.Map                  as M
+import qualified Data.ByteString.Builder       as BB
+import qualified Data.ByteString.Char8         as B
+import qualified Data.ByteString.Lazy          as LB
+import qualified Data.Map                      as M
 import           Data.Monoid
 import           Data.Word
 import           Network.HTTP.Base
 import           Network.Socket
-import           System.Environment        (getArgs)
+import           System.Environment            (getArgs)
 import           System.Log.Formatter
 import           System.Log.Handler
 import           System.Log.Handler.Simple
 import           System.Log.Logger
-import           System.Random             (randomIO)
+import           System.Random                 (randomIO)
 
 main :: IO ()
 main = do
@@ -60,6 +63,13 @@ runMagnet magnetStr = do
             threadDelay 30000000
             connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
             putStrLn $ "Peers: " ++ show (length connectedPeers)
+            ps <- M.toList `fmap` readMVar (pchPeers peerComms)
+            forM_ ps $ \(addr, peerConn) -> do
+              putStrLn $ "Sending extended handshake to: " ++ show addr
+              sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
+            threadDelay 30000000
+            connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
+            putStrLn $ "Peers: " ++ show (length connectedPeers')
             -- putStrLn "sending extended handshakes to get metainfo"
             -- forM_ connectedPeers $ \peerConn -> do
             --   async $ requestMetainfo peerConn
@@ -84,6 +94,32 @@ runTorrent filePath = do
             threadDelay 30000000
             putStr "Peers: "
             putStrLn . show . M.size =<< readMVar (pchPeers peerComms)
+      Right m@Metainfo{mAnnounce=UDPTracker addr_str port} -> do
+        peerId <- generatePeerId
+        addrInfo <- getAddrInfo (Just defaultHints) (Just $ B.unpack addr_str) (Just $ show port)
+        let trackerAddr = addrAddress (last addrInfo)
+        putStrLn "initializing comm handler"
+        commHandler <- initUDPCommHandler
+        putStrLn "comm handler initialized"
+        peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMetainfo m)
+        putStrLn $ "Sending handshake to peers..."
+        peerComms <- initPeerCommsHandler
+        forM_ (prPeers peers) $ \peer -> do
+          async $ handshake peerComms peer (iHash $ mInfo m) peerId
+        threadDelay 30000000
+        connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
+        putStrLn $ "Peers: " ++ show (length connectedPeers)
+        ps <- M.toList `fmap` readMVar (pchPeers peerComms)
+        forM_ ps $ \(addr, peerConn) -> do
+          putStrLn $ "Sending extended handshake to: " ++ show addr
+          sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
+        threadDelay 30000000
+        connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
+        putStrLn $ "Peers: " ++ show (length connectedPeers')
+        -- putStrLn "sending extended handshakes to get metainfo"
+        -- forM_ connectedPeers $ \peerConn -> do
+        --   async $ requestMetainfo peerConn
+        -- threadDelay 30000000
 
 -- | Generate 20-byte peer id.
 --

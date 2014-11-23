@@ -1,100 +1,29 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes, TupleSections #-}
+{-# LANGUAGE OverloadedStrings #-}
 
--- | Communications with HTTP/UDP trackers.
-module Rho.Comms where
+-- | Connections with UDP trackers
+module Rho.TrackerComms.UDP where
 
-import           Control.Applicative
 import           Control.Concurrent.Async
 import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
-import qualified Data.BEncode              as BE
-import qualified Data.ByteString           as B
-import qualified Data.ByteString.Builder   as BB
-import qualified Data.ByteString.Char8     as BC
-import qualified Data.ByteString.Lazy      as LB
-import           Data.List                 (intercalate)
-import qualified Data.Map                  as M
-import           Data.Maybe
+import qualified Data.ByteString               as B
+import qualified Data.ByteString.Builder       as BB
+import qualified Data.ByteString.Char8         as BC
+import qualified Data.ByteString.Lazy          as LB
+import qualified Data.Map                      as M
 import           Data.Monoid
 import           Data.Word
-import           Network.Browser
-import           Network.HTTP
-import           Network.Socket            hiding (recv, recvFrom, send, sendTo)
+import           Network.Socket                hiding (recv, recvFrom, send,
+                                                sendTo)
 import           Network.Socket.ByteString
-import           Network.URI
-import           System.Random             (randomIO)
+import           System.Random                 (randomIO)
 
 import           Rho.InfoHash
-import           Rho.Metainfo
 import           Rho.Parser
 import           Rho.PeerComms.Handshake
 import           Rho.Torrent
+import           Rho.TrackerComms.PeerResponse
 import           Rho.Utils
-
-data PeerResponse = PeerResponse
-  { prInterval :: Word32
-  , prLeechers :: Maybe Word32
-  , prSeeders  :: Maybe Word32
-  , prPeers    :: [SockAddr]
-  } deriving (Show)
-
-type TrackerRespError = String
-
-
--- * Connections with HTTP trackers
-
-peerRequestHTTP
-  :: PeerId -> URI -> Torrent -> Metainfo -> IO (Either TrackerRespError PeerResponse)
-peerRequestHTTP (PeerId peerId) uri torrent metainfo = do
-    putStrLn $ "info_hash: " ++ show (B.length (unwrapInfoHash (iHash (mInfo metainfo))))
-    (_, resp) <- browse $ do
-      setAllowRedirects True -- handle HTTP redirects
-      request $ defaultGETRequest $ updateURI uri
-    return $ parseResp (BC.pack $ rspBody resp)
-  where
-    updateURI :: URI -> URI
-    updateURI uri =
-      let sepchar = if null (uriQuery uri) then '?' else '&' in
-      uri{uriQuery = sepchar : intercalate "&" (map (\(k, v) -> k ++ '=' : v) args)}
-
-    args :: [(String, String)]
-    args =
-      [ ("info_hash", urlEncodeBytes . unwrapInfoHash . iHash . mInfo $ metainfo)
-      , ("peer_id", urlEncodeBytes peerId)
-      , ("port", "5432") -- FIXME
-      , ("uploaded", show $ uploaded torrent)
-      , ("downloaded", show $ downloaded torrent)
-      , ("left", show $ left torrent)
-      , ("compact", "1")
-      , ("numwant", "80")
-      , ("event", "started")
-      ]
-
-    parseResp :: B.ByteString -> Either TrackerRespError PeerResponse
-    parseResp rsp =
-      case BE.decode rsp of
-        Left err -> Left err
-        Right bv ->
-          case getField bv "failure reason" of
-            Right reason -> Left (BC.unpack reason)
-            Left _ -> do
-              interval <- getField bv "interval"
-              let minInterval = opt $ getField bv "min interval"
-                  _trackerId = opt $ getField bv "tracker id" :: Maybe B.ByteString
-                  complete = opt $ getField bv "complete"
-                  incomplete = opt $ getField bv "incomplete"
-              -- TOOD: peers_bs is either a dictionary or a byte string
-              -- (in case of compact form). currently only compact form
-              -- is handled.
-              peers_bs <- getField bv "peers"
-              peers <- fmap fst $ execParser peers_bs readAddrs
-              return $ PeerResponse (fromMaybe interval minInterval)
-                                    incomplete
-                                    complete
-                                    peers
-
-
--- * Connections with UDP trackers
 
 type TransactionId = Word32
 type ConnectionId  = Word64
@@ -264,19 +193,6 @@ handleAnnounceResp bs peerRps = do
       seeders <- readWord32
       addrs <- readAddrs
       return (tid, PeerResponse interval (Just leechers) (Just seeders) addrs)
-
-readAddrs :: Parser [SockAddr]
-readAddrs = do
-    addr <- readAddr
-    case addr of
-      Nothing -> return []
-      Just addr' -> (addr' :) <$> readAddrs
-  where
-    readAddr :: Parser (Maybe SockAddr)
-    readAddr = tryP $ do
-      ip <- readWord32LE
-      port <- readWord16LE
-      return $ SockAddrInet (PortNum port) ip
 
 handleScrapeResp :: B.ByteString -> IO ()
 handleScrapeResp _ = putStrLn "handling scrape response"

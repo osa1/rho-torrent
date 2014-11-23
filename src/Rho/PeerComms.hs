@@ -162,14 +162,13 @@ handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
             -- TODO: check info_hash
             let peerConn = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
             putMVar peers $ M.insert addr peerConn peers'
+            -- handle extra message
+            warning $ "Extra message: " ++ show (B.unpack (hExtra hs))
           Just pc -> do
             -- TODO: I don't know how can this happen. We already
             -- established a connection. Just reset the peer info.
             putMVar peers $
               M.insert addr (newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock) peers'
-            -- handle extra message
-            warning $ "Extra message: " ++ show (B.unpack (hExtra hs))
-            handleMessage (hExtra hs) (pcSock pc) addr peers
 
 -- | Send a handshake message to given target using a fresh socket. Return
 -- the connected socket in case of a success. (e.g. receiving answer to
@@ -197,6 +196,12 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
       return $ Left $ "Timeout happened: " ++ show err
     errHandler err =
       return $ Left $ "Unhandled error: " ++ show err
+
+sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)
+sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
+    case mkPeerMsg tbl msg of
+      Left err -> return $ Just err
+      Right bytes -> send sock bytes >> return Nothing
 
 -- * Logging stuff
 

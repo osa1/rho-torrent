@@ -1,6 +1,7 @@
 -- | ... because every project needs one.
 module Rho.Utils where
 
+import           Control.Applicative
 import           Control.Monad
 import qualified Data.BEncode          as BE
 import qualified Data.BEncode.BDict    as BE
@@ -9,6 +10,9 @@ import qualified Data.ByteString       as B
 import qualified Data.ByteString.Char8 as BC
 import           Data.Char
 import           Data.Word
+import           Network.Socket        (PortNumber (..), SockAddr (..))
+
+import           Rho.Parser
 
 -- | `urlEncode` takes a UTF-8 string. This is becoming a problem while
 -- encoding bytes:
@@ -62,6 +66,23 @@ getField (BE.BDict dict) f = join $ BE.fromBEncode `fmap` searchDict dict
       | otherwise = searchDict t
 getField _ _ = Left "Can't search field in a non-dictionary bencode value."
 
-opt :: Either a b -> Maybe b
-opt (Right ret) = Just ret
-opt (Left _) = Nothing
+-- | Parse list of <4-byte ip address><2-byte port number>s.
+--
+-- >>> :{
+--   execParser (B.pack [192, 168, 0, 1, 0x1b, 0x39,
+--                       0, 0, 0, 0, 0x04, 0xd2]) readAddrs
+-- :}
+-- Right ([196.168.0.1:6969,0.0.0.0:1234],"")
+--
+readAddrs :: Parser [SockAddr]
+readAddrs = do
+    addr <- readAddr
+    case addr of
+      Nothing -> return []
+      Just addr' -> (addr' :) <$> readAddrs
+  where
+    readAddr :: Parser (Maybe SockAddr)
+    readAddr = tryP $ do
+      ip <- readWord32LE
+      port <- readWord16LE
+      return $ SockAddrInet (PortNum port) ip

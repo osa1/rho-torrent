@@ -25,7 +25,7 @@ instance Monad Parser where
     Parser p >>= f = Parser $ \bs -> do
       (v, bs') <- p bs
       runParser (f v) bs'
-    fail err = Parser $ \bs -> Left err
+    fail err = Parser $ \_ -> Left err
 
 execParser :: B.ByteString -> Parser a -> Either String (a, B.ByteString)
 execParser bs (Parser f) = f bs
