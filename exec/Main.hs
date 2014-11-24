@@ -71,21 +71,6 @@ runMagnet magnetStr = do
             putStrLn "comm handler initialized"
             peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMagnet m)
             runPeers peers mHash peerId
-
-            -- putStrLn $ "Sending handshake to peers..."
-            -- peerComms <- initPeerCommsHandler
-            -- forM_ (prPeers peers) $ \peer -> do
-            --   async $ handshake peerComms peer mHash peerId
-            -- threadDelay 30000000
-            -- connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
-            -- putStrLn $ "Peers: " ++ show (length connectedPeers)
-            -- ps <- M.toList `fmap` readMVar (pchPeers peerComms)
-            -- forM_ ps $ \(addr, peerConn) -> do
-            --   putStrLn $ "Sending extended handshake to: " ++ show addr
-            --   sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
-            -- threadDelay 30000000
-            -- connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
-            -- putStrLn $ "Peers: " ++ show (length connectedPeers')
           ts -> putStrLn $ "I don't like the trackers: " ++ show ts
 
 runTorrent :: FilePath -> IO ()
