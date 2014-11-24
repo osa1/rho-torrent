@@ -14,7 +14,10 @@ import           Rho.Utils
 data UDPResponse
   = ConnectResponse TransactionId ConnectionId
   | AnnounceResponse TransactionId PeerResponse
-  | ScrapeResponse TransactionId [(Word32, Word32, Word32)]
+  | ScrapeResponse
+      TransactionId
+      -- (seeders, completed, leechers)
+      [(Word32, Word32, Word32)]
   | ErrorResponse TransactionId String
   deriving (Show, Eq)
 

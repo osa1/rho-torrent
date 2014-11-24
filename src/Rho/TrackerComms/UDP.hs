@@ -4,6 +4,9 @@
 --
 -- As a convention, all functions block except for the ones that return
 -- `Async a`.
+--
+-- TODO: We get a new connection_id for each request for now.
+--
 module Rho.TrackerComms.UDP where
 
 import           Control.Concurrent.Async
@@ -11,11 +14,13 @@ import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
 import qualified Data.ByteString               as B
 import qualified Data.Map                      as M
+import           Data.Word
 import           Network.Socket                hiding (recv, recvFrom, send,
                                                 sendTo)
 import           Network.Socket.ByteString
 import           System.Random                 (randomIO)
 
+import           Rho.InfoHash
 import           Rho.PeerComms.Handshake
 import           Rho.Torrent
 import           Rho.TrackerComms.PeerResponse
@@ -87,22 +92,13 @@ responseHandler dataChan tChan = do
       Left err -> putStrLn $ "Can't parse server response: " ++ err
     responseHandler dataChan tChan
 
--- | WARNING: This blocks. Use with `async`.
 peerRequestUDP :: UDPCommHandler -> SockAddr -> PeerId -> Torrent -> IO (Either String PeerResponse)
 peerRequestUDP ch trackerAddr peerId torrent = do
-    cid <- connectRequest
+    cid <- connectRequest ch trackerAddr
     case cid of
       Left err -> return $ Left err
       Right cid' -> announceRequest cid'
   where
-    connectRequest :: IO (Either String ConnectionId)
-    connectRequest = do
-      connReqTid <- randomIO
-      connResp <- req ch trackerAddr $ ConnectRequest connReqTid
-      case connResp of
-        ConnectResponse _ cid -> return $ Right cid
-        _ -> return $ Left $ "Wrong response: " ++ show connResp
-
     announceRequest :: ConnectionId -> IO (Either String PeerResponse)
     announceRequest cid = do
       annReqTid <- randomIO
@@ -113,6 +109,30 @@ peerRequestUDP ch trackerAddr peerId torrent = do
       case annResp of
         AnnounceResponse _ ps -> return $ Right ps
         _ -> return $ Left $ "Wrong response: " ++ show annResp
+
+scrapeRequestUDP
+  :: UDPCommHandler -> SockAddr -> [InfoHash] -> IO (Either String [(Word32, Word32, Word32)])
+scrapeRequestUDP ch trackerAddr infos = do
+    cid <- connectRequest ch trackerAddr
+    case cid of
+      Left err -> return $ Left err
+      Right cid' -> scrapeRequest cid'
+  where
+    scrapeRequest :: ConnectionId -> IO (Either String [(Word32, Word32, Word32)])
+    scrapeRequest cid = do
+      scrapeReqTid <- randomIO
+      scrapeResp <- req ch trackerAddr $ ScrapeRequest cid scrapeReqTid infos
+      case scrapeResp of
+        ScrapeResponse _ d -> return $ Right d
+        _ -> return $ Left $ "Wrong response: " ++ show scrapeResp
+
+connectRequest :: UDPCommHandler -> SockAddr -> IO (Either String ConnectionId)
+connectRequest ch trackerAddr = do
+    connReqTid <- randomIO
+    connResp <- req ch trackerAddr $ ConnectRequest connReqTid
+    case connResp of
+      ConnectResponse _ cid -> return $ Right cid
+      _ -> return $ Left $ "Wrong response: " ++ show connResp
 
 req :: UDPCommHandler -> SockAddr -> UDPRequest -> IO UDPResponse
 req UDPCommHandler{sock=skt, transactionChans=tChan} addr req = do

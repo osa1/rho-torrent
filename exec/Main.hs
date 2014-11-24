@@ -37,10 +37,25 @@ main = do
     case args of
       ["--magnet", magnetStr] -> runMagnet magnetStr
       ["--torrent", torrentPath] -> runTorrent torrentPath
+      ["--magnet", magnetStr, "--scrape"] -> scrapeMagnet magnetStr
       _ -> putStrLn $ "Don't know what to do with args: " ++ show args
 
--- This looks like working, but I never get any useful responses from
--- servers. They may be problems regarding info_hash generation.
+scrapeMagnet :: String -> IO ()
+scrapeMagnet magnetStr = do
+    case (parseMagnet (B.pack magnetStr)) of
+      Left err -> putStrLn $ "can't parse magnet: " ++ err
+      Right m@Magnet{..} ->
+        case mTrackers of
+          (UDPTracker addr_str port : _) -> do
+            peerId <- generatePeerId
+            addrInfo <- getAddrInfo (Just defaultHints) (Just $ B.unpack addr_str) (Just $ show port)
+            let trackerAddr = addrAddress (last addrInfo)
+            putStrLn "initializing comm handler"
+            commHandler <- initUDPCommHandler
+            putStrLn "comm handler initialized"
+            peers <- scrapeRequestUDP commHandler trackerAddr [mHash]
+            print peers
+
 runMagnet :: String -> IO ()
 runMagnet magnetStr = do
     case (parseMagnet (B.pack magnetStr)) of
