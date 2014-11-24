@@ -14,7 +14,7 @@ import           Rho.InfoHash
 import           Rho.Parser
 
 -- | 20-byte peer_id
-newtype PeerId = PeerId B.ByteString deriving (Show, Eq)
+newtype PeerId = PeerId { unwrapPeerId :: B.ByteString } deriving (Show, Eq)
 
 data ExtendedMsgSupport = Supports | DoesntSupport deriving (Show, Eq)
 

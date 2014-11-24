@@ -7,24 +7,19 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
 import qualified Data.ByteString               as B
-import qualified Data.ByteString.Builder       as BB
-import qualified Data.ByteString.Char8         as BC
-import qualified Data.ByteString.Lazy          as LB
 import qualified Data.Map                      as M
-import           Data.Monoid
 import           Data.Word
 import           Network.Socket                hiding (recv, recvFrom, send,
                                                 sendTo)
 import           Network.Socket.ByteString
 import           System.Random                 (randomIO)
 
-import           Rho.InfoHash
-import           Rho.Parser
 import           Rho.PeerComms.Handshake
 import           Rho.Torrent
 import           Rho.TrackerComms.PeerResponse
-import           Rho.TrackerComms.UDP.Message
-import           Rho.Utils
+import           Rho.TrackerComms.UDP.Request
+import           Rho.TrackerComms.UDP.Response
+import           Rho.TrackerComms.UDP.Types
 
 type ConnectionCallback = ConnectionId -> IO ()
 
@@ -73,8 +68,7 @@ sendConnectReq sock targetAddr cbs cb = do
     -- early (e.g. before setting the callback)
     modifyMVar_ cbs $ return . M.insert transactionId cb
     -- send the request
-    let req = LB.toStrict . BB.toLazyByteString $
-                BB.word64BE 0x41727101980 <> BB.word32BE 0 <> BB.word32BE transactionId
+    let req = mkTrackerMsg $ ConnectRequest transactionId
     sent <- sendTo sock req targetAddr
     -- TODO: at least add a debug print here to warn when not all bytes are sent
     return ()
@@ -84,24 +78,12 @@ sendAnnounceReq
   -> MVar (M.Map TransactionId (MVar PeerResponse))
   -> MVar PeerResponse
   -> ConnectionId -> IO ()
-sendAnnounceReq skt trackerAddr (PeerId peerId) torrent peerRps var connId = do
+sendAnnounceReq skt trackerAddr peerId torrent peerRps var connId = do
     transactionId <- randomIO
     modifyMVar_ peerRps $ return . M.insert transactionId var
-    let req = LB.toStrict . BB.toLazyByteString . mconcat $
-                [ BB.word64BE connId
-                , BB.word32BE 1 -- action: announce
-                , BB.word32BE transactionId
-                , BB.byteString (unwrapInfoHash $ infoHash torrent)
-                , BB.byteString peerId
-                , BB.word64BE (downloaded torrent)
-                , BB.word64BE (left torrent)
-                , BB.word64BE (uploaded torrent)
-                , BB.word32BE 2 -- event: started
-                , BB.word32BE 0 -- IP address
-                , BB.word32BE 0 -- key
-                , BB.word32BE (-1) -- numwant
-                , BB.word16BE 5432 -- port FIXME
-                ]
+    let req = mkTrackerMsg $ AnnounceRequest connId transactionId (infoHash torrent)
+                                             peerId (downloaded torrent) (left torrent)
+                                             (uploaded torrent) Started
     sent <- sendTo skt req trackerAddr
     -- TODO: maybe check if sent == length of msg
     return ()
@@ -143,48 +125,40 @@ spawnResponseHandler dataChan cbs peerRps = do
     responseHandler = do
         (resp, src) <- readChan dataChan
         putStrLn $ "Got response from " ++ show src
-        case execParser resp readWord32 of
-          Right (0, resp') -> handleConnectResp resp' cbs
-          Right (1, resp') -> handleAnnounceResp resp' peerRps
-          Right (2, resp') -> handleScrapeResp resp'
-          Right (3, resp') -> handleErrorResp resp' cbs
-          Right (n, _)     -> putStrLn $ "Unknown response: " ++ show n
-          Left err         -> putStrLn $ "Got ill-formed response: " ++ err
+        case parseUDPResponse resp of
+          Right (ConnectResponse tid cid) -> handleConnectResp tid cid cbs
+          Right (AnnounceResponse tid ps) -> handleAnnounceResp tid ps peerRps
+          Right (ScrapeResponse tid ps) -> handleScrapeResp tid ps
+          Right (ErrorResponse tid err) -> handleErrorResp tid err cbs
+          Left err -> putStrLn $ "Can't parse server response: " ++ err
         responseHandler
 
-handleConnectResp :: B.ByteString -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
-handleConnectResp bs cbs = do
-    case parseConnectResp bs of
-      Left err         -> putStrLn $ "Can't parse connect response: " ++ err
-      Right (tid, cid) -> do
-        putStrLn $ "Connection id for transaction id " ++ show tid ++ ": " ++ show cid
-        cbMap <- readMVar cbs
-        case M.lookup tid cbMap of
-          Nothing -> putStrLn "Can't find tid in callback map. Ignoring response."
-          Just cb -> do
-            putStrLn "Found a callback. Running..."
-            cb cid
+handleConnectResp
+  :: TransactionId -> ConnectionId -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
+handleConnectResp tid cid cbs = do
+    putStrLn $ "Connection id for transaction id " ++ show tid ++ ": " ++ show cid
+    cbMap <- readMVar cbs
+    case M.lookup tid cbMap of
+      Nothing -> putStrLn "Can't find tid in callback map. Ignoring response."
+      Just cb -> do
+        putStrLn "Found a callback. Running..."
+        cb cid
 
-handleAnnounceResp :: B.ByteString -> MVar (M.Map TransactionId (MVar PeerResponse)) -> IO ()
-handleAnnounceResp bs peerRps = do
+handleAnnounceResp
+  :: TransactionId -> PeerResponse -> MVar (M.Map TransactionId (MVar PeerResponse)) -> IO ()
+handleAnnounceResp tid ret peerRps = do
     putStrLn "handling announce response"
-    case parseAnnounceResp bs of
-      Left err         -> putStrLn $ "Can't parse announce response: " ++ err
-      Right (tid, ret) -> do
-        respVar <- modifyMVar peerRps $
-          \m -> return (M.delete tid m, M.lookup tid m)
-        case respVar of
-          Nothing -> putStrLn "Got unexpected announce response."
-          Just respVar' -> putMVar respVar' ret
+    respVar <- modifyMVar peerRps $
+      \m -> return (M.delete tid m, M.lookup tid m)
+    case respVar of
+      Nothing -> putStrLn "Got unexpected announce response."
+      Just respVar' -> putMVar respVar' ret
 
-handleScrapeResp :: B.ByteString -> IO ()
-handleScrapeResp _ = putStrLn "handling scrape response"
+handleScrapeResp :: TransactionId -> [(Word32, Word32, Word32)] -> IO ()
+handleScrapeResp _ _ = putStrLn "handling scrape response"
 
-handleErrorResp :: B.ByteString -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
-handleErrorResp bs cbs = do
-    case parseErrorResp bs of
-      Left err         -> putStrLn $ "Can't parse error response: " ++ err
-      Right (tid, msg) -> do
-        putStrLn $ "Error response for " ++ show tid ++ ": " ++ msg
-        putStrLn $ "Removing callbacks for " ++ show tid
-        modifyMVar_ cbs $ return . M.delete tid
+handleErrorResp :: TransactionId -> String -> MVar (M.Map TransactionId ConnectionCallback) -> IO ()
+handleErrorResp tid msg cbs = do
+    putStrLn $ "Error response for " ++ show tid ++ ": " ++ msg
+    putStrLn $ "Removing callbacks for " ++ show tid
+    modifyMVar_ cbs $ return . M.delete tid

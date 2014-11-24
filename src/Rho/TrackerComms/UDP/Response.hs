@@ -1,21 +1,15 @@
-module Rho.TrackerComms.UDP.Message where
+-- | Responses from UDP trackers.
+module Rho.TrackerComms.UDP.Response where
 
 import           Control.Applicative
 import qualified Data.ByteString               as B
 import qualified Data.ByteString.Char8         as BC
 import           Data.Word
-import           Network.Socket                (SockAddr)
 
-import           Rho.InfoHash
 import           Rho.Parser
-import           Rho.PeerComms.Handshake       (PeerId)
 import           Rho.TrackerComms.PeerResponse
+import           Rho.TrackerComms.UDP.Types
 import           Rho.Utils
-
-type TransactionId = Word32
-type ConnectionId  = Word64
-
--- * Responses
 
 data UDPResponse
   = ConnectResponse TransactionId ConnectionId
@@ -66,21 +60,3 @@ parseErrorResp bs = fmap fst . execParser bs $ do
     transactionId <- readWord32
     msg <- consume
     return (transactionId, BC.unpack msg)
-
--- * Requests
-
-data AnnounceEvent = None | Completed | Started | Stopped deriving (Show, Eq)
-
-data UDPRequest
-  = ConnectRequest TransactionId
-  | AnnounceRequest
-      TransactionId
-      InfoHash
-      PeerId
-      Word64 -- ^ downloaded
-      Word64 -- ^ left
-      Word64 -- ^ uploaded
-      AnnounceEvent
-      SockAddr -- ^ should be IPv4
-  | ScrapeRequest TransactionId [InfoHash]
-  deriving (Show, Eq)

@@ -31,7 +31,9 @@ library
     Rho.TrackerComms.HTTP
     Rho.TrackerComms.PeerResponse
     Rho.TrackerComms.UDP
-    Rho.TrackerComms.UDP.Message
+    Rho.TrackerComms.UDP.Request
+    Rho.TrackerComms.UDP.Response
+    Rho.TrackerComms.UDP.Types
     Rho.Utils
 
   build-depends:
