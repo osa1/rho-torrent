@@ -121,7 +121,7 @@ handleMessage msg _sock peerAddr peers = do
     case parsePeerMsg msg of
       Left err -> warning . concat $
         [ "Can't parse peer message: ", err,
-          " msg: ", show (B.unpack msg), " msg length: ", show (B.length msg) ]
+          " msg: ", show msg, " msg length: ", show (B.length msg) ]
       Right KeepAlive -> return () -- TODO: should I ignore keep-alives?
       Right (Bitfield bf) -> modifyPeerState $ \pc -> pc{pcPieces = Just bf}
       Right (Have piece) ->

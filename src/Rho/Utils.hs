@@ -2,7 +2,6 @@
 module Rho.Utils where
 
 import           Control.Applicative
-import           Control.Monad
 import qualified Data.BEncode          as BE
 import qualified Data.BEncode.BDict    as BE
 import qualified Data.BEncode.Types    as BE
@@ -57,7 +56,7 @@ urlEncodeBytes bs =
      o_A = fro 'A'
 
 getField :: BE.BEncode a => BE.BValue -> B.ByteString -> Either String a
-getField (BE.BDict dict) f = join $ BE.fromBEncode `fmap` searchDict dict
+getField (BE.BDict dict) f = searchDict dict >>= BE.fromBEncode
   where
     searchDict :: BE.BDict -> Either String BE.BValue
     searchDict BE.Nil = Left $ "Field " ++ BC.unpack f ++ " not in dict."
