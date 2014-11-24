@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module Main where
 
+import           Rho.InfoHash
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms
@@ -56,24 +57,22 @@ runMagnet magnetStr = do
             commHandler <- initUDPCommHandler
             putStrLn "comm handler initialized"
             peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMagnet m)
-            putStrLn $ "Sending handshake to peers..."
-            peerComms <- initPeerCommsHandler
-            forM_ (prPeers peers) $ \peer -> do
-              async $ handshake peerComms peer mHash peerId
-            threadDelay 30000000
-            connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
-            putStrLn $ "Peers: " ++ show (length connectedPeers)
-            ps <- M.toList `fmap` readMVar (pchPeers peerComms)
-            forM_ ps $ \(addr, peerConn) -> do
-              putStrLn $ "Sending extended handshake to: " ++ show addr
-              sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
-            threadDelay 30000000
-            connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
-            putStrLn $ "Peers: " ++ show (length connectedPeers')
-            -- putStrLn "sending extended handshakes to get metainfo"
-            -- forM_ connectedPeers $ \peerConn -> do
-            --   async $ requestMetainfo peerConn
+            runPeers peers mHash peerId
+
+            -- putStrLn $ "Sending handshake to peers..."
+            -- peerComms <- initPeerCommsHandler
+            -- forM_ (prPeers peers) $ \peer -> do
+            --   async $ handshake peerComms peer mHash peerId
             -- threadDelay 30000000
+            -- connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
+            -- putStrLn $ "Peers: " ++ show (length connectedPeers)
+            -- ps <- M.toList `fmap` readMVar (pchPeers peerComms)
+            -- forM_ ps $ \(addr, peerConn) -> do
+            --   putStrLn $ "Sending extended handshake to: " ++ show addr
+            --   sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
+            -- threadDelay 30000000
+            -- connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
+            -- putStrLn $ "Peers: " ++ show (length connectedPeers')
           ts -> putStrLn $ "I don't like the trackers: " ++ show ts
 
 runTorrent :: FilePath -> IO ()
@@ -102,24 +101,25 @@ runTorrent filePath = do
         commHandler <- initUDPCommHandler
         putStrLn "comm handler initialized"
         peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMetainfo m)
-        putStrLn $ "Sending handshake to peers..."
-        peerComms <- initPeerCommsHandler
-        forM_ (prPeers peers) $ \peer -> do
-          async $ handshake peerComms peer (iHash $ mInfo m) peerId
-        threadDelay 30000000
-        connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
-        putStrLn $ "Peers: " ++ show (length connectedPeers)
-        ps <- M.toList `fmap` readMVar (pchPeers peerComms)
-        forM_ ps $ \(addr, peerConn) -> do
-          putStrLn $ "Sending extended handshake to: " ++ show addr
-          sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
-        threadDelay 30000000
-        connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
-        putStrLn $ "Peers: " ++ show (length connectedPeers')
-        -- putStrLn "sending extended handshakes to get metainfo"
-        -- forM_ connectedPeers $ \peerConn -> do
-        --   async $ requestMetainfo peerConn
-        -- threadDelay 30000000
+        runPeers peers (iHash $ mInfo m) peerId
+
+runPeers :: Either String PeerResponse -> InfoHash -> PeerId -> IO ()
+runPeers (Left err) _ _ = error err
+runPeers (Right peers) infoHash peerId = do
+    putStrLn $ "Sending handshake to peers..."
+    peerComms <- initPeerCommsHandler
+    forM_ (prPeers peers) $ \peer -> do
+      async $ handshake peerComms peer infoHash peerId
+    threadDelay 30000000
+    connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
+    putStrLn $ "Peers: " ++ show (length connectedPeers)
+    ps <- M.toList `fmap` readMVar (pchPeers peerComms)
+    forM_ ps $ \(addr, peerConn) -> do
+      putStrLn $ "Sending extended handshake to: " ++ show addr
+      sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
+    threadDelay 30000000
+    connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
+    putStrLn $ "Peers: " ++ show (length connectedPeers')
 
 -- | Generate 20-byte peer id.
 --

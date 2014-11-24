@@ -18,6 +18,12 @@ data UDPResponse
   | ErrorResponse TransactionId String
   deriving (Show, Eq)
 
+tid :: UDPResponse -> TransactionId
+tid (ConnectResponse tid _)  = tid
+tid (AnnounceResponse tid _) = tid
+tid (ScrapeResponse tid _)   = tid
+tid (ErrorResponse tid _)    = tid
+
 parseUDPResponse :: B.ByteString -> Either String UDPResponse
 parseUDPResponse bs =
     case execParser bs readWord32 of

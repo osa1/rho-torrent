@@ -33,6 +33,11 @@ data UDPRequest
   | ScrapeRequest ConnectionId TransactionId [InfoHash]
   deriving (Show, Eq)
 
+tid :: UDPRequest -> TransactionId
+tid (ConnectRequest tid)                = tid
+tid (AnnounceRequest _ tid _ _ _ _ _ _) = tid
+tid (ScrapeRequest _ tid _)             = tid
+
 mkTrackerMsg :: UDPRequest -> B.ByteString
 mkTrackerMsg (ConnectRequest tid) =
     LB.toStrict . BB.toLazyByteString $
