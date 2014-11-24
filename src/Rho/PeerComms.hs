@@ -185,7 +185,7 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     sent <- send sock msg
     bytes <- recv sock 10000
     if B.null bytes
-      then return $ Left $ "Handshake refused"
+      then return $ Left "Handshake refused"
       else case parseHandshake bytes of
              Left err -> do
                warning $ err ++ " msg: " ++ show (B.unpack bytes)

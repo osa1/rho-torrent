@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveDataTypeable, DeriveGeneric, FlexibleInstances,
-             OverloadedStrings, RecordWildCards, TemplateHaskell #-}
+             OverloadedStrings, RecordWildCards #-}
 
 module Rho.Metainfo where
 
@@ -10,6 +10,7 @@ import qualified Data.ByteString         as B
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy    as LB
 import           Data.Digest.SHA1
+import           Data.Maybe              (fromMaybe)
 import           Data.Monoid
 import           Data.Typeable
 import           GHC.Generics
@@ -86,7 +87,7 @@ instance BEncode Info where
         md5sum <- optional $ field $ req "md5sum"
         name <- field $ req "name"
         pieceLength <- field $ req "piece length"
-        pieces <- splitPieces <$> (field $ req "pieces")
+        pieces <- splitPieces <$> field (req "pieces")
         private <- readPrivate
         return $ Info name pieceLength pieces private [File flen md5sum []] infoHash
     | otherwise = flip fromDict bv $ do
@@ -94,7 +95,7 @@ instance BEncode Info where
         files <- field $ req "files"
         name <- field $ req "name"
         pieceLength <- field $ req "piece length"
-        pieces <- splitPieces <$> (field $ req "pieces")
+        pieces <- splitPieces <$> field (req "pieces")
         private <- readPrivate
         return $ Info name pieceLength pieces private files infoHash
     where
@@ -110,7 +111,7 @@ instance BEncode Info where
         LB.toStrict . BB.toLazyByteString . mconcat . map BB.word32BE $ [w1, w2, w3, w4, w5]
 
       readPrivate :: Get Bool
-      readPrivate = maybe False id <$> (optional $ field $ req "private")
+      readPrivate = fromMaybe False <$> optional (field $ req "private")
 
       splitPieces :: B.ByteString -> [B.ByteString]
       splitPieces bs

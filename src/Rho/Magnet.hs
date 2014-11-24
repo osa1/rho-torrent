@@ -7,7 +7,7 @@ import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8   as B
 import qualified Data.ByteString.Lazy    as LB
 import           Data.Char               (digitToInt)
-import           Data.Maybe              (catMaybes)
+import           Data.Maybe              (mapMaybe)
 import           Data.Monoid
 import           Network.URI             (unEscapeString)
 
@@ -27,7 +27,7 @@ parseMagnet bs = do
       Nothing -> Left "Can't parse xt argument from magnet URL."
       Just xt ->
         let dn = lookup "dn" args
-            tr = catMaybes . map (either (const Nothing) Just . parseTrackerBS) $
+            tr = mapMaybe (either (const Nothing) Just . parseTrackerBS) $
                    -- TODO: redundant bytestring packing/unpacking here
                    map (B.pack . unEscapeString . B.unpack . snd) . filter ((==) "tr" . fst) $ args
             xt' = parseInfoHash (B.drop 9 xt) -- drop "urn:btih:" prefix and parse

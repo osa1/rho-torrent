@@ -64,7 +64,7 @@ peerRequestHTTP (PeerId peerId) uri torrent metainfo = do
               -- (in case of compact form). currently only compact form
               -- is handled.
               peers_bs <- getField bv "peers"
-              peers <- fmap fst $ execParser peers_bs readAddrs
+              peers <- fst `fmap` execParser peers_bs readAddrs
               return $ PeerResponse (fromMaybe interval minInterval)
                                     incomplete
                                     complete

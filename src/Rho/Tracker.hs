@@ -65,7 +65,7 @@ parseTrackerBS bs
 --
 parseUDPAddr :: B.ByteString -> Either String (B.ByteString, PortNumber)
 parseUDPAddr bs =
-    let (hostAddr, portStr) = fmap B.tail $ B.span (/= ':') bs in
+    let (hostAddr, portStr) = B.tail <$> B.span (/= ':') bs in
     case B.readInt portStr of
       Nothing -> Left $ "Can't parse port number from " ++ B.unpack portStr
       Just (port, rest)
