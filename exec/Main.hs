@@ -22,8 +22,6 @@ import qualified Data.ByteString.Char8         as B
 import qualified Data.ByteString.Lazy          as LB
 import qualified Data.Map                      as M
 import           Data.Monoid
-import           Data.Word
-import           Network.HTTP.Base
 import           Network.Socket
 import           System.Environment            (getArgs)
 import           System.Log.Formatter

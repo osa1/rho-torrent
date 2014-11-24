@@ -5,24 +5,17 @@ module Rho.MetainfoSpec where
 
 import           Rho.InfoHash
 import           Rho.Metainfo
-import           Rho.Tracker
-import           Rho.Utils
 
 import           Control.Applicative
-import           Control.Monad
 import           Data.BEncode              as BE
 import qualified Data.ByteString           as B
-import qualified Data.ByteString.Char8     as BC
 import           Data.Either               (isLeft, isRight)
-import           Data.Maybe
 import           System.Directory          (doesDirectoryExist,
                                             getDirectoryContents)
 import           System.FilePath           ((</>))
 import           Test.Hspec
 import           Test.Hspec.HUnit
-import           Test.Hspec.QuickCheck
 import           Test.HUnit
-import           Test.QuickCheck           hiding (Result)
 import           Test.QuickCheck.Instances ()
 
 main :: IO ()

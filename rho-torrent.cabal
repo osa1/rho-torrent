@@ -81,6 +81,7 @@ test-suite test
 
   other-modules:
     Rho.BitfieldSpec
+    Rho.ClientSpec
     Rho.MagnetSpec
     Rho.MetainfoSpec
     Rho.PeerCommsSpec
@@ -94,6 +95,7 @@ test-suite test
     , filepath
     , hspec
     , HUnit
+    , process
     , QuickCheck == 2.*
     , quickcheck-instances
     , RhoTorrent
@@ -110,6 +112,8 @@ test-suite doctests
   build-depends:
       base >=4.7 && <5
     , doctest >= 0.8
+    , filepath
+    , directory
 
 benchmark bench
   type:             exitcode-stdio-1.0

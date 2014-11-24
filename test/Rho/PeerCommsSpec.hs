@@ -6,8 +6,6 @@ module Rho.PeerCommsSpec where
 import           Control.Applicative
 import           Control.Monad
 import qualified Data.ByteString         as B
-import qualified Data.Map                as M
-import           Data.Word
 
 import           Test.Hspec
 import           Test.Hspec.QuickCheck

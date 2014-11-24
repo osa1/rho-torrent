@@ -72,7 +72,7 @@ getField _ _ = Left "Can't search field in a non-dictionary bencode value."
 --   execParser (B.pack [192, 168, 0, 1, 0x1b, 0x39,
 --                       0, 0, 0, 0, 0x04, 0xd2]) readAddrs
 -- :}
--- Right ([196.168.0.1:6969,0.0.0.0:1234],"")
+-- Right ([192.168.0.1:6969,0.0.0.0:1234],"")
 --
 readAddrs :: Parser [SockAddr]
 readAddrs = do

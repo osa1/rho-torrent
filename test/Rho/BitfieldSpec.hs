@@ -2,15 +2,11 @@
 
 module Rho.BitfieldSpec where
 
-import           Control.Applicative
-import           Control.Monad
 import           Data.Bits
 import qualified Data.ByteString           as B
 import           Data.Word
 import           Test.Hspec
-import           Test.Hspec.HUnit
 import           Test.Hspec.QuickCheck
-import           Test.HUnit
 import           Test.QuickCheck           hiding (Result)
 import           Test.QuickCheck.Instances ()
 

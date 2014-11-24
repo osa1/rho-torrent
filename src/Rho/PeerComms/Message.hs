@@ -26,15 +26,15 @@ data PeerMsg
   | NotInterested
   | Have Word32
   | Bitfield BF.Bitfield
-  | Request Word32 -- ^ piece index
-            Word32 -- ^ offset in piece
-            Word32 -- ^ length
-  | Piece Word32 -- ^ piece index
-          Word32 -- ^ offset in piece
-          B.ByteString -- ^ data
-  | Cancel Word32 -- ^ piece index
-           Word32 -- ^ offset in piece
-           Word32 -- ^ length
+  | Request Word32 -- piece index
+            Word32 -- offset in piece
+            Word32 -- length
+  | Piece Word32 -- piece index
+          Word32 -- offset in piece
+          B.ByteString -- data
+  | Cancel Word32 -- piece index
+           Word32 -- offset in piece
+           Word32 -- length
   | Port PortNumber
   | Extended ExtendedPeerMsg
   deriving (Show, Eq)
@@ -65,19 +65,19 @@ defaultMsgTable = M.fromList [(UtMetadata, 3)]
 
 data ExtendedPeerMsg
   = ExtendedHandshake
+      -- extended message id table parsed from handshake
       ExtendedPeerMsgTable
-      -- ^ extended message id table parsed from handshake
-      [ExtendedMsgTypeData]
-      -- ^ extra data about extended message types.
+      -- extra data about extended message types.
       -- (metadata_size from ut_metadata etc.)
+      [ExtendedMsgTypeData]
   | UnknownExtendedMsg Word8
   -- Messages from BEP 9
-  | MetadataRequest Word32 -- ^ piece index
+  | MetadataRequest Word32 -- piece index
   | MetadataData
-        Word32 -- ^ piece index
-        Word64 -- ^ total size, in bytes
-        B.ByteString -- ^ data
-  | MetadataReject Word32 -- ^ piece index
+        Word32 -- piece index
+        Word64 -- total size, in bytes
+        B.ByteString -- data
+  | MetadataReject Word32 -- piece index
   deriving (Show, Eq)
 
 mkPeerMsg :: ExtendedPeerMsgTable -> PeerMsg -> Either String B.ByteString

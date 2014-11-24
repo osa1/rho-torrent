@@ -26,9 +26,9 @@ data UDPRequest
       TransactionId
       InfoHash
       PeerId
-      Word64 -- ^ downloaded
-      Word64 -- ^ left
-      Word64 -- ^ uploaded
+      Word64 -- downloaded
+      Word64 -- left
+      Word64 -- uploaded
       AnnounceEvent
   | ScrapeRequest ConnectionId TransactionId [InfoHash]
   deriving (Show, Eq)
