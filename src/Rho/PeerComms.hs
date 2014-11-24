@@ -119,7 +119,9 @@ listenConnectedSock sock sockAddr peers = flip catchIOError errHandler $ do
 handleMessage :: B.ByteString -> Socket -> SockAddr -> PeersState -> IO ()
 handleMessage msg _sock peerAddr peers = do
     case parsePeerMsg msg of
-      Left err -> warning $ "Can't parse peer message: " ++ err ++ " msg: " ++ show (B.unpack msg)
+      Left err -> warning . concat $
+        [ "Can't parse peer message: ", err,
+          " msg: ", show (B.unpack msg), " msg length: ", show (B.length msg) ]
       Right KeepAlive -> return () -- TODO: should I ignore keep-alives?
       Right (Bitfield bf) -> modifyPeerState $ \pc -> pc{pcPieces = Just bf}
       Right (Have piece) ->
@@ -162,8 +164,8 @@ handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
             -- TODO: check info_hash
             let peerConn = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
             putMVar peers $ M.insert addr peerConn peers'
-            -- handle extra message
-            warning $ "Extra message: " ++ show (B.unpack (hExtra hs))
+            -- some peers send extended handshake with basic handshake message
+            unless (B.null (hExtra hs)) $ handleMessage (hExtra hs) sock addr peers
           Just pc -> do
             -- TODO: I don't know how can this happen. We already
             -- established a connection. Just reset the peer info.
