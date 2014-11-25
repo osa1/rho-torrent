@@ -2,14 +2,17 @@
 module Rho.Utils where
 
 import           Control.Applicative
-import qualified Data.BEncode          as BE
-import qualified Data.BEncode.BDict    as BE
-import qualified Data.BEncode.Types    as BE
-import qualified Data.ByteString       as B
-import qualified Data.ByteString.Char8 as BC
+import qualified Data.Attoparsec.ByteString.Char8 as P
+import qualified Data.BEncode                     as BE
+import qualified Data.BEncode.BDict               as BE
+import qualified Data.BEncode.Internal            as BEI
+import qualified Data.BEncode.Types               as BE
+import qualified Data.ByteString                  as B
+import qualified Data.ByteString.Char8            as BC
 import           Data.Char
 import           Data.Word
-import           Network.Socket        (PortNumber (..), SockAddr (..))
+import           Network.Socket                   (PortNumber (..),
+                                                   SockAddr (..))
 
 import           Rho.Parser
 
@@ -73,6 +76,29 @@ getField (BE.BDict dict) f = searchDict dict >>= BE.fromBEncode
       | k == f = return v
       | otherwise = searchDict t
 getField _ _ = Left "Can't search field in a non-dictionary bencode value."
+
+-- | Similar to `BE.decode`, but returns non-consumed ByteString when
+-- succeeds.
+--
+-- This is necessary when parsing BEP9 data message, we need to consume
+-- rest of the message after parsing bencode part.
+--
+-- >>> :{
+--   decodeNonConsumed (BC.pack "d8:msg_typei0e5:piecei0eeextra_data")
+--     :: BE.Result (BE.BValue, BC.ByteString)
+-- :}
+-- Right (BDict (Cons "msg_type" (BInteger 0) (Cons "piece" (BInteger 0) Nil)),"extra_data")
+--
+decodeNonConsumed :: BE.BEncode a => B.ByteString -> Either String (a, B.ByteString)
+decodeNonConsumed bs =
+    case P.parse BEI.parser bs of
+      P.Fail _ _ err -> Left err
+      P.Done rest result -> BE.fromBEncode result >>= \b -> Right (b, rest)
+      P.Partial cont ->
+        case cont B.empty of
+          P.Fail _ _ err -> Left err
+          P.Done rest result -> BE.fromBEncode result >>= \b -> Right (b, rest)
+          P.Partial _ -> error "decodeNonConsumed: impossible error!"
 
 -- | Parse list of <4-byte ip address><2-byte port number>s.
 --

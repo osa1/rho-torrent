@@ -143,6 +143,10 @@ mkPeerMsg' tbl (Extended (MetadataData pidx totalSize piece)) =
                          , ("piece", BE.toBEncode pidx)
                          , ("total_size", BE.toBEncode totalSize) ] in
         return [ BB.word32BE (fromIntegral $ 2 + B.length bcString)
+                               -- this part is wrong, we should add
+                               -- length of data to this value. parser of
+                               -- this message is also wrong for same
+                               -- reason.
                , BB.word8 20, BB.word8 i
                , BB.byteString bcString
                , BB.byteString piece ]
