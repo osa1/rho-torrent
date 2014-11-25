@@ -142,11 +142,7 @@ mkPeerMsg' tbl (Extended (MetadataData pidx totalSize piece)) =
                          [ ("msg_type", BE.BInteger 1)
                          , ("piece", BE.toBEncode pidx)
                          , ("total_size", BE.toBEncode totalSize) ] in
-        return [ BB.word32BE (fromIntegral $ 2 + B.length bcString)
-                               -- this part is wrong, we should add
-                               -- length of data to this value. parser of
-                               -- this message is also wrong for same
-                               -- reason.
+        return [ BB.word32BE (fromIntegral $ 2 + B.length bcString + B.length piece)
                , BB.word8 20, BB.word8 i
                , BB.byteString bcString
                , BB.byteString piece ]
@@ -212,7 +208,7 @@ parseExtendedPeerMsg len = do
           -- doesn't know it.
           let metainfoData = case getField bc "metadata_size" of
                                Left _ -> []
-                               Right (BE.BInteger i) -> [UtMetadataSize (fromIntegral i)]
+                               Right (BE.BInteger size) -> [UtMetadataSize (fromIntegral size)]
                                Right _ -> [] -- TODO: error?
           return (M.singleton UtMetadata (fromIntegral i), metainfoData)
         Right bv -> fail $ "ut_metadata value is not a number: " ++ show bv
@@ -224,12 +220,12 @@ parseExtendedPeerMsg len = do
 
     parseUtMetadataMsg :: B.ByteString -> Parser ExtendedPeerMsg
     parseUtMetadataMsg payload = do
-      bc <- p $ BE.decode payload
+      (bc, rest) <- p $ decodeNonConsumed payload
       msgType <- p $ getField bc "msg_type" :: Parser Word8
       case msgType of
         0 -> MetadataRequest <$> p (getField bc "piece")
         1 -> MetadataData <$> p (getField bc "piece")
                           <*> p (getField bc "total_size")
-                          <*> consume
+                          <*> pure rest
         2 -> MetadataReject <$> p (getField bc "piece")
         _ -> fail $ "Unknown ut_metadata type: " ++ show msgType
