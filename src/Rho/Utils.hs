@@ -55,6 +55,15 @@ urlEncodeBytes bs =
      o_0 = fro '0'
      o_A = fro 'A'
 
+-- | Search a key in BEncode value(BValue). BValue should be a BDict.
+--
+-- >>> :m + Data.BEncode
+-- >>> :{
+--   decode (BC.pack "d8:msg_typei0e5:piecei0ee") >>=
+--     \bv -> getField bv (BC.pack "piece") :: Either String Integer
+-- :}
+-- Right 0
+--
 getField :: BE.BEncode a => BE.BValue -> B.ByteString -> Either String a
 getField (BE.BDict dict) f = searchDict dict >>= BE.fromBEncode
   where
