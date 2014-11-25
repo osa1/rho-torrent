@@ -1,3 +1,5 @@
+module Main where
+
 import           Control.Monad
 import           System.Directory
 import           System.FilePath
