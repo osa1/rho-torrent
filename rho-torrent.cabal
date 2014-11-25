@@ -124,6 +124,11 @@ benchmark bench
 
   build-depends:
       base >=4.7 && <5
+    , bencoding
+    , bytestring
     , criterion
+    , deepseq
+    , directory
+    , filepath
     , random
     , RhoTorrent
