@@ -20,6 +20,7 @@ library
   exposed-modules:
     Rho.Bitfield
     Rho.InfoHash
+    Rho.Listener
     Rho.Magnet
     Rho.Metainfo
     Rho.Parser
@@ -42,6 +43,7 @@ library
     , bytestring
     , containers
     , Crypto
+    , dequeue
     , hslogger
     , HTTP
     , network
@@ -87,15 +89,18 @@ test-suite test
   other-modules:
     Rho.BitfieldSpec
     Rho.ClientSpec
+    Rho.ListenerSpec
     Rho.MagnetSpec
     Rho.MetainfoSpec
     Rho.PeerCommsSpec
 
   build-depends:
       base >=4.7 && <5
+    , async
     , bencoding
     , bytestring
     , containers
+    , dequeue
     , directory
     , filepath
     , hspec
@@ -125,7 +130,7 @@ benchmark bench
   default-language: Haskell2010
   main-is:          Bench.hs
   hs-source-dirs:   bench
-  ghc-options:      -Wall
+  ghc-options:      -Wall -threaded
 
   build-depends:
       base >=4.7 && <5
