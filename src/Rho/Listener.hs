@@ -25,7 +25,7 @@ data Listener = Listener
   , lock     :: MVar ()
     -- ^ we need to update `updated` and `deque` without any intervention
   , listener :: Async ()
-    -- ^ listener threads
+    -- ^ listener thread
   , stopped  :: MVar ()
     -- ^ to be able to block until listener is stopped
   }
@@ -49,10 +49,10 @@ recvLen sl@Listener{..} len = do
            writeIORef deque (d, deqLen - len)
            putMVar lock ()
            return m
-       | otherwise       -> do
+       | otherwise     -> do
            -- we need to block until buffer is updated
            _ <- tryTakeMVar updated
-           -- let the listener updated the buffer
+           -- let the listener update the buffer
            putMVar lock ()
            takeMVar updated
            -- buffer should be updated, recurse

@@ -2,21 +2,17 @@ module Rho.ListenerSpec where
 
 import           Control.Applicative
 import           Control.Concurrent.Async
-import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
-import           Control.Exception
 import           Control.Monad
 import qualified Data.ByteString          as B
 import qualified Data.Dequeue             as D
 import           Data.IORef
 import           Data.List
-import           Data.Monoid
 import           Test.Hspec
 import           Test.Hspec.HUnit
 import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck
-import           Test.QuickCheck.Gen
 
 import           Rho.Listener
 
