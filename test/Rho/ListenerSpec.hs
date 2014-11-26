@@ -102,12 +102,6 @@ generateRecvLens n = do
     return $ i : r
 
 readBuffer :: Listener -> IO [B.ByteString]
-readBuffer l@Listener{buffer=buf, bufferLen=bufLen} = do
-    len <- takeMVar bufLen
-    if len == 0
-      then return []
-      else do
-        putMVar bufLen (len - 1)
-        bs <- readChan buf
-        rest <- readBuffer l
-        return (bs : rest)
+readBuffer l@Listener{deque=deq} = do
+    (d, _) <- readIORef deq
+    return $ D.takeFront (D.length d) d
