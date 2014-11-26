@@ -92,10 +92,15 @@ readWord32LE = do
     w2 <- readWord
     w3 <- readWord
     w4 <- readWord
-    return $    fromIntegral w4 `shiftL` 24
-              + fromIntegral w3 `shiftL` 16
-              + fromIntegral w2 `shiftL` 8
-              + fromIntegral w1
+    return $ mkLE w1 w2 w3 w4
+
+{-# INLINE mkLE #-}
+mkLE :: Word8 -> Word8 -> Word8 -> Word8 -> Word32
+mkLE w1 w2 w3 w4 =
+      fromIntegral w4 `shiftL` 24
+    + fromIntegral w3 `shiftL` 16
+    + fromIntegral w2 `shiftL` 8
+    + fromIntegral w1
 
 -- | Try to read Word64 from big-endian byte string.
 --

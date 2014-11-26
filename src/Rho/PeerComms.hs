@@ -9,6 +9,7 @@ import           Control.Monad
 import qualified Data.ByteString           as B
 import qualified Data.Map                  as M
 import           Data.Maybe
+import           Data.Monoid
 import           Data.Word
 import           GHC.IO.Exception
 import           Network.Socket            hiding (KeepAlive, recv, recvFrom,
@@ -19,6 +20,7 @@ import qualified System.Log.Logger         as L
 
 import qualified Rho.Bitfield              as BF
 import           Rho.InfoHash
+import           Rho.Parser
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 
@@ -98,23 +100,58 @@ listenHandshake peerSock _peerAddr _peers = void $ async $ do
 
 -- | Listen a connected socket and handle incoming messages.
 listenConnectedSock :: Socket -> SockAddr -> PeersState -> IO ()
-listenConnectedSock sock sockAddr peers = flip catchIOError errHandler $ do
-    msg <- recv sock 10000
-    -- empty message == connection closed
-    if B.null msg
-      then do
-        putStrLn $ "Connection closed with peer: " ++ show sockAddr
-        closeConn
-      else do
-        handleMessage msg sock sockAddr peers
-        listenConnectedSock sock sockAddr peers
+listenConnectedSock sock sockAddr peers = flip catchIOError errHandler $ loop B.empty
   where
+    loop prev = do
+      msg <- recvMessage sock prev
+      case msg of
+        Nothing -> closeConn
+        Just (msgs, rest) -> do
+          mapM_ (\msg -> handleMessage msg sock sockAddr peers) msgs
+          loop rest
+
     errHandler err = do
       putStrLn $ "Error happened while listening a socket: " ++ show err
                   ++ ". Closing the connection."
       closeConn
 
     closeConn = modifyMVar_ peers $ return . M.delete sockAddr
+
+-- | For some reason, `recv` sometimes returns some part of the message and
+-- consecutive `recv` calls complete the message. To handle this without
+-- adding a lot of complexity to rest of the program, we collect messages
+-- here. We also return partial message with the list of complete messages.
+--
+-- TODO: This may be too inefficient to be used in listener loop. We may
+-- need something like a `Pipe`(from `pipes` package) to allow parsers to
+-- `await` for more bytes only when necessary.
+-- But let's just make it correct first and add optimizations later.
+--
+recvMessage :: Socket -> B.ByteString -> IO (Maybe ([B.ByteString], B.ByteString))
+recvMessage sock prev = do
+    -- empty message == connection closed
+    msg <- recv sock 4096
+    if B.null msg
+      then do
+        if B.null prev
+          then return Nothing
+          else do
+            warning $ "Connection closed with incomplete message: " ++ show prev
+            return Nothing
+      else return . Just $ splitMsgs (prev <> msg)
+  where
+    splitMsgs :: B.ByteString -> ([B.ByteString], B.ByteString)
+    splitMsgs msg
+      | B.length msg < 4 = ([], msg)
+      | otherwise =
+          let [w1, w2, w3, w4] = B.unpack $ B.take 4 msg
+              len = fromIntegral $ mkLE w1 w2 w3 w4 in
+          case compare (B.length msg - 4) len of
+            LT -> ([], msg)
+            EQ -> ([msg], B.empty)
+            GT -> let (m, r)   = B.splitAt (len + 4) msg
+                      (ms, r') = splitMsgs r
+                  in (m : ms, r')
 
 handleMessage :: B.ByteString -> Socket -> SockAddr -> PeersState -> IO ()
 handleMessage msg _sock peerAddr peers = do
