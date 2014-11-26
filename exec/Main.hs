@@ -82,15 +82,7 @@ runTorrent filePath = do
         putStrLn $ "info_hash: " ++ show (iHash $ mInfo m)
         peerId <- generatePeerId
         req <- peerRequestHTTP peerId uri (mkTorrentFromMetainfo m) m
-        case req of
-          Left err -> putStrLn $ "Error happened: " ++ err
-          Right peerResp -> do
-            peerComms <- initPeerCommsHandler
-            forM_ (prPeers peerResp) $ \peer -> do
-              async $ handshake peerComms peer (iHash $ mInfo m) peerId
-            threadDelay 30000000
-            putStr "Peers: "
-            putStrLn . show . M.size =<< readMVar (pchPeers peerComms)
+        runPeers req (iHash $ mInfo m) peerId
       Right m@Metainfo{mAnnounce=UDPTracker addr_str port} -> do
         peerId <- generatePeerId
         addrInfo <- getAddrInfo (Just defaultHints) (Just $ B.unpack addr_str) (Just $ show port)
