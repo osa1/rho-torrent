@@ -42,6 +42,18 @@ spec = do
           Just (Right ()) -> return ()
           Just (Left _) -> assertFailure "Listener is failed with exception."
 
+    fromHUnitTest $ TestLabel
+      "recvLen should return whatever left in the buffer after listener is stopped" $
+        TestCase $ do
+          let msgs = map B.pack [[1, 2, 3, 4], [5, 6]]
+          emitter <- mkMessageEmitter msgs
+          listener_ <- initListener emitter
+          msg <- recvLen listener_ (ll msgs + 1)
+          assertEqual "recvLen did not return all it read" (ll msgs) (B.length msg)
+          msg' <- recvLen listener_ 10
+          assertEqual "recvLen did not return empty after buffer is cleared" 0 (B.length msg')
+          return ()
+
     modifyMaxSuccess (const 100) $ prop "listener should be able to receive from emitter" $ do
       msgs <- genMsgs 100 20
       let msgsLen = ll msgs

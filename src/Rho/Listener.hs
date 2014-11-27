@@ -50,13 +50,22 @@ recvLen sl@Listener{..} len = do
            putMVar lock ()
            return m
        | otherwise     -> do
-           -- we need to block until buffer is updated
-           _ <- tryTakeMVar updated
-           -- let the listener update the buffer
-           putMVar lock ()
-           takeMVar updated
-           -- buffer should be updated, recurse
-           recvLen sl len
+           listenerStopped <- not `fmap` isEmptyMVar stopped
+           if listenerStopped
+             then do
+               -- listener is stopped, then return whatever is in the buffer
+               let m = mconcat $ D.takeFront (D.length deq) deq
+               writeIORef deque (D.empty, 0)
+               putMVar lock ()
+               return m
+             else do
+               -- we need to block until buffer is updated
+               _ <- tryTakeMVar updated
+               -- let the listener update the buffer
+               putMVar lock ()
+               takeMVar updated
+               -- buffer should be updated, recurse
+               recvLen sl len
 
 dequeue :: D.BankersDequeue B.ByteString -> Int -> (D.BankersDequeue B.ByteString, B.ByteString)
 dequeue d len =
