@@ -13,13 +13,14 @@ import           Data.Monoid
 import           Data.Word
 import           GHC.IO.Exception
 import           Network.Socket            hiding (KeepAlive, recv, recvFrom,
-                                            send, sendTo)
+                                            recvLen, send, sendTo)
 import           Network.Socket.ByteString
 import           System.IO.Error
 import qualified System.Log.Logger         as L
 
 import qualified Rho.Bitfield              as BF
 import           Rho.InfoHash
+import           Rho.Listener              (Listener, initListener, recvLen)
 import           Rho.Parser
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
@@ -77,38 +78,43 @@ listenPeerSocket sock peers = do
     (peerSock, peerAddr) <- accept sock
     -- have we established a connection with the peer?
     peers' <- readMVar peers
+    listener <- initListener $ recv peerSock 4096
     if M.member peerAddr peers'
       then
-        void $ async $ listenConnectedSock peerSock peerAddr peers
+        void $ async $ listenConnectedSock listener peerSock peerAddr peers
       else
         -- we should have a handshake message as first thing
-        void $ async $ listenHandshake peerSock peerAddr peers
+        void $ async $ listenHandshake listener peerAddr peers
     listenPeerSocket sock peers
 
 -- | Wait for an incoming handshake, update peers state upon successfully
 -- parsing the handshake and continue listening the connected socket.
-listenHandshake :: Socket -> SockAddr -> PeersState -> IO ()
-listenHandshake peerSock _peerAddr _peers = void $ async $ do
-    msg <- recv peerSock 1000
-    unless (B.null msg) $
-      case parseHandshake msg of
-        Left err ->
-          warning $ "Can't parse handshake: " ++ err ++ " msg: " ++ show (B.unpack msg)
-        Right _ -> do
-          -- TODO: we don't seed yet
-          putStrLn "Ignoring an incoming handshake."
+listenHandshake :: Listener -> SockAddr -> PeersState -> IO ()
+listenHandshake listener _peerAddr _peers = void $ async $ do
+    msg <- recvHandshake listener
+    case msg of
+      ConnClosed bs
+        | B.null bs -> putStrLn "Handshake refused."
+        | otherwise -> putStrLn $ "Got partial handshake msg: " ++ show bs
+      Msg bs ->
+        case parseHandshake bs of
+          Left err ->
+            warning $ "Can't parse handshake: " ++ err ++ " msg: " ++ show bs
+          Right _ -> do
+            -- TODO: we don't seed yet
+            putStrLn "Ignoring an incoming handshake."
 
 -- | Listen a connected socket and handle incoming messages.
-listenConnectedSock :: Socket -> SockAddr -> PeersState -> IO ()
-listenConnectedSock sock sockAddr peers = flip catchIOError errHandler $ loop B.empty
+listenConnectedSock :: Listener -> Socket -> SockAddr -> PeersState -> IO ()
+listenConnectedSock listener sock sockAddr peers = flip catchIOError errHandler $ loop
   where
-    loop prev = do
-      msg <- recvMessage sock prev
+    loop = do
+      msg <- recvMessage listener
       case msg of
-        Nothing -> closeConn
-        Just (msgs, rest) -> do
-          mapM_ (\msg -> handleMessage msg sock sockAddr peers) msgs
-          loop rest
+        ConnClosed msg
+          | B.null msg -> closeConn
+          | otherwise  -> putStrLn ("recvd a partial message: " ++ show (B.unpack msg)) >> closeConn
+        Msg msg -> handleMessage msg sock sockAddr peers >> loop
 
     errHandler err = do
       putStrLn $ "Error happened while listening a socket: " ++ show err
@@ -116,42 +122,6 @@ listenConnectedSock sock sockAddr peers = flip catchIOError errHandler $ loop B.
       closeConn
 
     closeConn = modifyMVar_ peers $ return . M.delete sockAddr
-
--- | For some reason, `recv` sometimes returns some part of the message and
--- consecutive `recv` calls complete the message. To handle this without
--- adding a lot of complexity to rest of the program, we collect messages
--- here. We also return partial message with the list of complete messages.
---
--- TODO: This may be too inefficient to be used in listener loop. We may
--- need something like a `Pipe`(from `pipes` package) to allow parsers to
--- `await` for more bytes only when necessary.
--- But let's just make it correct first and add optimizations later.
---
-recvMessage :: Socket -> B.ByteString -> IO (Maybe ([B.ByteString], B.ByteString))
-recvMessage sock prev = do
-    -- empty message == connection closed
-    msg <- recv sock 4096
-    if B.null msg
-      then do
-        if B.null prev
-          then return Nothing
-          else do
-            warning $ "Connection closed with incomplete message: " ++ show prev
-            return Nothing
-      else return . Just $ splitMsgs (prev <> msg)
-  where
-    splitMsgs :: B.ByteString -> ([B.ByteString], B.ByteString)
-    splitMsgs msg
-      | B.length msg < 4 = ([], msg)
-      | otherwise =
-          let [w1, w2, w3, w4] = B.unpack $ B.take 4 msg
-              len = fromIntegral $ mkLE w1 w2 w3 w4 in
-          case compare (B.length msg - 4) len of
-            LT -> ([], msg)
-            EQ -> ([msg], B.empty)
-            GT -> let (m, r)   = B.splitAt (len + 4) msg
-                      (ms, r') = splitMsgs r
-                  in (m : ms, r')
 
 handleMessage :: B.ByteString -> Socket -> SockAddr -> PeersState -> IO ()
 handleMessage msg _sock peerAddr peers = do
@@ -197,7 +167,8 @@ handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
           Nothing -> do
             -- first time handshaking with the peer, spawn a socket
             -- listener
-            void $ async $ listenConnectedSock sock addr peers
+            listener <- initListener $ recv sock 4096
+            void $ async $ listenConnectedSock listener sock addr peers
             -- TODO: check info_hash
             let peerConn = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
             putMVar peers $ M.insert addr peerConn peers'
@@ -219,15 +190,18 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     putStrLn $ "Sending handshake to remote: " ++ show addr
     let msg = mkHandshake infoHash peerId
     connect sock addr
+    listener <- initListener $ recv sock 4096
     sent <- send sock msg
-    bytes <- recv sock 10000
-    if B.null bytes
-      then return $ Left "Handshake refused"
-      else case parseHandshake bytes of
-             Left err -> do
-               warning $ err ++ " msg: " ++ show (B.unpack bytes)
-               return $ Left err
-             Right hs -> return $ Right (sock, hs)
+    incomingHs <- recvHandshake listener
+    case incomingHs of
+      ConnClosed hs
+        | B.null hs -> return $ Left "refused"
+        | otherwise  -> return $ Left $ "partial message: " ++ show (B.unpack hs)
+      Msg hs -> case parseHandshake hs of
+                  Left err -> do
+                    warning $ err ++ " msg: " ++ show (B.unpack hs)
+                    return $ Left err
+                  Right hs' -> return $ Right (sock, hs')
   where
     errHandler err@IOError{ioe_type=NoSuchThing} =
       return $ Left $ "Problems with connection: " ++ show err
@@ -241,6 +215,28 @@ sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
     case mkPeerMsg tbl msg of
       Left err -> return $ Just err
       Right bytes -> send sock bytes >> return Nothing
+
+-- * Receive helpers
+
+data RecvMsg = ConnClosed B.ByteString | Msg B.ByteString
+
+-- | Try to receive a 4-byte length-prefixed message.
+recvMessage :: Listener -> IO RecvMsg
+recvMessage listener = do
+    lengthPrefix <- recvLen listener 4
+    if B.length lengthPrefix /= 4
+      then return $ ConnClosed lengthPrefix
+      else do
+    let [w1, w2, w3, w4] = B.unpack lengthPrefix
+        len = mkLE w1 w2 w3 w4
+    msg <- recvLen listener (fromIntegral len)
+    return $ Msg $ lengthPrefix <> msg
+
+-- | Try to recv a message of length 68.
+recvHandshake :: Listener -> IO RecvMsg
+recvHandshake listener = do
+    msg <- recvLen listener 68
+    return $ (if B.length msg /= 68 then ConnClosed else Msg) msg
 
 -- * Logging stuff
 
