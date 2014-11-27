@@ -1,6 +1,7 @@
 module Rho.ListenerSpec where
 
 import           Control.Applicative
+import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Concurrent.MVar
 import           Control.Monad
@@ -35,7 +36,9 @@ spec = do
       TestCase $ do
         emitter <- mkMessageEmitter []
         listener_ <- initListener emitter
-        takeMVar (stopped listener_)
+        readMVar (stopped listener_)
+        -- allow listener to return after `putMVar stopped ()`
+        threadDelay 100
         ret <- poll (listener listener_)
         case ret of
           Nothing -> assertFailure "Listener is not stopped after messages consumed."
@@ -52,7 +55,14 @@ spec = do
           assertEqual "recvLen did not return all it read" (ll msgs) (B.length msg)
           msg' <- recvLen listener_ 10
           assertEqual "recvLen did not return empty after buffer is cleared" 0 (B.length msg')
-          return ()
+
+    fromHUnitTest $ TestLabel "recvLen should keep returning empty after listener is stopped" $
+      TestCase $ do
+        emitter <- mkMessageEmitter []
+        listener_ <- initListener emitter
+        readMVar (stopped listener_)
+        msgs <- mapM (recvLen listener_) [10, 20, 30]
+        assertEqual "recvLen returned something wrong" msgs [B.empty, B.empty, B.empty]
 
     modifyMaxSuccess (const 100) $ prop "listener should be able to receive from emitter" $ do
       msgs <- genMsgs 100 20
@@ -60,7 +70,7 @@ spec = do
       return $ ioProperty $ do
         emitter <- mkMessageEmitter msgs
         listener <- initListener emitter
-        takeMVar (stopped listener)
+        readMVar (stopped listener)
         -- The line below fails with "thread blocked indefinitely in an MVar operation"
         -- Try to guess why. `getChanContents` is awful.
         -- receivedMsg <- mconcat <$> getChanContents (buffer listener)
