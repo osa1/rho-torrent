@@ -1,12 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Rho.MagnetSpec where
 
 import           Control.Monad
 import qualified Data.ByteString.Char8    as B
+import           Data.List
+import           Data.Maybe
+import           Network.URI
 import           Test.Hspec
 import           Test.Hspec.HUnit
+import           Test.Hspec.QuickCheck
 import           Test.HUnit
+import           Test.QuickCheck
 
 import           Data.Tree.NTree.TypeDefs
 import           Network.Browser
@@ -14,6 +20,8 @@ import           Network.HTTP
 import           Text.XML.HXT.Core
 
 import           Rho.Magnet
+import           Rho.PeerCommsSpec        hiding (spec)
+import           Rho.Tracker
 
 main :: IO ()
 main = hspec spec
@@ -23,6 +31,26 @@ spec = do
   describe "parsing" $ do
     fromHUnitTest $ TestLabel "should parse (from file)" shouldParse
     fromHUnitTest $ TestLabel "should parse (scraping from ThePirateBay)" (TestCase scrapeMagnets)
+
+  describe "parsing-printing" $ do
+    prop "forall m, parseMagnet . printMagnet m == m" $ \m ->
+      assertEqual "" (Right m) (parseMagnet (printMagnet m))
+
+instance Arbitrary Magnet where
+    arbitrary = do
+      xt <- arbitrary
+      trs <- listOf trackerGen
+      dn <- oneof [return Nothing, return $ Just "display name"]
+      return $ Magnet xt trs dn
+
+    shrink (Magnet h [] dn) = []
+    shrink (Magnet h ts dn) = map (\t -> Magnet h t dn) (init $ subsequences ts)
+
+trackerGen :: Gen Tracker
+trackerGen = oneof [http, udp]
+  where
+    http = return $ HTTPTracker $ fromJust $ parseURI "http://testserver.com:1234/announce"
+    udp = return $ UDPTracker "0.0.0.0" (fromIntegral 1234)
 
 shouldParse :: Test
 shouldParse = TestCase $ do
