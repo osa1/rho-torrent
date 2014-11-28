@@ -105,6 +105,7 @@ test-suite test
     , filepath
     , hspec
     , HUnit
+    , network
     , network-uri
     , process
     , QuickCheck == 2.*

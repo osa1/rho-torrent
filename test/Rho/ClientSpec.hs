@@ -1,27 +1,49 @@
 module Rho.ClientSpec where
 
+import           Control.Concurrent
+import qualified Data.ByteString      as B
+import           Data.Either
+import           Network.Socket
+import           System.Directory
+import           System.FilePath
 import           System.Process
 
 import           Test.Hspec
 import           Test.Hspec.HUnit
 import           Test.HUnit
 
+import           Rho.Metainfo
+import           Rho.TrackerComms.UDP
+
 main :: IO ()
 main = hspec spec
 
 spec :: Spec
 spec = do
-    describe "client" $ do
-      fromHUnitTest $ TestLabel "meeting using a tracker" meeting
+    describe "client functions" $ do
+      fromHUnitTest $ TestLabel "connecting" scrapeTest
 
-meeting :: Test
-meeting = TestCase $ do
-    -- tracker <- spawnTracker
-    -- putStrLn "Spawned a tracker."
-    return ()
+scrapeTest :: Test
+scrapeTest = TestCase $ do
+    pwd <- getCurrentDirectory
+    let torrentPath = pwd </> "test/test.torrent"
+    torrentContents <- B.readFile torrentPath
+    case parseMetainfo torrentContents of
+      Left err -> assertFailure $ "Failed to parse torrent: " ++ err
+      Right Metainfo{mInfo=Info{iHash=infoHash}} -> do
+        hostAddr <- inet_addr "127.0.0.1"
+        let sockAddr = SockAddrInet (fromIntegral 6969) hostAddr
 
--- opentracker doesn't stop on SIGTERM...
-spawnTracker :: IO ProcessHandle
-spawnTracker = do
-    (_, _, _, handle) <- createProcess (proc "opentracker" []){cwd=Just "tests/should_parse"}
+        putStrLn "Spawning tracker"
+        tracker <- spawnTracker pwd []
+        threadDelay 500000
+
+        udpComms <- initUDPCommHandler
+        ret <- connectRequest udpComms sockAddr
+        assertBool "Peer can't connect" $ isRight ret
+        terminateProcess tracker
+
+spawnTracker :: FilePath -> [String] -> IO ProcessHandle
+spawnTracker pwd args = do
+    (_, _, _, handle) <- createProcess (proc "opentracker" args){cwd=Just pwd}
     return handle
