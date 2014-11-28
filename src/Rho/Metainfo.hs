@@ -44,6 +44,7 @@ data File = File
   { fLength :: Int
   , fMd5Sum :: Maybe B.ByteString
   , fPath   :: [B.ByteString]
+    -- ^ empty in single-file mode
   } deriving (Show, Eq, Typeable, Generic)
 
 -- | Parse contents of a .torrent file.
