@@ -30,7 +30,7 @@ scrapeTest = TestCase $ do
     torrentContents <- B.readFile torrentPath
     case parseMetainfo torrentContents of
       Left err -> assertFailure $ "Failed to parse torrent: " ++ err
-      Right Metainfo{mInfo=Info{iHash=infoHash}} -> do
+      Right Metainfo{mInfoHash=infoHash} -> do
         hostAddr <- inet_addr "127.0.0.1"
         let sockAddr = SockAddrInet (fromIntegral 6969) hostAddr
 

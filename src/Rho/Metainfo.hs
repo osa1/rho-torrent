@@ -27,16 +27,17 @@ data Metainfo = Metainfo
   , mComment      :: Maybe B.ByteString
   , mCreatedBy    :: Maybe B.ByteString
   , mEncoding     :: Maybe B.ByteString
+  , mInfoHash     :: InfoHash
   , mInfo         :: Info
-  } deriving (Show, Typeable, Generic)
+  } deriving (Show, Eq, Typeable, Generic)
 
 data Info = Info
   { iName        :: B.ByteString
   , iPieceLength :: Int
   , iPieces      :: [B.ByteString]
   , iPrivate     :: Bool
-  , iFiles       :: [File]
-  , iHash        :: InfoHash
+  , iFiles       :: Either File [File]
+    -- ^ Left: single-file mode, Right: multi-file mode
   } deriving (Show, Eq, Typeable, Generic)
 
 data File = File
@@ -48,6 +49,9 @@ data File = File
 -- | Parse contents of a .torrent file.
 parseMetainfo :: B.ByteString -> Either String Metainfo
 parseMetainfo = decode
+
+printMetainfo :: Metainfo -> B.ByteString
+printMetainfo = LB.toStrict . encode
 
 -- * BEncode instances
 
@@ -62,22 +66,47 @@ instance BEncode Metainfo where
     .: "info"          .=! mInfo
     .: endDict
 
-  fromBEncode = fromDict $
-    Metainfo <$>! "announce"
-             <*>? "announce-list"
-             <*>? "creation date"
-             <*>? "comment"
-             <*>? "created by"
-             <*>? "encoding"
-             <*>! "info"
+  fromBEncode = fromDict $ do
+    announce <- field $ req "announce"
+    announceList <- optional $ field $ req "announce-list"
+    creation <- optional $ field $ req "creation date"
+    comment <- optional $ field $ req "comment"
+    createdBy <- optional $ field $ req "created by"
+    encoding <- optional $ field $ req "encoding"
+    infoDict <- field $ req "info"
+    let infoHash = mkInfoHash infoDict
+    case fromBEncode infoDict of
+      Left err -> fail err
+      Right info ->
+        return $ Metainfo announce announceList creation comment createdBy encoding infoHash info
+
+-- | (20-byte) SHA1 hash of info field.
+-- We're just hoping that no information is lost/chaged during bencode
+-- decoding -> encoding.
+mkInfoHash :: BValue -> InfoHash
+mkInfoHash bv = InfoHash . hashToBS . hash . LB.unpack . encode $ bv
+  where
+    -- | Convert 20-byte hash to big-endian bytestring.
+    hashToBS :: Word160 -> B.ByteString
+    hashToBS (Word160 w1 w2 w3 w4 w5) =
+      LB.toStrict . BB.toLazyByteString . mconcat . map BB.word32BE $ [w1, w2, w3, w4, w5]
 
 instance BEncode Info where
-  toBEncode i = toDict $
-       "files"        .=! iFiles i
-    .: "name"         .=! iName i
-    .: "piece length" .=! iPieceLength i
-    .: "pieces"       .=! B.concat (iPieces i)
-    .: "private"      .=? (if iPrivate i then Just True else Nothing)
+  toBEncode (Info name pl ps priv (Right files)) = toDict $
+       "files"        .=! files
+    .: "name"         .=! name
+    .: "piece length" .=! pl
+    .: "pieces"       .=! B.concat ps
+    .: "private"      .=? (if priv then Just True else Nothing)
+    .: endDict
+
+  toBEncode (Info name pl ps priv (Left (File flen md5 _))) = toDict $
+       "length"       .=! flen
+    .: "md5sum"       .=? md5
+    .: "name"         .=! name
+    .: "piece length" .=! pl
+    .: "pieces"       .=! B.concat ps
+    .: "private"      .=? (if priv then Just True else Nothing)
     .: endDict
 
   fromBEncode bv@(BDict (BE.Cons key _ _))
@@ -89,7 +118,7 @@ instance BEncode Info where
         pieceLength <- field $ req "piece length"
         pieces <- splitPieces <$> field (req "pieces")
         private <- readPrivate
-        return $ Info name pieceLength pieces private [File flen md5sum []] infoHash
+        return $ Info name pieceLength pieces private (Left $ File flen md5sum [])
     | otherwise = flip fromDict bv $ do
         -- multi file mode
         files <- field $ req "files"
@@ -97,19 +126,8 @@ instance BEncode Info where
         pieceLength <- field $ req "piece length"
         pieces <- splitPieces <$> field (req "pieces")
         private <- readPrivate
-        return $ Info name pieceLength pieces private files infoHash
+        return $ Info name pieceLength pieces private (Right $ files)
     where
-      -- | (20-byte) SHA1 hash of info field.
-      -- We're just hoping that no information is lost/chaged during
-      -- bencode decoding -> encoding.
-      infoHash :: InfoHash
-      infoHash = InfoHash . hashToBS . hash . LB.unpack . encode $ bv
-
-      -- | Convert 20-byte hash to big-endian bytestring.
-      hashToBS :: Word160 -> B.ByteString
-      hashToBS (Word160 w1 w2 w3 w4 w5) =
-        LB.toStrict . BB.toLazyByteString . mconcat . map BB.word32BE $ [w1, w2, w3, w4, w5]
-
       readPrivate :: Get Bool
       readPrivate = fromMaybe False <$> optional (field $ req "private")
 
