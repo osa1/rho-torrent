@@ -3,12 +3,12 @@ module Rho.ListenerSpec where
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
-import           Control.Concurrent.MVar
 import           Control.Monad
 import qualified Data.ByteString          as B
 import qualified Data.Dequeue             as D
 import           Data.IORef
 import           Data.List
+import           Data.Monoid
 import           Test.Hspec
 import           Test.Hspec.HUnit
 import           Test.Hspec.QuickCheck
@@ -55,6 +55,8 @@ spec = do
           assertEqual "recvLen did not return all it read" (ll msgs) (B.length msg)
           msg' <- recvLen listener_ 10
           assertEqual "recvLen did not return empty after buffer is cleared" 0 (B.length msg')
+          (buffer, _) <- readIORef (deque listener_)
+          assertEqual "buffer not empty" 0 (D.length buffer)
 
     fromHUnitTest $ TestLabel "recvLen should keep returning empty after listener is stopped" $
       TestCase $ do
@@ -63,6 +65,18 @@ spec = do
         readMVar (stopped listener_)
         msgs <- mapM (recvLen listener_) [10, 20, 30]
         assertEqual "recvLen returned something wrong" msgs [B.empty, B.empty, B.empty]
+        (buffer, _) <- readIORef (deque listener_)
+        assertEqual "buffer not empty" 0 (D.length buffer)
+
+    fromHUnitTest $ TestLabel "sending bytes one-by-one" $
+      TestCase $ do
+        let bytes = map B.singleton $ replicate 100 0x12
+        emitter <- mkMessageEmitter bytes
+        listener_ <- initListener emitter
+        msg <- recvLen listener_ 100
+        assertEqual "recvLen returned something wrong" msg (mconcat bytes)
+        (buffer, _) <- readIORef (deque listener_)
+        assertEqual "buffer not empty" 0 (D.length buffer)
 
     modifyMaxSuccess (const 100) $ prop "listener should be able to receive from emitter" $ do
       msgs <- genMsgs 100 20
