@@ -21,9 +21,11 @@ import qualified System.Log.Logger         as L
 import qualified Rho.Bitfield              as BF
 import           Rho.InfoHash
 import           Rho.Listener              (Listener, initListener, recvLen)
+import           Rho.Metainfo
 import           Rho.Parser
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
+import           Rho.PieceMgr
 
 data PeerConn = PeerConn
   { pcPeerChoking    :: Bool
@@ -57,40 +59,44 @@ newPeerConn peerId infoHash extension sock =
 type PeersState = MVar (M.Map SockAddr PeerConn)
 
 data PeerCommHandler = PeerCommHandler
-  { pchPeers :: PeersState }
+  { pchPeers    :: PeersState
+  , pchPieceMgr :: PieceMgr
+  }
 
 -- | Initialize listeners, data structures etc. for peer communications.
-initPeerCommsHandler :: IO PeerCommHandler
-initPeerCommsHandler = do
+initPeerCommsHandler :: Info -> IO PeerCommHandler
+initPeerCommsHandler torrentInfo = do
+    pieceMgr <- newPieceMgr (fromIntegral $ torrentSize torrentInfo)
+                            (fromIntegral $ iPieceLength torrentInfo)
     -- state of all connected peers
     peers <- newMVar M.empty
     -- sock for incoming connections
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet (fromIntegral (5433 :: Int)) 0) -- TODO: hard-coded port
     -- We don't block the thread that listens for incoming handshakes
-    void $ async $ listenPeerSocket sock peers
-    return $ PeerCommHandler peers
+    void $ async $ listenPeerSocket sock peers pieceMgr
+    return $ PeerCommHandler peers pieceMgr
 
 -- | Accept incoming connections and spawn a connected socket listener for
 -- every accepted connection.
-listenPeerSocket :: Socket -> PeersState -> IO ()
-listenPeerSocket sock peers = do
+listenPeerSocket :: Socket -> PeersState -> PieceMgr -> IO ()
+listenPeerSocket sock peers pieces = do
     (peerSock, peerAddr) <- accept sock
     -- have we established a connection with the peer?
     peers' <- readMVar peers
     listener <- initListener $ recv peerSock 4096
     if M.member peerAddr peers'
       then
-        void $ async $ listenConnectedSock listener peerSock peerAddr peers
+        void $ async $ listenConnectedSock listener peerSock peerAddr peers pieces
       else
         -- we should have a handshake message as first thing
-        void $ async $ listenHandshake listener peerAddr peers
-    listenPeerSocket sock peers
+        void $ async $ listenHandshake listener peerAddr peers pieces
+    listenPeerSocket sock peers pieces
 
 -- | Wait for an incoming handshake, update peers state upon successfully
 -- parsing the handshake and continue listening the connected socket.
-listenHandshake :: Listener -> SockAddr -> PeersState -> IO ()
-listenHandshake listener _peerAddr _peers = void $ async $ do
+listenHandshake :: Listener -> SockAddr -> PeersState -> PieceMgr -> IO ()
+listenHandshake listener _peerAddr _peers _pieces = void $ async $ do
     msg <- recvHandshake listener
     case msg of
       ConnClosed bs
@@ -105,8 +111,8 @@ listenHandshake listener _peerAddr _peers = void $ async $ do
             putStrLn "Ignoring an incoming handshake."
 
 -- | Listen a connected socket and handle incoming messages.
-listenConnectedSock :: Listener -> Socket -> SockAddr -> PeersState -> IO ()
-listenConnectedSock listener sock sockAddr peers = flip catchIOError errHandler $ loop
+listenConnectedSock :: Listener -> Socket -> SockAddr -> PeersState -> PieceMgr -> IO ()
+listenConnectedSock listener sock sockAddr peers pieces = flip catchIOError errHandler $ loop
   where
     loop = do
       msg <- recvMessage listener
@@ -114,7 +120,7 @@ listenConnectedSock listener sock sockAddr peers = flip catchIOError errHandler 
         ConnClosed msg
           | B.null msg -> closeConn
           | otherwise  -> putStrLn ("recvd a partial message: " ++ show (B.unpack msg)) >> closeConn
-        Msg msg -> handleMessage msg sock sockAddr peers >> loop
+        Msg msg -> handleMessage msg sock sockAddr peers pieces >> loop
 
     errHandler err = do
       putStrLn $ "Error happened while listening a socket: " ++ show err
@@ -123,8 +129,8 @@ listenConnectedSock listener sock sockAddr peers = flip catchIOError errHandler 
 
     closeConn = modifyMVar_ peers $ return . M.delete sockAddr
 
-handleMessage :: B.ByteString -> Socket -> SockAddr -> PeersState -> IO ()
-handleMessage msg _sock peerAddr peers = do
+handleMessage :: B.ByteString -> Socket -> SockAddr -> PeersState -> PieceMgr -> IO ()
+handleMessage msg _sock peerAddr peers pieces = do
     case parsePeerMsg msg of
       Left err -> warning . concat $
         [ "Can't parse peer message: ", err,
@@ -139,6 +145,9 @@ handleMessage msg _sock peerAddr peers = do
       Right Unchoke -> modifyPeerState $ \pc -> pc{pcPeerChoking = False}
       Right Interested -> modifyPeerState $ \pc -> pc{pcPeerInterested = True}
       Right NotInterested -> modifyPeerState $ \pc -> pc{pcPeerInterested = False}
+      Right (Piece pIdx offset pData) -> do
+        putStrLn "Got piece response"
+        writePiece pieces pIdx offset pData
       Right (Extended (ExtendedHandshake tbl [UtMetadataSize size])) -> do
         putStrLn "Got extended handshake."
         modifyPeerState $ \pc -> pc{pcExtendedMsgTbl = tbl, pcMetadataSize = Just size}
@@ -155,7 +164,7 @@ handleMessage msg _sock peerAddr peers = do
           Just pc -> f peers' pc
 
 handshake :: PeerCommHandler -> SockAddr -> InfoHash -> PeerId -> IO ()
-handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
+handshake (PeerCommHandler peers pieces) addr infoHash peerId = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
       Left err ->
@@ -168,12 +177,12 @@ handshake PeerCommHandler{pchPeers=peers} addr infoHash peerId = do
             -- first time handshaking with the peer, spawn a socket
             -- listener
             listener <- initListener $ recv sock 4096
-            void $ async $ listenConnectedSock listener sock addr peers
+            void $ async $ listenConnectedSock listener sock addr peers pieces
             -- TODO: check info_hash
             let peerConn = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
             putMVar peers $ M.insert addr peerConn peers'
             -- some peers send extended handshake with basic handshake message
-            unless (B.null (hExtra hs)) $ handleMessage (hExtra hs) sock addr peers
+            unless (B.null (hExtra hs)) $ handleMessage (hExtra hs) sock addr peers pieces
           Just pc -> do
             -- TODO: I don't know how can this happen. We already
             -- established a connection. Just reset the peer info.
@@ -215,6 +224,30 @@ sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
     case mkPeerMsg tbl msg of
       Left err -> return $ Just err
       Right bytes -> send sock bytes >> return Nothing
+
+sendPieceRequests :: PeerCommHandler -> IO [PeerConn]
+sendPieceRequests (PeerCommHandler peers pieces@(PieceMgr ps _)) = do
+    -- TODO: fix horrible piece request algortihm
+    missings <- missingPieces pieces
+    putStrLn $ "Missing pieces: " ++ show missings
+    peerComms <- M.elems `fmap` readMVar peers
+    sent <- forM missings $ \(pIdx, pOffset) -> do
+      let peersWithPiece = flip filter peerComms $ \PeerConn{pcPieces=pieces} ->
+                                                      case pieces of
+                                                        Nothing -> False
+                                                        Just ps -> BF.test ps (fromIntegral pIdx)
+      case peersWithPiece of
+        [] -> return Nothing
+        (p : _) -> do
+          putStrLn $ "Sending peer message to peer: " ++ show (pcPeerId p)
+          ret <- sendMessage p $ Request pIdx pOffset (ps - pOffset)
+          case ret of
+            Nothing -> return $ Just p
+            Just err -> do
+              putStrLn $ "Can't send piece request: " ++ err
+              return Nothing
+
+    return $ catMaybes sent
 
 -- * Receive helpers
 

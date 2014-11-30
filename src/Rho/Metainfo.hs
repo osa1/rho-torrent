@@ -40,6 +40,10 @@ data Info = Info
     -- ^ Left: single-file mode, Right: multi-file mode
   } deriving (Show, Eq, Typeable, Generic)
 
+torrentSize :: Info -> Int
+torrentSize Info{iFiles=Left (File len _ _)} = len
+torrentSize Info{iFiles=Right files} = sum $ map fLength files
+
 data File = File
   { fLength :: Int
   , fMd5Sum :: Maybe B.ByteString

@@ -27,6 +27,7 @@ library
     Rho.PeerComms
     Rho.PeerComms.Handshake
     Rho.PeerComms.Message
+    Rho.PieceMgr
     Rho.Torrent
     Rho.Tracker
     Rho.TrackerComms.HTTP
@@ -39,6 +40,7 @@ library
 
   build-depends:
       base >=4.5 && <5
+    , array
     , async
     , bytestring
     , containers
@@ -93,6 +95,7 @@ test-suite test
     Rho.MagnetSpec
     Rho.MetainfoSpec
     Rho.PeerCommsSpec
+    Rho.PieceMgrSpec
 
   build-depends:
       base >=4.7 && <5
