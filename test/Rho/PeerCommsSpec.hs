@@ -25,7 +25,7 @@ spec = do
     -- no need to test a lot of times since only thing that'll chance is
     -- info_hash and peer_id
     modifyMaxSuccess (const 100) $ prop "printing-parsing handshake" $ \(infoHash, peerId) ->
-      parseHandshake (mkHandshake infoHash peerId) == Right (Handshake infoHash peerId Supports "")
+      parseHandshake (mkHandshake infoHash peerId) == Right (Handshake infoHash peerId Supports)
 
     modifyMaxSuccess (const 10000) $ prop "printing-parsing messages" $ \msg ->
       (mkPeerMsg defaultMsgTable msg >>= parsePeerMsg) == Right msg

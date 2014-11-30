@@ -181,8 +181,6 @@ handshake (PeerCommHandler peers pieces) addr infoHash peerId = do
             -- TODO: check info_hash
             let peerConn = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
             putMVar peers $ M.insert addr peerConn peers'
-            -- some peers send extended handshake with basic handshake message
-            unless (B.null (hExtra hs)) $ handleMessage (hExtra hs) sock addr peers pieces
           Just pc -> do
             -- TODO: I don't know how can this happen. We already
             -- established a connection. Just reset the peer info.

@@ -22,7 +22,6 @@ data Handshake = Handshake
   { hInfoHash  :: InfoHash
   , hPeerId    :: PeerId
   , hExtension :: ExtendedMsgSupport
-  , hExtra     :: B.ByteString -- ^ extra data came after the handshake message
   } deriving (Show, Eq)
 
 mkHandshake :: InfoHash -> PeerId -> B.ByteString
@@ -43,7 +42,8 @@ parseHandshake bs =
     case execParser bs handshakeParser of
       Right ((pstr, infoHash, peerId, extension), rest) -> do
         assert ("Unknown pstr: " ++ BC.unpack pstr) (pstr == "BitTorrent protocol")
-        return $ Handshake infoHash peerId extension rest
+        assert ("Unparsed handshake contents: " ++ BC.unpack rest) (B.null rest)
+        return $ Handshake infoHash peerId extension
       Left err -> Left $ "Can't parse handshake message: " ++ err
   where
     assert :: String -> Bool -> Either String ()
