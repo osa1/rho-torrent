@@ -2,25 +2,15 @@
 
 module Rho.TrackerCommsSpec where
 
-import           Control.Applicative
-import           Control.Monad
-import           Data.Bits
 import qualified Data.ByteString               as B
-import           Data.Word
 
 import           Test.Hspec
 import           Test.Hspec.HUnit
-import           Test.Hspec.QuickCheck
 import           Test.HUnit
-import           Test.QuickCheck               hiding (Result)
 
-import qualified Rho.Bitfield                  as BF
-import           Rho.InfoHash
-import           Rho.Parser
 import           Rho.PeerComms.Handshake
 import           Rho.TrackerComms.UDP.Request
 import           Rho.TrackerComms.UDP.Response
-import           Rho.TrackerComms.UDP.Types
 import           Rho.Utils
 
 main :: IO ()

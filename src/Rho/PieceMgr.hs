@@ -2,11 +2,8 @@ module Rho.PieceMgr where
 
 import           Control.Concurrent.MVar
 import           Control.Monad
-import qualified Data.Array              as A
 import qualified Data.Array.IO           as A
-import qualified Data.Array.MArray       as A
 import qualified Data.ByteString         as B
-import qualified Data.Map                as M
 import           Data.Word
 
 data PieceMgr = PieceMgr
