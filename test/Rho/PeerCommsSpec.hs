@@ -7,6 +7,7 @@ import           Control.Applicative
 import           Control.Monad
 import qualified Data.ByteString         as B
 import           Data.IORef
+import           Data.Maybe
 import           System.FilePath
 
 import           Test.Hspec
@@ -55,8 +56,12 @@ parseLongMsg = TestLabel "parsing long message (using listener, starting with ha
           Left err -> assertFailure $ "Parsing handshake failed: " ++ err
           Right _ -> do
             msgs <- replicateM 26 (recvMessage listener)
-            let ms = filter (\msg -> case msg of { Msg _ -> True; _ -> False }) msgs
+            let ms = mapMaybe (\msg -> case msg of { Msg m -> Just m; _ -> Nothing }) msgs
             assertEqual "Failed to read some messages." 26 (length ms)
+            let parsedMs = flip mapMaybe ms $ \m -> case parsePeerMsg m of
+                                                      Left _ -> Nothing
+                                                      Right m' -> Just m'
+            assertEqual "Failed to parse some messages." 26 (length parsedMs)
 
 -- | Sends messages one byte at a time.
 mkMessageEmitter :: B.ByteString -> IO (IO B.ByteString)
