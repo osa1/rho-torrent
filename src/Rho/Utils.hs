@@ -7,6 +7,7 @@ import qualified Data.BEncode                     as BE
 import qualified Data.BEncode.BDict               as BE
 import qualified Data.BEncode.Internal            as BEI
 import qualified Data.BEncode.Types               as BE
+import           Data.Bits                        (shiftL)
 import qualified Data.ByteString                  as B
 import qualified Data.ByteString.Char8            as BC
 import           Data.Char
@@ -120,3 +121,47 @@ readAddrs = do
       ip <- readWord32LE
       port <- readWord16LE
       return $ SockAddrInet (PortNum port) ip
+
+-- | Make a `Word16` from bytes. First argument is most-significant byte.
+--
+-- >>> mkWord16 0x1 0x0
+-- 256
+--
+-- >>> mkWord16 0x0 0x1
+-- 1
+--
+mkWord16 :: Word8 -> Word8 -> Word16
+mkWord16 w1 w2 =
+    fromIntegral w1 `shiftL` 8
+  + fromIntegral w2
+{-# INLINE mkWord16 #-}
+
+-- | Make a `Word32` from bytes. First argument is most-significant byte.
+--
+-- >>> mkWord32 0x1 0x0 0x0 0x0
+-- 16777216
+--
+-- >>> mkWord32 0x0 0x0 0x0 0x1
+-- 1
+--
+mkWord32 :: Word8 -> Word8 -> Word8 -> Word8 -> Word32
+mkWord32 w1 w2 w3 w4 =
+    fromIntegral w1 `shiftL` 24
+  + fromIntegral w2 `shiftL` 16
+  + fromIntegral w3 `shiftL` 8
+  + fromIntegral w4
+{-# INLINE mkWord32 #-}
+
+-- | Make a `Word64` from bytes. First argument is most-significant byte.
+--
+-- >>> mkWord64 0x1 0x0 0x0 0x0 0x0 0x0 0x0 0x0
+-- 72057594037927936
+--
+-- >>> mkWord64 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x1
+-- 1
+--
+mkWord64 :: Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word64
+mkWord64 w1 w2 w3 w4 w5 w6 w7 w8 =
+    fromIntegral (mkWord32 w1 w2 w3 w4) `shiftL` 32
+  + fromIntegral (mkWord32 w5 w6 w7 w8)
+{-# INLINE mkWord64 #-}
