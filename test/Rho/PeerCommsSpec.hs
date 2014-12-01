@@ -46,21 +46,20 @@ spec = do
     fromHUnitTest parseExtendedHsAndBF
     fromHUnitTest parsePieceReqs
 
+    -- captured messages from a uTorrent <-> Transmission channel
+    -- (BEP 6 - Fast extension messages are removed, we don't support it yet)
+    fromHUnitTest utorrentExample
+    fromHUnitTest transmissionExample
+
 parseLongMsg :: Test
 parseLongMsg = TestLabel "parsing long message (using listener, starting with handshake)" $
   TestCase $ do
     extendedMsg <- B.readFile (dataRoot </> "extended_msg")
     emitter <- mkMessageEmitter extendedMsg
     listener <- initListener emitter
-    hsMsg <- recvHandshake listener
-    case hsMsg of
-      ConnClosed _ -> assertFailure "Receiving handshake failed"
-      Msg hs ->
-        case parseHandshake hs of
-          Left err -> assertFailure $ "Parsing handshake failed: " ++ err
-          Right _ -> do
-            recvAndParse listener 26
-            checkBuffer listener
+    recvAndParseHs listener
+    recvAndParse listener 26
+    checkBuffer listener
 
 parseExtendedHsAndBF :: Test
 parseExtendedHsAndBF = TestLabel "parsing extended handshake followed by bitfield" $ TestCase $ do
@@ -78,13 +77,42 @@ parsePieceReqs = TestLabel "parsing piece requests" $ TestCase $ do
   recvAndParse listener 2
   checkBuffer listener
 
+utorrentExample :: Test
+utorrentExample = TestLabel "parsing utorrent leecher example" $
+  TestCase $ do
+    extendedMsg <- B.readFile (dataRoot </> "utorrent_example")
+    emitter <- mkMessageEmitter extendedMsg
+    listener <- initListener emitter
+    recvAndParseHs listener
+    recvAndParse listener 3
+    checkBuffer listener
+
+transmissionExample :: Test
+transmissionExample = TestLabel "parsing transmission seeder example" $
+  TestCase $ do
+    extendedMsg <- B.readFile (dataRoot </> "transmission_example")
+    emitter <- mkMessageEmitter extendedMsg
+    listener <- initListener emitter
+    recvAndParseHs listener
+    recvAndParse listener 3
+    checkBuffer listener
+
+recvAndParseHs :: Listener -> Assertion
+recvAndParseHs listener = do
+    hsMsg <- recvHandshake listener
+    case hsMsg of
+      ConnClosed _ -> assertFailure "Receiving handshake failed"
+      Msg hs ->
+        case parseHandshake hs of
+          Left err -> assertFailure $ "Parsing handshake failed: " ++ err
+          Right _ -> return ()
+
 recvAndParse :: Listener -> Int -> Assertion
 recvAndParse listener n = do
   msgs <- replicateM n (recvMessage listener)
   let ms = mapMaybe (\msg -> case msg of { Msg m -> Just m; _ -> Nothing }) msgs
   assertEqual "Failed to read some messages." n (length ms)
-  let parsedMs = parseMsgs parsePeerMsg ms
-  assertEqual "Failed to parse some messages." n (length parsedMs)
+  parseMsgs parsePeerMsg ms
 
 checkBuffer :: Listener -> Assertion
 checkBuffer (Listener buf _ _ _ _) = do
@@ -94,8 +122,12 @@ checkBuffer (Listener buf _ _ _ _) = do
       assertFailure $ "Buffer is not empty: " ++ show bufContents
     assertEqual "Buffer length is not zero" 0 l
 
-parseMsgs :: (B.ByteString -> Either err a) -> [B.ByteString] -> [a]
-parseMsgs p ms = mapMaybe (\msg -> case p msg of { Left _ -> Nothing; Right m -> Just m}) ms
+parseMsgs :: (B.ByteString -> Either String a) -> [B.ByteString] -> Assertion
+parseMsgs _ [] = return ()
+parseMsgs p (m : ms) = do
+    case p m of
+      Left err -> assertFailure $ "Failed to parse msg: " ++ show (B.unpack m) ++ " (" ++ err ++ ")"
+      Right _ -> parseMsgs p ms
 
 recvMsg :: RecvMsg -> Either B.ByteString B.ByteString
 recvMsg (ConnClosed bs) = Left bs
