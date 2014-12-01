@@ -22,10 +22,10 @@ import qualified Rho.Bitfield              as BF
 import           Rho.InfoHash
 import           Rho.Listener              (Listener, initListener, recvLen)
 import           Rho.Metainfo
-import           Rho.Parser
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PieceMgr
+import           Rho.Utils
 
 data PeerConn = PeerConn
   { pcPeerChoking    :: Bool
@@ -259,7 +259,7 @@ recvMessage listener = do
       then return $ ConnClosed lengthPrefix
       else do
     let [w1, w2, w3, w4] = B.unpack lengthPrefix
-        len = mkLE w1 w2 w3 w4
+        len = mkWord32 w1 w2 w3 w4
     msg <- recvLen listener (fromIntegral len)
     return $ Msg $ lengthPrefix <> msg
 
