@@ -6,8 +6,10 @@ module Rho.PeerCommsSpec where
 import           Control.Applicative
 import           Control.Monad
 import qualified Data.ByteString         as B
+import qualified Data.Dequeue            as D
 import           Data.IORef
 import           Data.Maybe
+import           Data.Monoid
 import           System.FilePath
 
 import           Test.Hspec
@@ -41,6 +43,8 @@ spec = do
       (mkPeerMsg defaultMsgTable msg >>= parsePeerMsg) == Right msg
 
     fromHUnitTest parseLongMsg
+    fromHUnitTest parseExtendedHsAndBF
+    fromHUnitTest parsePieceReqs
 
 parseLongMsg :: Test
 parseLongMsg = TestLabel "parsing long message (using listener, starting with handshake)" $
@@ -55,13 +59,47 @@ parseLongMsg = TestLabel "parsing long message (using listener, starting with ha
         case parseHandshake hs of
           Left err -> assertFailure $ "Parsing handshake failed: " ++ err
           Right _ -> do
-            msgs <- replicateM 26 (recvMessage listener)
-            let ms = mapMaybe (\msg -> case msg of { Msg m -> Just m; _ -> Nothing }) msgs
-            assertEqual "Failed to read some messages." 26 (length ms)
-            let parsedMs = flip mapMaybe ms $ \m -> case parsePeerMsg m of
-                                                      Left _ -> Nothing
-                                                      Right m' -> Just m'
-            assertEqual "Failed to parse some messages." 26 (length parsedMs)
+            recvAndParse listener 26
+            checkBuffer listener
+
+parseExtendedHsAndBF :: Test
+parseExtendedHsAndBF = TestLabel "parsing extended handshake followed by bitfield" $ TestCase $ do
+  msg <- B.readFile (dataRoot </> "extended_hs_with_bf")
+  emitter <- mkMessageEmitter msg
+  listener <- initListener emitter
+  recvAndParse listener 2
+  checkBuffer listener
+
+parsePieceReqs :: Test
+parsePieceReqs = TestLabel "parsing piece requests" $ TestCase $ do
+  msg <- B.readFile (dataRoot </> "piece_requests")
+  emitter <- mkMessageEmitter msg
+  listener <- initListener emitter
+  recvAndParse listener 2
+  checkBuffer listener
+
+recvAndParse :: Listener -> Int -> Assertion
+recvAndParse listener n = do
+  msgs <- replicateM n (recvMessage listener)
+  let ms = mapMaybe (\msg -> case msg of { Msg m -> Just m; _ -> Nothing }) msgs
+  assertEqual "Failed to read some messages." n (length ms)
+  let parsedMs = parseMsgs parsePeerMsg ms
+  assertEqual "Failed to parse some messages." n (length parsedMs)
+
+checkBuffer :: Listener -> Assertion
+checkBuffer (Listener buf _ _ _ _) = do
+    (d, l) <- readIORef buf
+    unless (D.null d) $ do
+      let bufContents = mconcat $ D.takeFront (D.length d) d
+      assertFailure $ "Buffer is not empty: " ++ show bufContents
+    assertEqual "Buffer length is not zero" 0 l
+
+parseMsgs :: (B.ByteString -> Either err a) -> [B.ByteString] -> [a]
+parseMsgs p ms = mapMaybe (\msg -> case p msg of { Left _ -> Nothing; Right m -> Just m}) ms
+
+recvMsg :: RecvMsg -> Either B.ByteString B.ByteString
+recvMsg (ConnClosed bs) = Left bs
+recvMsg (Msg bs) = Right bs
 
 -- | Sends messages one byte at a time.
 mkMessageEmitter :: B.ByteString -> IO (IO B.ByteString)
