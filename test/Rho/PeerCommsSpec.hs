@@ -8,6 +8,7 @@ import           Control.Monad
 import qualified Data.ByteString         as B
 import qualified Data.Dequeue            as D
 import           Data.IORef
+import           Data.List
 import           Data.Maybe
 import           Data.Monoid
 import           System.FilePath
@@ -21,6 +22,7 @@ import           Test.QuickCheck         hiding (Result)
 import qualified Rho.Bitfield            as BF
 import           Rho.InfoHash
 import           Rho.Listener
+import qualified Rho.ListenerSpec        as LS
 import           Rho.PeerComms
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
@@ -42,6 +44,18 @@ spec = do
     modifyMaxSuccess (const 10000) $ prop "printing-parsing messages" $ \msg ->
       (mkPeerMsg defaultMsgTable msg >>= parsePeerMsg) == Right msg
 
+    fromHUnitTest recvMessageRegression
+
+    -- QuickCheck sucks. It doesn't prove any easy ways to report failure
+    -- resons(unlike HUnit) and forces us to define lots of newtypes and
+    -- Arbitrary instances.
+    modifyMaxSuccess (const 100) $ prop "recvMessages receives correct lengths" $ \(PFXd msgs) ->
+      ioProperty $ do
+        emitter <- LS.mkMessageEmitter msgs
+        listener <- initListener emitter
+        recvd <- map unwrapRecvd `fmap` replicateM (length msgs) (recvMessage listener)
+        return ( length recvd == length msgs && ll recvd == ll msgs )
+
     fromHUnitTest parseLongMsg
     fromHUnitTest parseExtendedHsAndBF
     fromHUnitTest parsePieceReqs
@@ -50,6 +64,16 @@ spec = do
     -- (BEP 6 - Fast extension messages are removed, we don't support it yet)
     fromHUnitTest utorrentExample
     fromHUnitTest transmissionExample
+
+    fromHUnitTest regression1
+
+-- FIXME: copied from ListenerSpec, maybe move to some shared module
+ll :: [B.ByteString] -> Int
+ll = foldl' (\acc b -> acc + B.length b) 0
+
+unwrapRecvd :: RecvMsg -> B.ByteString
+unwrapRecvd (ConnClosed bs) = bs
+unwrapRecvd (Msg bs) = bs
 
 parseLongMsg :: Test
 parseLongMsg = TestLabel "parsing long message (using listener, starting with handshake)" $
@@ -95,6 +119,39 @@ transmissionExample = TestLabel "parsing transmission seeder example" $
     listener <- initListener emitter
     recvAndParseHs listener
     recvAndParse listener 3
+    checkBuffer listener
+
+regression1 :: Test
+regression1 = TestLabel "regression -- parsing series of messages" $
+  TestCase $ do
+    msg <- B.readFile (dataRoot </> "regression1")
+    let (firstMsg, rest) = B.splitAt 68 msg
+        (secondMsg, rest') = B.splitAt 124 rest
+        (thirdMsg, rest'') = B.splitAt 5 rest'
+    assertBool ("message splitted wrong: " ++ show (B.unpack rest''))
+               (B.null rest'' && (firstMsg <> secondMsg <> thirdMsg == msg))
+    emitter <- LS.mkMessageEmitter [firstMsg, secondMsg, thirdMsg]
+    listener <- initListener emitter
+    recvAndParseHs listener
+    msgs <- replicateM 3 (recvMessage listener)
+    let ms = mapMaybe (\msg -> case msg of { Msg m -> Just m; _ -> Nothing }) msgs
+    case map parsePeerMsg ms of
+      [Right (Extended ExtendedHandshake{}), Right Bitfield{}, Right Unchoke{}] -> return ()
+      w -> assertFailure ("messages are parsed wrong: " ++ show w)
+    checkBuffer listener
+
+recvMessageRegression :: Test
+recvMessageRegression = TestLabel "regression -- recvMessage sometimes returns wrong" $
+  TestCase $ do
+    let first = [0,0,0,1,1]
+        second = [0,0,0,0]
+        msgs = [B.pack first, B.pack second]
+    emitter <- LS.mkMessageEmitter msgs
+    listener <- initListener emitter
+    msg1 <- recvMessage listener
+    msg2 <- recvMessage listener
+    assertEqual "first message is wrong" first (B.unpack $ unwrapRecvd msg1)
+    assertEqual "second message is wrong" second (B.unpack $ unwrapRecvd msg2)
     checkBuffer listener
 
 recvAndParseHs :: Listener -> Assertion
@@ -147,6 +204,19 @@ mkMessageEmitter msg = do
 
 
 -- * Arbitrary stuff
+
+newtype PFXd = PFXd [B.ByteString] deriving (Eq)
+
+instance Arbitrary PFXd where
+    arbitrary = PFXd <$> (listOf $ do
+      len <- arbitrary
+      msg <- replicateM (fromIntegral len) arbitrary
+      return . B.pack $ [0, 0, 0, len] ++ msg)
+
+    shrink _ = []
+
+instance Show PFXd where
+    show (PFXd bs) = show $ map B.unpack bs
 
 genBytes :: Int -> Gen B.ByteString
 genBytes n = B.pack `fmap` replicateM n arbitrary

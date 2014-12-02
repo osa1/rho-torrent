@@ -249,7 +249,7 @@ sendPieceRequests (PeerCommHandler peers pieces@(PieceMgr ps _)) = do
 
 -- * Receive helpers
 
-data RecvMsg = ConnClosed B.ByteString | Msg B.ByteString
+data RecvMsg = ConnClosed B.ByteString | Msg B.ByteString deriving (Show, Eq)
 
 -- | Try to receive a 4-byte length-prefixed message.
 recvMessage :: Listener -> IO RecvMsg

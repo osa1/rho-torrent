@@ -26,7 +26,7 @@ spec = do
     modifyMaxSuccess (const 1000) $ prop "should be able to dequeue as long as len < queue len" $ do
       msgs <- genMsgs 100 20
       let deq = D.fromList msgs
-          deqLen = foldl' (\acc b -> acc + B.length b) 0 msgs
+          deqLen = ll msgs
       len <- oneof $ map return [0..deqLen - 1]
       let (_, msg) = dequeue deq len
       return $ B.length msg == len
@@ -78,6 +78,30 @@ spec = do
         (buffer, _) <- readIORef (deque listener_)
         assertEqual "buffer not empty" 0 (D.length buffer)
 
+    fromHUnitTest $ TestLabel "recvLen bug" $ TestCase $ do
+      let msgs = map B.pack [[0,0,0,1,1], [0,0,0,0]]
+      emitter <- mkMessageEmitter msgs
+      listener_ <- initListener emitter
+      msg1 <- recvLen listener_ 5
+      msg2 <- recvLen listener_ 4
+      assertEqual "first message is wrong" [0,0,0,1,1] (B.unpack msg1)
+      assertEqual "second message is wrong" [0,0,0,0] (B.unpack msg2)
+      (buffer, _) <- readIORef (deque listener_)
+      assertEqual "buffer not empty" 0 (D.length buffer)
+
+    fromHUnitTest $ TestLabel "dequeue test" $ TestCase $ do
+      let first = [0,0,0,1,1]
+          second = [0,0,0,0]
+          d = D.pushBack (D.pushBack (D.empty) (B.pack first)) (B.pack second)
+      assertEqual "" [first, second] (map B.unpack $ D.takeFront 2 d)
+      let (d', firstMsg) = dequeue d 4
+          (d'', firstMsg') = dequeue d' 1
+          (d''', secondMsg) = dequeue d'' 4
+          (d'''', secondMsg') = dequeue d''' 0
+      assertEqual "first message is wrong" first (B.unpack $ firstMsg <> firstMsg')
+      assertEqual "second message is wrong" second (B.unpack $ secondMsg <> secondMsg')
+      assertEqual "deque is not empty" 0 (D.length d'''')
+
     modifyMaxSuccess (const 100) $ prop "listener should be able to receive from emitter" $ do
       msgs <- genMsgs 100 20
       let msgsLen = ll msgs
@@ -93,7 +117,7 @@ spec = do
 
     modifyMaxSuccess (const 1000) $ prop "recvLen should be able to receive all messages" $ do
       msgs <- genMsgs 100 20
-      let msgsLen = foldl' (\acc b -> acc + B.length b) 0 msgs
+      let msgsLen = ll msgs
       recvLens <- generateRecvLens msgsLen
       return $ ioProperty $ do
         emitter <- mkMessageEmitter msgs

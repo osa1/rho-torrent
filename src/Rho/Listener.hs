@@ -98,6 +98,7 @@ recvLen sl@Listener{..} len = do
                recvLen sl len
 
 dequeue :: D.BankersDequeue B.ByteString -> Int -> (D.BankersDequeue B.ByteString, B.ByteString)
+dequeue d 0   = (d, B.empty)
 dequeue d len =
     let (Just bs, d') = D.popFront d in
     case compare (B.length bs) len of
@@ -107,7 +108,7 @@ dequeue d len =
       EQ -> (d', bs)
       GT ->
        let (h, t) = B.splitAt len bs in
-       (D.pushFront d t, h)
+       (D.pushFront d' t, h)
 
 -- TODO: Test for exceptions and errors.
 listen :: IO B.ByteString -> IORef Deque -> MVar () -> MVar () -> MVar () -> IO ()
