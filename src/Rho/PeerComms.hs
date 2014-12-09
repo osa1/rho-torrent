@@ -141,8 +141,8 @@ handleMessage msg _sock peerAddr peers pieces = do
         modifyPeerState $ \pc ->
           let bf' = Just $ BF.set (fromMaybe BF.empty $ pcPieces pc) (fromIntegral piece)
           in pc{pcPieces = bf'}
-      Right Choke -> modifyPeerState $ \pc -> pc{pcPeerChoking = True}
-      Right Unchoke -> modifyPeerState $ \pc -> pc{pcPeerChoking = False}
+      Right Choke -> modifyPeerState $ \pc -> pc{pcChoking = True}
+      Right Unchoke -> modifyPeerState $ \pc -> pc{pcChoking = False}
       Right Interested -> modifyPeerState $ \pc -> pc{pcPeerInterested = True}
       Right NotInterested -> modifyPeerState $ \pc -> pc{pcPeerInterested = False}
       Right (Piece pIdx offset pData) -> do
@@ -224,21 +224,24 @@ sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
       Right bytes -> send sock bytes >> return Nothing
 
 sendPieceRequests :: PeerCommHandler -> IO [PeerConn]
-sendPieceRequests (PeerCommHandler peers pieces@(PieceMgr ps _)) = do
+sendPieceRequests (PeerCommHandler peers pieces@(PieceMgr ps _ _ _)) = do
     -- TODO: fix horrible piece request algortihm
     missings <- missingPieces pieces
     putStrLn $ "Missing pieces: " ++ show missings
     peerComms <- M.elems `fmap` readMVar peers
-    sent <- forM missings $ \(pIdx, pOffset) -> do
+    sent <- forM missings $ \(pIdx, pOffset, pSize) -> do
+      putStrLn $ "all peers: " ++ show (map (unwrapPeerId . pcPeerId) peerComms)
       let peersWithPiece = flip filter peerComms $ \PeerConn{pcPieces=pieces} ->
                                                       case pieces of
                                                         Nothing -> False
                                                         Just ps -> BF.test ps (fromIntegral pIdx)
-      case peersWithPiece of
+          unchokedPeers = filter (not . pcChoking) peersWithPiece
+      putStrLn $ "unchoked peers: " ++ show (map (unwrapPeerId . pcPeerId) unchokedPeers)
+      case unchokedPeers of
         [] -> return Nothing
         (p : _) -> do
-          putStrLn $ "Sending peer message to peer: " ++ show (pcPeerId p)
-          ret <- sendMessage p $ Request pIdx pOffset (ps - pOffset)
+          putStrLn $ "Sending peer message to peer: " ++ show (unwrapPeerId $ pcPeerId p)
+          ret <- sendMessage p $ Request pIdx pOffset pSize
           case ret of
             Nothing -> return $ Just p
             Just err -> do
