@@ -68,19 +68,31 @@ runPeers (Left err) _ _ _ = error err
 runPeers (Right peers) info infoHash peerId = do
     putStrLn $ "Sending handshake to peers..."
     peerComms <- initPeerCommsHandler info
-    forM_ (prPeers peers) $ \peer -> do
-      async $ handshake peerComms peer infoHash peerId
-    threadDelay 30000000
+    async $ do
+      forM_ (prPeers peers) $ \peer -> do
+        handshake peerComms peer infoHash peerId
+
+      ps <- M.toList `fmap` readMVar (pchPeers peerComms)
+      forM_ ps $ \(addr, peerConn) -> do
+        sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
+
+    -- threadDelay 30000000
     connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
     putStrLn $ "Peers: " ++ show (length connectedPeers)
+
+    threadDelay 10000000
+
     ps <- M.toList `fmap` readMVar (pchPeers peerComms)
     forM_ ps $ \(addr, peerConn) -> do
-      putStrLn $ "Sending extended handshake to: " ++ show addr
-      sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
+      putStrLn $ "Sending interested to: " ++ show addr
+      sendMessage peerConn Unchoke
+      sendMessage peerConn Interested
+
+    threadDelay 1000000
 
     forever $ do
       putStrLn "Sending piece requests"
-      print =<< sendPieceRequests peerComms
+      print . map (unwrapPeerId . pcPeerId) =<< sendPieceRequests peerComms
       threadDelay 10000000
 
     connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
@@ -126,7 +138,8 @@ runPeers (Right peers) info infoHash peerId = do
 -- peer id for every request? Looked pretty useless to me.
 generatePeerId :: IO PeerId
 generatePeerId =
-    PeerId . LB.toStrict . BB.toLazyByteString . mconcat . map BB.word8 <$> replicateM 20 randomIO
+    -- PeerId . LB.toStrict . BB.toLazyByteString . mconcat . map BB.word8 <$> replicateM 20 randomIO
+    return . PeerId . B.pack $ "-TR2840-6hagv0sp4g7k"
 
 installLogger :: IO ()
 installLogger = do
