@@ -1,9 +1,14 @@
 module Rho.PieceMgr where
 
+import           Control.Applicative
 import           Control.Concurrent.MVar
 import           Control.Monad
 import qualified Data.Array.IO           as A
 import qualified Data.ByteString         as B
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy    as LB
+import           Data.Digest.SHA1        (Word160 (..), hash)
+import           Data.Monoid
 import           Data.Word
 
 data PieceMgr = PieceMgr
@@ -63,3 +68,31 @@ missingPieces (PieceMgr ps ts totalPieces m) = do
                 else do
                   rest <- collectMissingPieces arr bits max (idx + fromIntegral offsetToNextPiece)
                   return $ (currentPiece, pieceOffset, offsetToNextPiece) : rest
+
+-- | Check if piece data has correct hash.
+checkPieces :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
+checkPieces (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
+    (arr, _) <- takeMVar pData
+    let isLastPiece = pIdx == pieces - 1
+        start :: Word64
+        start = fromIntegral $ pIdx * pSize
+    bytes <- slice arr start $
+               if isLastPiece
+                 then start + (if totalSize `mod` fromIntegral pSize == 0
+                                 then fromIntegral pSize
+                                 else totalSize `mod` fromIntegral pSize)
+                 else start + fromIntegral pSize
+    return $ word160ToBS (hash bytes) == pHash
+
+-- * Utils
+
+-- FIXME: This may be too slow because of redundant arr -> list conversion.
+-- FIXME: Maybe move to utils.
+-- FIXME: Write tests before improving the performance.
+slice :: A.IOUArray Word64 Word8 -> Word64 -> Word64 -> IO [Word8]
+slice arr start end =
+    take (fromIntegral $ end - start) . drop (fromIntegral start) <$> A.getElems arr
+
+word160ToBS :: Word160 -> B.ByteString
+word160ToBS (Word160 w1 w2 w3 w4 w5) = LB.toStrict . BB.toLazyByteString . mconcat $
+    map BB.word32BE [w1, w2, w3, w4, w5]

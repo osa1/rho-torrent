@@ -1,11 +1,13 @@
 module Rho.PieceMgrSpec where
 
-import qualified Data.ByteString  as B
+import qualified Data.ByteString       as B
 import           Data.List
 import           Test.Hspec
 import           Test.Hspec.HUnit
 import           Test.HUnit
 
+import           Rho.Metainfo
+import           Rho.PeerComms.Message
 import           Rho.PieceMgr
 
 main :: IO ()
@@ -18,6 +20,7 @@ spec = do
     fromHUnitTest lastPieceNonZeroTest
     fromHUnitTest lastPieceZeroTest
     fromHUnitTest bigPieceTest
+    fromHUnitTest testTorrentPieceTest
 
 cons :: a -> (b, c) -> (a, b, c)
 cons a (b, c) = (a, b, c)
@@ -76,3 +79,24 @@ bigPieceTest = TestLabel "piece size > torrent size" $ TestCase $ do
     missings <- missingPieces mgr
     let expected = [(0, 0, 14)]
     assertEqual "missing pieces are wrong" expected missings
+
+testTorrentPieceTest :: Test
+testTorrentPieceTest = TestLabel "test.torrent pieces" $ TestCase $ do
+    miContents <- B.readFile "test/test.torrent"
+    case parseMetainfo miContents of
+      Left err -> assertFailure $ "Can't parse test.torrent: " ++ err
+      Right mi -> do
+        pieceMgr <- newPieceMgr (fromIntegral $ torrentSize $ mInfo mi)
+                                (fromIntegral $ iPieceLength $ mInfo mi)
+        missings <- missingPieces pieceMgr
+        assertEqual "missing pieces are wrong" [(0, 0, 12)] missings
+        pieceMsg <- B.readFile "test/test_data/test_torrent_piece"
+        case parsePeerMsg pieceMsg of
+          Left err -> assertFailure $ "Can't parse piece message: " ++ err
+          Right (Piece pIdx pOffset pData) -> do
+            writePiece pieceMgr pIdx pOffset pData
+            missings1 <- missingPieces pieceMgr
+            assertEqual "missing pieces are wrong" [] missings1
+            check <- checkPieces pieceMgr 0 (head $ iPieces $ mInfo mi)
+            assertBool "piece hash check failed" check
+          Right msg -> assertFailure $ "Parsed piece message to somehing else: " ++ show msg
