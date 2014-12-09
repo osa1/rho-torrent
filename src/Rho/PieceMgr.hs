@@ -6,10 +6,15 @@ import           Control.Monad
 import qualified Data.Array.IO           as A
 import qualified Data.ByteString         as B
 import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Char8   as BC
 import qualified Data.ByteString.Lazy    as LB
 import           Data.Digest.SHA1        (Word160 (..), hash)
+import           Data.List               (foldl')
 import           Data.Monoid
 import           Data.Word
+import           System.FilePath         ((</>))
+
+import           Rho.Metainfo
 
 data PieceMgr = PieceMgr
   { pmPieceSize :: Word32
@@ -72,7 +77,7 @@ missingPieces (PieceMgr ps ts totalPieces m) = do
 -- | Check if piece data has correct hash.
 checkPieces :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
 checkPieces (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
-    (arr, _) <- takeMVar pData
+    (arr, _) <- readMVar pData
     let isLastPiece = pIdx == pieces - 1
         start :: Word64
         start = fromIntegral $ pIdx * pSize
@@ -83,6 +88,29 @@ checkPieces (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
                                  else totalSize `mod` fromIntegral pSize)
                  else start + fromIntegral pSize
     return $ word160ToBS (hash bytes) == pHash
+
+generateFiles :: PieceMgr -> Info -> IO [(FilePath, B.ByteString)]
+generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ files) = do
+    let fs = map (\(p, s) -> (BC.unpack name </> p, s)) $ collectFiles files
+    bytes <- readMVar pData >>= A.getElems . fst
+    return $ zip (map fst fs) $ map B.pack $ splitBytes bytes (map snd fs)
+  where
+    splitBytes :: [Word8] -> [Int] -> [[Word8]]
+    splitBytes [] [] = []
+    splitBytes ws (i : is) =
+      let (h, t) = splitAt i ws
+          rest   = splitBytes t is
+      in (h : rest)
+
+    collectFiles :: Either File [File] -> [(FilePath, Int)]
+    collectFiles (Left f)   = [collectF f]
+    collectFiles (Right fs) = map collectF fs
+
+    collectF :: File -> (FilePath, Int)
+    collectF f = (mkPath $ fPath f, fLength f)
+
+    mkPath :: [B.ByteString] -> String
+    mkPath bs = foldl' (</>) "" $ map BC.unpack bs
 
 -- * Utils
 

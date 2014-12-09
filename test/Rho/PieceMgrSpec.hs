@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Rho.PieceMgrSpec where
 
 import qualified Data.ByteString       as B
@@ -99,4 +101,10 @@ testTorrentPieceTest = TestLabel "test.torrent pieces" $ TestCase $ do
             assertEqual "missing pieces are wrong" [] missings1
             check <- checkPieces pieceMgr 0 (head $ iPieces $ mInfo mi)
             assertBool "piece hash check failed" check
+            files <- generateFiles pieceMgr (mInfo mi)
+            let expectedFiles =
+                  [ ("seed_files/file1.txt", "file1\n")
+                  , ("seed_files/file2.txt", "file2\n")
+                  ]
+            assertEqual "generated files are wrong" expectedFiles files
           Right msg -> assertFailure $ "Parsed piece message to somehing else: " ++ show msg

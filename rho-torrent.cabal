@@ -46,6 +46,7 @@ library
     , containers
     , Crypto
     , dequeue
+    , filepath
     , hslogger
     , HTTP
     , network
