@@ -100,18 +100,18 @@ generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ files) = do
     bytes <- readMVar pData >>= A.getElems . fst
     return $ zip (map fst fs) $ map B.pack $ splitBytes bytes (map snd fs)
   where
-    splitBytes :: [Word8] -> [Int] -> [[Word8]]
+    splitBytes :: [Word8] -> [Word64] -> [[Word8]]
     splitBytes [] [] = []
     splitBytes ws (i : is) =
-      let (h, t) = splitAt i ws
+      let (h, t) = splitAt (fromIntegral i {- TODO: is this conversion safe? -}) ws
           rest   = splitBytes t is
       in (h : rest)
 
-    collectFiles :: Either File [File] -> [(FilePath, Int)]
+    collectFiles :: Either File [File] -> [(FilePath, Word64)]
     collectFiles (Left f)   = [collectF f]
     collectFiles (Right fs) = map collectF fs
 
-    collectF :: File -> (FilePath, Int)
+    collectF :: File -> (FilePath, Word64)
     collectF f = (mkPath $ fPath f, fLength f)
 
     mkPath :: [B.ByteString] -> String

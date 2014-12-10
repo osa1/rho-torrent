@@ -33,8 +33,7 @@ data PeerCommHandler = PeerCommHandler
 -- | Initialize listeners, data structures etc. for peer communications.
 initPeerCommsHandler :: Info -> PeerId -> IO PeerCommHandler
 initPeerCommsHandler torrentInfo pid = do
-    pieceMgr <- newPieceMgr (fromIntegral $ torrentSize torrentInfo)
-                            (fromIntegral $ iPieceLength torrentInfo)
+    pieceMgr <- newPieceMgr (torrentSize torrentInfo) (iPieceLength torrentInfo)
     -- state of all connected peers
     peers <- newMVar M.empty
     -- sock for incoming connections

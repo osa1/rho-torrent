@@ -13,6 +13,7 @@ import           Data.Digest.SHA1
 import           Data.Maybe              (fromMaybe)
 import           Data.Monoid
 import           Data.Typeable
+import           Data.Word
 import           GHC.Generics
 
 import           Rho.InfoHash
@@ -33,19 +34,19 @@ data Metainfo = Metainfo
 
 data Info = Info
   { iName        :: B.ByteString
-  , iPieceLength :: Int
+  , iPieceLength :: Word32
   , iPieces      :: [B.ByteString]
   , iPrivate     :: Bool
   , iFiles       :: Either File [File]
     -- ^ Left: single-file mode, Right: multi-file mode
   } deriving (Show, Eq, Typeable, Generic)
 
-torrentSize :: Info -> Int
+torrentSize :: Info -> Word64
 torrentSize Info{iFiles=Left (File len _ _)} = len
 torrentSize Info{iFiles=Right files} = sum $ map fLength files
 
 data File = File
-  { fLength :: Int
+  { fLength :: Word64
   , fMd5Sum :: Maybe B.ByteString
   , fPath   :: [B.ByteString]
     -- ^ empty in single-file mode
