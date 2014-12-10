@@ -67,14 +67,10 @@ runPeers :: Either String PeerResponse -> Info -> InfoHash -> PeerId -> IO ()
 runPeers (Left err) _ _ _ = error err
 runPeers (Right peers) info infoHash peerId = do
     putStrLn $ "Sending handshake to peers..."
-    peerComms <- initPeerCommsHandler info
+    peerComms <- initPeerCommsHandler info peerId
     async $ do
       forM_ (prPeers peers) $ \peer -> do
-        handshake peerComms peer infoHash peerId
-
-      ps <- M.toList `fmap` readMVar (pchPeers peerComms)
-      forM_ ps $ \(addr, peerConn) -> do
-        sendMessage peerConn (Extended (ExtendedHandshake defaultMsgTable []))
+        handshake peerComms peer infoHash
 
     -- threadDelay 30000000
     connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
