@@ -232,7 +232,7 @@ instance Arbitrary PeerId where
 
 instance Arbitrary BF.Bitfield where
     -- let's generate fixed length for now
-    arbitrary = BF.Bitfield <$> genBytes 5
+    arbitrary = flip BF.Bitfield 40 <$> genBytes 5
     shrink _ = []
 
 instance Arbitrary PeerMsg where

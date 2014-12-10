@@ -78,10 +78,16 @@ handleMessage peer pieces msg _sock peerAddr = do
         [ "Can't parse peer message: ", err,
           " msg: ", show msg, " msg length: ", show (B.length msg) ]
       Right KeepAlive -> return () -- TODO: should I ignore keep-alives?
-      Right (Bitfield bf) -> atomicModifyIORef' peer $ \pc -> (pc{pcPieces = Just bf}, ())
+      Right (Bitfield (BF.Bitfield bytes _)) ->
+        -- we ignore parsed length and use number of pieces that we know
+        -- FIXME: we need to check piece index in have message before
+        -- calling `Bitfield.set` to prevent `error`.
+        atomicModifyIORef' peer $ \pc ->
+          (pc{pcPieces = Just (BF.Bitfield bytes $ fromIntegral $ pmPieces pieces)}, ())
       Right (Have piece) ->
         atomicModifyIORef' peer $ \pc ->
-          let bf' = Just $ BF.set (fromMaybe BF.empty $ pcPieces pc) (fromIntegral piece)
+          let bf' = Just $ BF.set (fromMaybe (BF.empty $ fromIntegral $ pmPieces pieces) $ pcPieces pc)
+                                  (fromIntegral piece)
           in (pc{pcPieces = bf'}, ())
       Right Choke -> atomicModifyIORef' peer $ \pc -> (pc{pcChoking = True}, ())
       Right Unchoke -> atomicModifyIORef' peer $ \pc -> (pc{pcChoking = False}, ())
