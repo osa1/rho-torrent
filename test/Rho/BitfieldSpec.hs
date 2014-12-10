@@ -2,8 +2,11 @@
 
 module Rho.BitfieldSpec where
 
+import           Control.Applicative
 import           Data.Bits
 import qualified Data.ByteString           as B
+import           Data.List                 (foldl')
+import qualified Data.Set                  as S
 import           Data.Word
 import           Test.Hspec
 import           Test.Hspec.QuickCheck
@@ -23,7 +26,7 @@ spec = do
           rets  = flip map (zip [0..] bs) $ \(byteIdx, byte) ->
                     flip map [0..7] $ \bitIdx ->
                       BF.test bf (byteIdx * 8 + bitIdx) == testBit byte (7 - bitIdx)
-      in all (== True) (concat rets)
+      in all id (concat rets)
 
     prop "setBit and test" $ \(BSIndex (bs, idx)) ->
       BF.test (BF.Bitfield (BF.setBit bs idx)) idx
@@ -32,6 +35,17 @@ spec = do
       let i = fromIntegral idx
       in BF.test (BF.set (BF.Bitfield bs) i) i
 
+    prop "set and collectBits" $ \(BSIndex' (bs, idxs)) ->
+      let bs'      = foldl' (\bs' i -> BF.setBit bs' i) bs (S.toList idxs)
+          missings = BF.missingBits (BF.Bitfield bs')
+          avails   = BF.availableBits (BF.Bitfield bs')
+          idxs'    = S.map fromIntegral idxs
+      in all id [ idxs' `S.intersection` missings == S.empty
+                , idxs' `S.union` missings == S.fromList [0..fromIntegral (B.length bs * 8) - 1]
+                , missings `S.intersection` avails == S.empty
+                , missings `S.union` avails == S.fromList [0..fromIntegral (B.length bs * 8) - 1]
+                ]
+
 newtype BSIndex = BSIndex (B.ByteString, Int) deriving (Show)
 
 instance Arbitrary BSIndex where
@@ -39,3 +53,12 @@ instance Arbitrary BSIndex where
       idx <- arbitrary `suchThat` (\i -> i >= 0 && i < 100)
       bs  <- arbitrary `suchThat` (\bs -> B.length bs > idx)
       return $ BSIndex (bs, idx)
+
+newtype BSIndex' = BSIndex' (B.ByteString, S.Set Int) deriving (Show)
+
+instance Arbitrary BSIndex' where
+    arbitrary = do
+      idxs <- S.fromList <$> listOf1 (arbitrary `suchThat` (\i -> i >= 0 && i < 100))
+      let len = (maximum (S.toList idxs) `div` 8) + 1
+          bs  = B.pack $ replicate len 0
+      return $ BSIndex' (bs, idxs)
