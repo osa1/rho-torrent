@@ -119,7 +119,7 @@ listen recv deq updated lock stopped = catchIOError loop errHandler
       if | B.null bytes -> stop
          | otherwise    -> do
              takeMVar lock
-             modifyIORef deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
+             modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
              _ <- tryPutMVar updated ()
              putMVar lock ()
              loop
