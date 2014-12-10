@@ -122,6 +122,14 @@ listen recv deq updated lock stopped = catchIOError loop errHandler
              modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
              _ <- tryPutMVar updated ()
              putMVar lock ()
+             -- FIXME: This is extremely annoying. Removing this line is
+             -- effecting behavior of some other parts of the program.
+             --
+             -- For example, if I remove this line, then message listeners
+             -- process incoming piece message after this loop receives
+             -- another message. So last message is lost until another
+             -- message is received.
+             putStrLn "looping"
              loop
 
     errHandler err = do
