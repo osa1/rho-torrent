@@ -7,6 +7,7 @@ import           Rho.Metainfo
 import           Rho.PeerComms
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
+import           Rho.PeerComms.PeerConnection
 import           Rho.Torrent
 import           Rho.Tracker
 import           Rho.TrackerComms.HTTP
@@ -20,6 +21,7 @@ import           Control.Monad
 import qualified Data.ByteString.Builder       as BB
 import qualified Data.ByteString.Char8         as B
 import qualified Data.ByteString.Lazy          as LB
+import           Data.IORef
 import qualified Data.Map                      as M
 import           Data.Monoid
 import           Network.Socket
@@ -80,15 +82,17 @@ runPeers (Right peers) info infoHash peerId = do
 
     ps <- M.toList `fmap` readMVar (pchPeers peerComms)
     forM_ ps $ \(addr, peerConn) -> do
+      pc <- readIORef peerConn
       putStrLn $ "Sending interested to: " ++ show addr
-      sendMessage peerConn Unchoke
-      sendMessage peerConn Interested
+      sendMessage pc Unchoke
+      sendMessage pc Interested
 
     threadDelay 1000000
 
     forever $ do
       putStrLn "Sending piece requests"
-      print . map (unwrapPeerId . pcPeerId) =<< sendPieceRequests peerComms
+      print . map (unwrapPeerId . pcPeerId)
+        =<< sendPieceRequests (pchPeers peerComms) (pchPieceMgr peerComms)
       threadDelay 10000000
 
     connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)

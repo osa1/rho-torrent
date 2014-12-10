@@ -27,6 +27,7 @@ library
     Rho.PeerComms
     Rho.PeerComms.Handshake
     Rho.PeerComms.Message
+    Rho.PeerComms.PeerConnection
     Rho.PieceMgr
     Rho.Torrent
     Rho.Tracker

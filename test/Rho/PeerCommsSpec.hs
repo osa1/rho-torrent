@@ -5,8 +5,8 @@ module Rho.PeerCommsSpec where
 
 import           Control.Applicative
 import           Control.Monad
-import qualified Data.ByteString         as B
-import qualified Data.Dequeue            as D
+import qualified Data.ByteString              as B
+import qualified Data.Dequeue                 as D
 import           Data.IORef
 import           Data.List
 import           Data.Maybe
@@ -17,15 +17,16 @@ import           Test.Hspec
 import           Test.Hspec.HUnit
 import           Test.Hspec.QuickCheck
 import           Test.HUnit
-import           Test.QuickCheck         hiding (Result)
+import           Test.QuickCheck              hiding (Result)
 
-import qualified Rho.Bitfield            as BF
+import qualified Rho.Bitfield                 as BF
 import           Rho.InfoHash
 import           Rho.Listener
-import qualified Rho.ListenerSpec        as LS
+import qualified Rho.ListenerSpec             as LS
 import           Rho.PeerComms
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
+import           Rho.PeerComms.PeerConnection
 
 dataRoot :: FilePath
 dataRoot = "test/test_data/"

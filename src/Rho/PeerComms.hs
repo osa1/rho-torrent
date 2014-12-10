@@ -6,60 +6,25 @@ module Rho.PeerComms where
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
-import qualified Data.ByteString           as B
-import qualified Data.Map                  as M
-import           Data.Maybe
-import           Data.Monoid
-import           Data.Word
+import qualified Data.ByteString              as B
+import           Data.IORef
+import qualified Data.Map                     as M
 import           GHC.IO.Exception
-import           Network.Socket            hiding (KeepAlive, recv, recvFrom,
-                                            recvLen, send, sendTo)
+import           Network.Socket               hiding (KeepAlive, recv, recvFrom,
+                                               recvLen, send, sendTo)
 import           Network.Socket.ByteString
 import           System.IO.Error
-import qualified System.Log.Logger         as L
+import qualified System.Log.Logger            as L
 
-import qualified Rho.Bitfield              as BF
 import           Rho.InfoHash
-import           Rho.Listener              (Listener, initListener, recvLen)
+import           Rho.Listener                 (Listener, initListener, recvLen)
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
-import           Rho.PeerComms.Message
+import           Rho.PeerComms.PeerConnection hiding (errorLog, logger, warning)
 import           Rho.PieceMgr
-import           Rho.Utils
-
-data PeerConn = PeerConn
-  { pcPeerChoking    :: Bool
-    -- ^ peer is choking us
-  , pcPeerInterested :: Bool
-    -- ^ peer interested in something that we have to offer
-  , pcChoking        :: Bool
-    -- ^ we're choking the peer
-  , pcInterested     :: Bool
-    -- ^ we're interested in something that peer has to offer
-  , pcPeerId         :: PeerId
-  , pcOffers         :: InfoHash
-    -- ^ torrent that the peer offers
-  , pcPieces         :: Maybe BF.Bitfield
-    -- TODO: remove Maybe and initialize with empty bitfield
-  , pcSock           :: Socket
-    -- ^ socket connected to the peer
-  , pcExtended       :: ExtendedMsgSupport
-    -- ^ Supports BEP10
-  , pcExtendedMsgTbl :: ExtendedPeerMsgTable
-    -- ^ BEP10, extension table
-  , pcMetadataSize   :: Maybe Word32
-    -- ^ BEP9, metadata_size key of ut_metadata handshake
-  } deriving (Show)
-
-newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> PeerConn
-newPeerConn peerId infoHash extension sock =
-    PeerConn True False True False peerId infoHash Nothing sock extension M.empty Nothing
-
--- | Stat of peers, shared between workers.
-type PeersState = MVar (M.Map SockAddr PeerConn)
 
 data PeerCommHandler = PeerCommHandler
-  { pchPeers    :: PeersState
+  { pchPeers    :: MVar (M.Map SockAddr (IORef PeerConn))
   , pchPieceMgr :: PieceMgr
   , pchPeerId   :: PeerId
     -- ^ our peer id
@@ -85,7 +50,6 @@ initPeerCommsHandler torrentInfo pid = do
 listenPeerSocket :: PeerCommHandler -> Socket -> IO ()
 listenPeerSocket comms sock = do
     (peerSock, peerAddr) <- accept sock
-    -- have we established a connection with the peer?
     listener <- initListener $ recv peerSock 4096
     -- we should have a handshake message as first thing
     void $ async $ listenHandshake comms listener peerSock peerAddr
@@ -108,63 +72,6 @@ listenHandshake comms listener sock peerAddr = do
             -- TODO: we probably need to check info_hash
             send sock $ mkHandshake (hInfoHash hs) (pchPeerId comms)
             handleHandshake comms sock peerAddr hs
-
--- | Listen a connected socket and handle incoming messages.
-listenConnectedSock :: PeerCommHandler -> Listener -> Socket -> SockAddr -> IO ()
-listenConnectedSock comms@(PeerCommHandler peers _ _ ) listener sock sockAddr =
-    flip catchIOError errHandler $ loop
-  where
-    loop = do
-      msg <- recvMessage listener
-      case msg of
-        ConnClosed msg
-          | B.null msg -> closeConn
-          | otherwise  -> putStrLn ("recvd a partial message: " ++ show (B.unpack msg)) >> closeConn
-        Msg msg -> handleMessage comms msg sock sockAddr >> loop
-
-    errHandler err = do
-      putStrLn $ "Error happened while listening a socket: " ++ show err
-                  ++ ". Closing the connection."
-      closeConn
-
-    closeConn = modifyMVar_ peers $ return . M.delete sockAddr
-
-handleMessage :: PeerCommHandler -> B.ByteString -> Socket -> SockAddr -> IO ()
-handleMessage (PeerCommHandler peers pieces _) msg _sock peerAddr = do
-    case parsePeerMsg msg of
-      Left err -> warning . concat $
-        [ "Can't parse peer message: ", err,
-          " msg: ", show msg, " msg length: ", show (B.length msg) ]
-      Right KeepAlive -> return () -- TODO: should I ignore keep-alives?
-      Right (Bitfield bf) -> modifyPeerState $ \pc -> pc{pcPieces = Just bf}
-      Right (Have piece) ->
-        modifyPeerState $ \pc ->
-          let bf' = Just $ BF.set (fromMaybe BF.empty $ pcPieces pc) (fromIntegral piece)
-          in pc{pcPieces = bf'}
-      Right Choke -> modifyPeerState $ \pc -> pc{pcChoking = True}
-      Right Unchoke -> modifyPeerState $ \pc -> pc{pcChoking = False}
-      Right Interested -> modifyPeerState $ \pc -> pc{pcPeerInterested = True}
-      Right NotInterested -> modifyPeerState $ \pc -> pc{pcPeerInterested = False}
-      Right (Piece pIdx offset pData) -> do
-        putStrLn "Got piece response"
-        writePiece pieces pIdx offset pData
-      Right (Extended (ExtendedHandshake tbl [UtMetadataSize size])) -> do
-        putStrLn "Got extended handshake."
-        withPeer $ \peers' pc -> do
-          -- TODO: We should send extended handshake before receiving one
-          sendMessage pc (Extended (ExtendedHandshake defaultMsgTable []))
-          return $ M.insert peerAddr pc{pcExtendedMsgTbl = tbl, pcMetadataSize = Just size} peers'
-      Right pmsg -> putStrLn $ "Unhandled peer msg: " ++ show pmsg
-  where
-    modifyPeerState :: (PeerConn -> PeerConn) -> IO ()
-    modifyPeerState m = withPeer $ \peers' pc -> return (M.insert peerAddr (m pc) peers')
-
-    withPeer :: (M.Map SockAddr PeerConn -> PeerConn -> IO (M.Map SockAddr PeerConn)) -> IO ()
-    withPeer f =
-      modifyMVar_ peers $ \peers' ->
-        case M.lookup peerAddr peers' of
-          Nothing -> errorLog "Can't find peer in peers state" >> return peers'
-          Just pc -> f peers' pc
 
 handshake :: PeerCommHandler -> SockAddr -> InfoHash -> IO ()
 handshake comms@(PeerCommHandler peers pieces peerId) addr infoHash = do
@@ -215,64 +122,17 @@ handleHandshake comms@(PeerCommHandler peers pieces _) sock addr hs = do
       Nothing -> do
         -- first time handshaking with the peer, spawn a socket listener
         listener <- initListener $ recv sock 4096
-        void $ async $ listenConnectedSock comms listener sock addr
+        peerConn <- newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
+        void $ async $ do
+          listenConnectedSock peerConn pieces listener sock addr
+          modifyMVar_ peers $ return . M.delete addr
         -- TODO: check info_hash
-        let peerConn = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
         putMVar peers $ M.insert addr peerConn peers'
       Just pc -> do
         -- TODO: I don't know how can this happen. We already established
         -- a connection. Just reset the peer info.
-        putMVar peers $
-          M.insert addr (newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock) peers'
-
-sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)
-sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
-    case mkPeerMsg tbl msg of
-      Left err -> return $ Just err
-      Right bytes -> send sock bytes >> return Nothing
-
-sendPieceRequests :: PeerCommHandler -> IO [PeerConn]
-sendPieceRequests (PeerCommHandler peers pieces@(PieceMgr ps _ _ _) _) = do
-    -- TODO: fix horrible piece request algortihm
-    missings <- missingPieces pieces
-    putStrLn $ "Missing pieces: " ++ show missings
-    peerComms <- M.elems `fmap` readMVar peers
-    sent <- forM missings $ \(pIdx, pOffset, pSize) -> do
-      putStrLn $ "all peers: " ++ show (map (unwrapPeerId . pcPeerId) peerComms)
-      let peersWithPiece = flip filter peerComms $ \PeerConn{pcPieces=pieces} ->
-                                                      case pieces of
-                                                        Nothing -> False
-                                                        Just ps -> BF.test ps (fromIntegral pIdx)
-          unchokedPeers = filter (not . pcChoking) peersWithPiece
-      putStrLn $ "unchoked peers: " ++ show (map (unwrapPeerId . pcPeerId) unchokedPeers)
-      case unchokedPeers of
-        [] -> return Nothing
-        (p : _) -> do
-          putStrLn $ "Sending peer message to peer: " ++ show (unwrapPeerId $ pcPeerId p)
-          ret <- sendMessage p $ Request pIdx pOffset pSize
-          case ret of
-            Nothing -> return $ Just p
-            Just err -> do
-              putStrLn $ "Can't send piece request: " ++ err
-              return Nothing
-
-    return $ catMaybes sent
-
--- * Receive helpers
-
-data RecvMsg = ConnClosed B.ByteString | Msg B.ByteString deriving (Show, Eq)
-
--- | Try to receive a 4-byte length-prefixed message.
-recvMessage :: Listener -> IO RecvMsg
-recvMessage listener = do
-    lengthPrefix <- recvLen listener 4
-    if B.length lengthPrefix /= 4
-      then return $ ConnClosed lengthPrefix
-      else do
-    let [w1, w2, w3, w4] = B.unpack lengthPrefix
-        len = mkWord32 w1 w2 w3 w4
-    msg <- recvLen listener (fromIntegral len)
-    return $ Msg $ lengthPrefix <> msg
+        peerConn <- newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
+        putMVar peers $ M.insert addr peerConn peers'
 
 -- | Try to recv a message of length 68.
 recvHandshake :: Listener -> IO RecvMsg
