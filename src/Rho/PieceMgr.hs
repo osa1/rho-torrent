@@ -44,6 +44,11 @@ writePiece (PieceMgr ps _ _ m) pieceIdx pieceOffset pieceData = do
       [0..] (B.unpack pieceData)
     putMVar m (arr, bits)
 
+-- | Generate list of (piece index, piece offset, length until next piece)
+-- triples.
+--
+-- TODO: Benchmark this. Use caching if it turns out to be too slow.
+-- (Cache the result. Invalidate the cache when a new piece is written)
 missingPieces :: PieceMgr -> IO [(Word32, Word32, Word32)]
 missingPieces (PieceMgr ps ts totalPieces m) = do
     (arr, bits) <- takeMVar m

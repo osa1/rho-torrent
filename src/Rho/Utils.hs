@@ -11,6 +11,7 @@ import           Data.Bits                        (shiftL)
 import qualified Data.ByteString                  as B
 import qualified Data.ByteString.Char8            as BC
 import           Data.Char
+import           Data.Time.Clock                  (getCurrentTime, utctDayTime)
 import           Data.Word
 import           Network.Socket                   (PortNumber (..),
                                                    SockAddr (..))
@@ -165,3 +166,9 @@ mkWord64 w1 w2 w3 w4 w5 w6 w7 w8 =
     fromIntegral (mkWord32 w1 w2 w3 w4) `shiftL` 32
   + fromIntegral (mkWord32 w5 w6 w7 w8)
 {-# INLINE mkWord64 #-}
+
+-- | Return system time in milliseconds.
+currentTimeMillis :: IO Int
+currentTimeMillis = do
+    time <- getCurrentTime
+    return $ floor $ toRational (utctDayTime time) * 1000
