@@ -83,14 +83,9 @@ listenPeerSocket :: Socket -> PeersState -> PieceMgr -> IO ()
 listenPeerSocket sock peers pieces = do
     (peerSock, peerAddr) <- accept sock
     -- have we established a connection with the peer?
-    peers' <- readMVar peers
     listener <- initListener $ recv peerSock 4096
-    if M.member peerAddr peers'
-      then
-        void $ async $ listenConnectedSock listener peerSock peerAddr peers pieces
-      else
-        -- we should have a handshake message as first thing
-        void $ async $ listenHandshake listener peerAddr peers pieces
+    -- we should have a handshake message as first thing
+    void $ async $ listenHandshake listener peerAddr peers pieces
     listenPeerSocket sock peers pieces
 
 -- | Wait for an incoming handshake, update peers state upon successfully
