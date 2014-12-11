@@ -81,32 +81,20 @@ sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
       Left err -> return $ Just err
       Right bytes -> send sock bytes >> return Nothing
 
-sendPieceRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO [PeerConn]
+sendPieceRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO ()
 sendPieceRequests peers pieces = do
     -- TODO: fix horrible piece request algortihm
     missings <- missingPieces pieces
     putStrLn $ "Missing pieces: " ++ show missings
-    peerComms <- readMVar peers >>= mapM readIORef . M.elems
-    sent <- forM missings $ \(pIdx, pOffset, pSize) -> do
-      putStrLn $ "all peers: " ++ show (map (unwrapPeerId . pcPeerId) peerComms)
-      let peersWithPiece = flip filter peerComms $ \PeerConn{pcPieces=peerPieces} ->
-                                                      case peerPieces of
-                                                        Nothing -> False
-                                                        Just ps -> BF.test ps (fromIntegral pIdx)
-          unchokedPeers = filter (not . pcChoking) peersWithPiece
-      putStrLn $ "unchoked peers: " ++ show (map (unwrapPeerId . pcPeerId) unchokedPeers)
-      case unchokedPeers of
-        [] -> return Nothing
-        (p : _) -> do
-          putStrLn $ "Sending peer message to peer: " ++ show (unwrapPeerId $ pcPeerId p)
-          ret <- sendMessage p $ Request pIdx pOffset pSize
-          case ret of
-            Nothing -> return $ Just p
-            Just err -> do
-              putStrLn $ "Can't send piece request: " ++ err
-              return Nothing
-
-    return $ catMaybes sent
+    availablePeers <- readMVar peers >>= fmap (filter $ not . pcChoking) . mapM readIORef . M.elems
+    let availablePeerPieces =
+          M.fromList $ mapMaybe (\p -> case pcPieces p of
+                                         Nothing -> Nothing
+                                         Just ps -> Just (p, BF.availableBits ps)) availablePeers
+        asgns = assignPieces missings availablePeerPieces
+    putStrLn $ "assignments: " ++ show asgns
+    forM_ asgns $ \(pc, (pIdx, pOffset, pSize)) ->
+      sendMessage pc $ Request pIdx pOffset pSize
 
 -- * Receive helpers
 

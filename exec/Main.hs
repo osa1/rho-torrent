@@ -92,8 +92,7 @@ runPeers (Right peers) info infoHash peerId = do
 
     forever $ do
       putStrLn "Sending piece requests"
-      print . map (unwrapPeerId . pcPeerId)
-        =<< sendPieceRequests (pchPeers peerComms) (pchPieceMgr peerComms)
+      sendPieceRequests (pchPeers peerComms) (pchPieceMgr peerComms)
       threadDelay 10000000
 
     connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
