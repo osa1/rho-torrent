@@ -65,7 +65,7 @@ newtype BSIndex = BSIndex (B.ByteString, Int) deriving (Show)
 
 instance Arbitrary BSIndex where
     arbitrary = do
-      idx <- arbitrary `suchThat` (\i -> i >= 0 && i < 100)
+      idx <- choose (0, 99)
       bs  <- arbitrary `suchThat` (\bs -> B.length bs > idx)
       return $ BSIndex (bs, idx)
 
@@ -73,7 +73,7 @@ newtype BSIndex' = BSIndex' (B.ByteString, S.Set Int) deriving (Show)
 
 instance Arbitrary BSIndex' where
     arbitrary = do
-      idxs <- S.fromList <$> listOf1 (arbitrary `suchThat` (\i -> i >= 0 && i < 100))
+      idxs <- S.fromList <$> listOf1 (choose (0, 99))
       let len = (maximum (S.toList idxs) `div` 8) + 1
           bs  = B.pack $ replicate len 0
       return $ BSIndex' (bs, idxs)
