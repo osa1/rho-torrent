@@ -24,6 +24,9 @@ data PieceMgr = PieceMgr
                         , A.IOUArray Word64 Bool )
   }
 
+-- | (piece index, offset in piece, length until next piece) triple.
+type PieceData = (Word32, Word32, Word32)
+
 newPieceMgr :: Word64 -> Word32 -> IO PieceMgr
 newPieceMgr totalSize pieceLength = do
     arr <- A.newArray (0, totalSize - 1) 0
@@ -49,7 +52,7 @@ writePiece (PieceMgr ps _ _ m) pieceIdx pieceOffset pieceData = do
 --
 -- TODO: Benchmark this. Use caching if it turns out to be too slow.
 -- (Cache the result. Invalidate the cache when a new piece is written)
-missingPieces :: PieceMgr -> IO [(Word32, Word32, Word32)]
+missingPieces :: PieceMgr -> IO [PieceData]
 missingPieces (PieceMgr ps ts totalPieces m) = do
     (arr, bits) <- takeMVar m
     ret <- collectMissingPieces arr bits (ts - 1) 0

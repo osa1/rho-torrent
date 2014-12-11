@@ -1,59 +1,29 @@
-{-# LANGUAGE NondecreasingIndentation, OverloadedStrings #-}
+{-# LANGUAGE MultiWayIf, NondecreasingIndentation, OverloadedStrings #-}
 
 -- | Handling communications with peers after a successful handshake.
 module Rho.PeerComms.PeerConnection where
 
 import           Control.Concurrent
 import           Control.Monad
-import qualified Data.ByteString           as B
+import qualified Data.ByteString             as B
 import           Data.IORef
-import qualified Data.Map                  as M
+import qualified Data.Map                    as M
 import           Data.Maybe
 import           Data.Monoid
-import           Data.Word
-import           Network.Socket            hiding (KeepAlive, recv, recvFrom,
-                                            recvLen, send, sendTo)
+import           Network.Socket              hiding (KeepAlive, recv, recvFrom,
+                                              recvLen, send, sendTo)
 import           Network.Socket.ByteString
 import           System.IO.Error
-import qualified System.Log.Logger         as L
+import qualified System.Log.Logger           as L
 
-import qualified Rho.Bitfield              as BF
-import           Rho.InfoHash
-import           Rho.Listener              (Listener, recvLen)
+import qualified Rho.Bitfield                as BF
+import           Rho.Listener                (Listener, recvLen)
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
+import           Rho.PeerComms.PeerConnState
+import           Rho.PeerComms.PeerPieceAsgn
 import           Rho.PieceMgr
 import           Rho.Utils
-
--- | State of connection with a peer.
-data PeerConn = PeerConn
-  { pcPeerChoking    :: Bool
-    -- ^ peer is choking us
-  , pcPeerInterested :: Bool
-    -- ^ peer interested in something that we have to offer
-  , pcChoking        :: Bool
-    -- ^ we're choking the peer
-  , pcInterested     :: Bool
-    -- ^ we're interested in something that peer has to offer
-  , pcPeerId         :: PeerId
-  , pcOffers         :: InfoHash
-    -- ^ torrent that the peer offers
-  , pcPieces         :: Maybe BF.Bitfield
-    -- TODO: remove Maybe and initialize with empty bitfield
-  , pcSock           :: Socket
-    -- ^ socket connected to the peer
-  , pcExtended       :: ExtendedMsgSupport
-    -- ^ Supports BEP10
-  , pcExtendedMsgTbl :: ExtendedPeerMsgTable
-    -- ^ BEP10, extension table
-  , pcMetadataSize   :: Maybe Word32
-    -- ^ BEP9, metadata_size key of ut_metadata handshake
-  } deriving (Show)
-
-newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> IO (IORef PeerConn)
-newPeerConn peerId infoHash extension sock =
-    newIORef $
-      PeerConn True False True False peerId infoHash Nothing sock extension M.empty Nothing
 
 -- | Listen a connected socket and handle incoming messages.
 listenConnectedSock :: IORef PeerConn -> PieceMgr -> Listener -> Socket -> SockAddr -> IO ()

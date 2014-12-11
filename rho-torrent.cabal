@@ -28,6 +28,8 @@ library
     Rho.PeerComms.Handshake
     Rho.PeerComms.Message
     Rho.PeerComms.PeerConnection
+    Rho.PeerComms.PeerConnState
+    Rho.PeerComms.PeerPieceAsgn
     Rho.PieceMgr
     Rho.Torrent
     Rho.Tracker
@@ -96,6 +98,7 @@ test-suite test
     Rho.ListenerSpec
     Rho.MagnetSpec
     Rho.MetainfoSpec
+    Rho.PeerComms.PeerPieceAsgnSpec
     Rho.PeerCommsSpec
     Rho.PieceMgrSpec
     Rho.TrackerCommsSpec

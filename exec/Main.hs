@@ -8,6 +8,7 @@ import           Rho.PeerComms
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
+import           Rho.PeerComms.PeerConnState
 import           Rho.Torrent
 import           Rho.Tracker
 import           Rho.TrackerComms.HTTP

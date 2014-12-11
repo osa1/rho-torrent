@@ -21,6 +21,7 @@ import           Rho.Listener                 (Listener, initListener, recvLen)
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.PeerConnection hiding (errorLog, logger, warning)
+import           Rho.PeerComms.PeerConnState
 import           Rho.PieceMgr
 
 data PeerCommHandler = PeerCommHandler
@@ -121,7 +122,7 @@ handleHandshake comms@(PeerCommHandler peers pieces _) sock addr hs = do
       Nothing -> do
         -- first time handshaking with the peer, spawn a socket listener
         listener <- initListener $ recv sock 4096
-        peerConn <- newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
+        peerConn <- newIORef $ newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
         void $ async $ do
           listenConnectedSock peerConn pieces listener sock addr
           modifyMVar_ peers $ return . M.delete addr
@@ -130,7 +131,7 @@ handleHandshake comms@(PeerCommHandler peers pieces _) sock addr hs = do
       Just pc -> do
         -- TODO: I don't know how can this happen. We already established
         -- a connection. Just reset the peer info.
-        peerConn <- newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
+        peerConn <- newIORef $ newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
         putMVar peers $ M.insert addr peerConn peers'
 
 -- | Try to recv a message of length 68.

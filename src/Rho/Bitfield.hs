@@ -2,7 +2,6 @@ module Rho.Bitfield where
 
 import qualified Data.Bits       as B
 import qualified Data.ByteString as B
-import           Data.List       (foldl')
 import           Data.Maybe
 import           Data.Monoid
 import qualified Data.Set        as S
