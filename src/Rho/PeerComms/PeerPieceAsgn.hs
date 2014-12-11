@@ -10,6 +10,12 @@ import           Data.Word
 import           Rho.PeerComms.PeerConnState
 import           Rho.PieceMgr
 
+-- | Generate assignments of pieces to peers. Resulting list will have
+-- these properties:
+-- - Every peer will have at most one assignment.
+-- - Every piece will be assigned at most once.
+-- - If a piece has exactly one provider, that piece will be assigned to
+--   that peer.
 assignPieces
   :: [PieceData] -- ^ missing (pieceIdx, pieceOffset, pieceLength) triples
   -> M.Map PeerConn (S.Set Word32) -- ^ (peer -> available pieces) map
