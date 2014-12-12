@@ -173,7 +173,7 @@ recvAndParse listener n = do
   parseMsgs parsePeerMsg ms
 
 checkBuffer :: Listener -> Assertion
-checkBuffer (Listener buf _ _ _ _) = do
+checkBuffer Listener{deque=buf} = do
     (d, l) <- readIORef buf
     unless (D.null d) $ do
       let bufContents = mconcat $ D.takeFront (D.length d) d

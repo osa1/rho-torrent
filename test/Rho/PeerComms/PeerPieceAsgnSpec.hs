@@ -53,7 +53,7 @@ spec = do
       assertEqual "some peers are assigned multiple times" 2 (S.size $ S.fromList $ map fst asgns)
 
     fromHUnitTest $ TestLabel "regression 1" $ TestCase $ do
-      let peer     = newPeerConn (mkPeerId 0) undefined undefined undefined
+      let peer     = mkPeerConn 0
           missings = [ (0, 0, 1), (1, 0, 1) ]
           peerMap  = M.singleton peer $ S.fromList [0, 1]
           asgns    = assignPieces missings peerMap
@@ -103,7 +103,7 @@ showCounterExample pd s = concat
 genPeers :: Gen [PeerConn]
 genPeers = do
     len <- arbitrary `suchThat` (< 100)
-    return $ map (\i -> newPeerConn (mkPeerId i) undefined undefined undefined) [0..len-1]
+    return $ map (\i -> mkPeerConn i) [0..len-1]
 
 genPieceData :: Int -> Gen [PieceData]
 genPieceData max = do
@@ -141,7 +141,10 @@ newPeer :: PeerGen -> IO PeerConn
 newPeer pg = do
     next <- readIORef pg
     writeIORef pg (next + 1)
-    return $ newPeerConn (mkPeerId next) undefined undefined undefined
+    return $ mkPeerConn next
+
+mkPeerConn :: Int -> PeerConn
+mkPeerConn i = newPeerConn (mkPeerId i) undefined undefined undefined
 
 mkPeerId :: Int -> PeerId
 mkPeerId i =

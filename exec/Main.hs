@@ -71,9 +71,8 @@ runPeers (Left err) _ _ _ = error err
 runPeers (Right peers) info infoHash peerId = do
     putStrLn $ "Sending handshake to peers..."
     peerComms <- initPeerCommsHandler info peerId
-    async $ do
-      forM_ (prPeers peers) $ \peer -> do
-        handshake peerComms peer infoHash
+    forM_ (prPeers peers) $ \peer -> do
+      async $ handshake peerComms peer infoHash
 
     -- threadDelay 30000000
     connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
