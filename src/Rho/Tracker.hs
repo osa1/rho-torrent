@@ -65,9 +65,12 @@ parseTrackerBS bs
 --
 parseUDPAddr :: B.ByteString -> Either String (B.ByteString, PortNumber)
 parseUDPAddr bs =
-    let (hostAddr, portStr) = B.tail <$> B.span (/= ':') bs in
-    case B.readInt portStr of
-      Nothing -> Left $ "Can't parse port number from " ++ B.unpack portStr
-      Just (port, rest)
-        | not (B.null rest) -> Left $ "Can't parse this part of address string: " ++ B.unpack rest
-        | otherwise -> Right (hostAddr, fromIntegral port)
+    let (hostAddr, portStrWColon) = B.span (/= ':') bs in
+    case B.uncons portStrWColon of
+      Nothing -> Left $ "Can't parse port number in " ++ B.unpack bs
+      Just (_, portStr)  ->
+        case B.readInt portStr of
+          Nothing -> Left $ "Can't parse port number from " ++ B.unpack portStr
+          Just (port, rest)
+            | not (B.null rest) -> Left $ "Can't parse this part of address string: " ++ B.unpack rest
+            | otherwise -> Right (hostAddr, fromIntegral port)
