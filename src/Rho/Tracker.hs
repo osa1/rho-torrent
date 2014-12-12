@@ -9,6 +9,7 @@ module Rho.Tracker
 import           Control.Applicative   ((<$>))
 import           Data.BEncode
 import qualified Data.ByteString.Char8 as B
+import           Data.Char             (isNumber)
 import           Data.Monoid
 import           Network.Socket        (PortNumber)
 import           Network.URI
@@ -57,17 +58,16 @@ parseTrackerBS bs
 -- >>> parseUDPAddr (B.pack "192.168.1.2:5432")
 -- Right ("192.168.1.2",5432)
 --
--- >>> parseUDPAddr (B.pack "tracker.openbittorrent.com:1234")
+-- >>> parseUDPAddr (B.pack "tracker.openbittorrent.com:1234/announce")
 -- Right ("tracker.openbittorrent.com",1234)
 --
 parseUDPAddr :: B.ByteString -> Either String (B.ByteString, PortNumber)
 parseUDPAddr bs =
     let (hostAddr, portStrWColon) = B.span (/= ':') bs in
     case B.uncons portStrWColon of
-      Nothing -> Left $ "Can't parse port number in " ++ B.unpack bs
-      Just (_, portStr)  ->
+      Nothing        -> Left $ "Can't parse port number in " ++ B.unpack bs
+      Just (_, rest) ->
+        let portStr = B.takeWhile isNumber rest in
         case B.readInt portStr of
-          Nothing -> Left $ "Can't parse port number from " ++ B.unpack portStr
-          Just (port, rest)
-            | not (B.null rest) -> Left $ "Can't parse this part of address string: " ++ B.unpack rest
-            | otherwise -> Right (hostAddr, fromIntegral port)
+          Nothing        -> Left $ "Can't parse port number from " ++ B.unpack portStr
+          Just (port, _) -> Right (hostAddr, fromIntegral port)
