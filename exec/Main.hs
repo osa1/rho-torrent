@@ -78,7 +78,7 @@ runPeers (Right peers) info infoHash peerId = do
     connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
     putStrLn $ "Peers: " ++ show (length connectedPeers)
 
-    threadDelay 10000000
+    threadDelay 1000000
 
     ps <- M.toList `fmap` readMVar (pchPeers peerComms)
     forM_ ps $ \(addr, peerConn) -> do
@@ -87,7 +87,7 @@ runPeers (Right peers) info infoHash peerId = do
       sendMessage pc Unchoke
       sendMessage pc Interested
 
-    threadDelay 1000000
+    threadDelay 100000
 
     forever $ do
       putStrLn "Sending piece requests"
