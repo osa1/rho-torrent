@@ -54,9 +54,6 @@ parseTrackerBS bs
 
 -- | Try to parse an IP address and port from given bytestring.
 --
--- >>> parseUDPAddr (B.pack "192.168.1.2:1234")
--- Right ("192.168.1.2",1234)
---
 -- >>> parseUDPAddr (B.pack "192.168.1.2:5432")
 -- Right ("192.168.1.2",5432)
 --

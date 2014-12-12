@@ -98,6 +98,7 @@ test-suite test
     Rho.ListenerSpec
     Rho.MagnetSpec
     Rho.MetainfoSpec
+    Rho.ParserSpec
     Rho.PeerComms.PeerPieceAsgnSpec
     Rho.PeerCommsSpec
     Rho.PieceMgrSpec
