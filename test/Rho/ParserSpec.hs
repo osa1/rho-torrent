@@ -48,6 +48,10 @@ spec = do
             , "udp://tracker.publicbt.com:80"
             , "udp://tracker.ccc.de:80"
             , "udp://tracker.istole.it:80"
+            , "udp://open.demonii.com:1337/scrape"
+            , "udp://tracker.publicbt.com:80/scrape"
+            , "udp://tracker.istole.it:80/scrape"
+            , "udp://coppersurfer.tk:6969/scrape"
             ]
       forM_ trackers $ \tracker ->
         case parseTrackerBS tracker of
