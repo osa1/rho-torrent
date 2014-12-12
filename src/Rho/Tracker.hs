@@ -69,5 +69,5 @@ parseUDPAddr bs =
     case B.readInt portStr of
       Nothing -> Left $ "Can't parse port number from " ++ B.unpack portStr
       Just (port, rest)
-        | not (B.null rest) -> Left $ "Can't parse this part if address string: " ++ B.unpack rest
+        | not (B.null rest) -> Left $ "Can't parse this part of address string: " ++ B.unpack rest
         | otherwise -> Right (hostAddr, fromIntegral port)
