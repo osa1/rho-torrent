@@ -33,10 +33,11 @@
 --
 module Rho.Listener where
 
+import           Control.Concurrent       (yield)
 import           Control.Concurrent.Async
 import           Control.Concurrent.MVar
-import qualified Data.ByteString           as B
-import qualified Data.Dequeue              as D
+import qualified Data.ByteString          as B
+import qualified Data.Dequeue             as D
 import           Data.IORef
 import           Data.Monoid
 import           System.IO.Error
@@ -122,14 +123,10 @@ listen recv deq updated lock stopped = catchIOError loop errHandler
              modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
              _ <- tryPutMVar updated ()
              putMVar lock ()
-             -- FIXME: This is extremely annoying. Removing this line is
-             -- effecting behavior of some other parts of the program.
-             --
-             -- For example, if I remove this line, then message listeners
-             -- process incoming piece message after this loop receives
-             -- another message. So last message is lost until another
-             -- message is received.
-             putStrLn "looping"
+             -- see https://www.haskell.org/pipermail/haskell-cafe/2014-December/117285.html
+             -- another thing that solves the issue is to compile with
+             -- `-threaded` and run with `+RTS -N`
+             yield
              loop
 
     errHandler err = do
