@@ -43,7 +43,6 @@ library
 
   build-depends:
       base >=4.5 && <5
-    , array
     , async
     , bytestring
     , containers
@@ -56,6 +55,7 @@ library
     , network-uri
     , random
     , time
+    , vector
 
     -- `bencoding` doesn't provide flexibility we need..
     -- so we use internal `bencoding` functions with attoparsec.
