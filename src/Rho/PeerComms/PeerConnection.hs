@@ -94,7 +94,7 @@ sendPieceRequests peers pieces = do
         asgns = assignPieces missings availablePeerPieces
     putStrLn $ "assignments: " ++ show asgns
     forM_ asgns $ \(pc, (pIdx, pOffset, pSize)) ->
-      sendMessage pc $ Request pIdx pOffset pSize
+      sendMessage pc $ Request pIdx pOffset (min pSize $ pcMaxPieceSize pc)
 
 -- * Receive helpers
 

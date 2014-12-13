@@ -33,6 +33,17 @@ data PeerConn = PeerConn
     -- ^ BEP10, extension table
   , pcMetadataSize   :: Maybe Word32
     -- ^ BEP9, metadata_size key of ut_metadata handshake
+  , pcMaxPieceSize   :: Word32
+    -- ^ piece length we use while requesting piece from the peer
+  , pcReqq           :: Word32
+    -- ^ `reqq` from extended handshake. from BEP 10:
+    -- "An integer, the number of outstanding request messages this client
+    -- supports without dropping any. The default in in libtorrent is 250."
+  , pcClientName     :: Maybe B.ByteString
+    -- ^ `v` from exxtended handshake. from BEP10:
+    -- "Client name and version (as a utf-8 string). This is a much more
+    -- reliable way of identifying the client than relying on the peer id
+    -- encoding."
   }
 
 instance Ord PeerConn where
@@ -51,3 +62,6 @@ instance Show PeerConn where
 newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> PeerConn
 newPeerConn peerId infoHash extension sock =
     PeerConn True False True False peerId infoHash Nothing sock extension M.empty Nothing
+             (2 ^ 14) -- 16Kb for now, we may need to dynamically adjust the value
+             250      -- default value of libtorrent
+             Nothing
