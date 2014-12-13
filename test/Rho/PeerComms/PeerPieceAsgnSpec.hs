@@ -13,7 +13,7 @@ import qualified Data.Set                    as S
 import           Data.Word
 
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck
@@ -69,8 +69,8 @@ spec = do
         -- trace ("done: " ++ show missings ++ "\ngenerating peerPieces") $ do
         peerPieces <- genPeerPieces peers missings
 
-        let example = showCounterExample missings peerPieces
-        -- trace ("\nrunning example: " ++ example) $ do
+        let ex = showCounterExample missings peerPieces
+        -- trace ("\nrunning example: " ++ ex) $ do
 
         let asgns = assignPieces missings peerPieces
             prop1 = -- pieces should be assigned to at most one peer
@@ -78,7 +78,7 @@ spec = do
             prop2 = -- peers should be assigned at most once
               S.size (S.fromList (map fst asgns)) == length asgns
 
-        return $ counterexample example (prop1 .&&. prop2)
+        return $ counterexample ex (prop1 .&&. prop2)
 
 showCounterExample :: [PieceData] -> M.Map PeerConn (S.Set Word32) -> String
 showCounterExample pd s = concat
@@ -94,8 +94,8 @@ showCounterExample pd s = concat
 
     peerConnConstr :: PeerConn -> String
     peerConnConstr PeerConn{pcPeerId=PeerId pid} =
-      let id = BC.unpack $ B.dropWhile (== 0) pid
-      in "newPeerConn (mkPeerId " ++ id ++ ") undefined undefined undefined"
+      let pid' = BC.unpack $ B.dropWhile (== 0) pid
+      in "newPeerConn (mkPeerId " ++ pid' ++ ") undefined undefined undefined"
 
     wsConstr :: S.Set Word32 -> String
     wsConstr ws = "S.fromList " ++ show (S.toList ws)
@@ -106,8 +106,8 @@ genPeers = do
     return $ map (\i -> mkPeerConn i) [0..len-1]
 
 genPieceData :: Int -> Gen [PieceData]
-genPieceData max = do
-    ps <- listOf $ choose (0, max)
+genPieceData end = do
+    ps <- listOf $ choose (0, end)
     -- this one takes forever to finish:
     -- ps <- listOf $ arbitrary `suchThat` (<= fromIntegral max)
     return
@@ -118,15 +118,15 @@ genPieceData max = do
 genPeerPieces :: [PeerConn] -> [PieceData] -> Gen (M.Map PeerConn (S.Set Word32))
 genPeerPieces []       _      = return M.empty
 genPeerPieces (p : ps) pieces = do
-    sublist <- S.fromList . map (\(p, _, _) -> p) <$> genSublist pieces
+    sublist <- S.fromList . map (\(pIdx, _, _) -> pIdx) <$> genSublist pieces
     rest <- genPeerPieces ps pieces
     return $ M.insert p sublist rest
 
 genSublist :: [a] -> Gen [a]
 genSublist [] = return []
 genSublist (a : as) = do
-    take <- arbitrary
-    if take
+    pick <- arbitrary
+    if pick
       then do
         rest <- genSublist as
         return $ a : rest

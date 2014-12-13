@@ -5,10 +5,9 @@ module Rho.TrackerCommsSpec where
 import qualified Data.ByteString               as B
 
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.HUnit
 
-import           Rho.PeerComms.Handshake
 import           Rho.TrackerComms.UDP.Request
 import           Rho.TrackerComms.UDP.Response
 import           Rho.Utils

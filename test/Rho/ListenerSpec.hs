@@ -9,8 +9,9 @@ import qualified Data.Dequeue             as D
 import           Data.IORef
 import           Data.List
 import           Data.Monoid
+
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck

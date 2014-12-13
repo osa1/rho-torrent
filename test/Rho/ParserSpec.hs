@@ -3,10 +3,10 @@
 module Rho.ParserSpec where
 
 import           Control.Monad
-import qualified Data.ByteString.Char8 as BC
+import qualified Data.ByteString.Char8    as BC
 
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.HUnit
 
 import           Rho.Tracker

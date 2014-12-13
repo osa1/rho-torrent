@@ -2,10 +2,11 @@
 
 module Rho.PieceMgrSpec where
 
-import qualified Data.ByteString       as B
+import qualified Data.ByteString          as B
 import           Data.List
+
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.HUnit
 
 import           Rho.Metainfo
@@ -114,15 +115,15 @@ testNextMissingPart :: Test
 testNextMissingPart = TestList
   [ TestLabel "nextMissingPart - 1" $ TestCase $ do
       mgr <- newPieceMgr 50 10
-      missing <- nextMissingPart mgr 1
-      assertEqual "next missing part is wrong" (Just (0, 10)) missing
+      missing1 <- nextMissingPart mgr 1
+      assertEqual "next missing part is wrong" (Just (0, 10)) missing1
       writePiece mgr 1 3 (B.pack [0, 0, 0])
-      missing <- nextMissingPart mgr 1
-      assertEqual "next missing part is wrong" (Just (0, 3)) missing
+      missing2 <- nextMissingPart mgr 1
+      assertEqual "next missing part is wrong" (Just (0, 3)) missing2
       writePiece mgr 1 0 (B.pack [0, 0, 0])
-      missing <- nextMissingPart mgr 1
-      assertEqual "next missing part is wrong" (Just (6, 4)) missing
+      missing3 <- nextMissingPart mgr 1
+      assertEqual "next missing part is wrong" (Just (6, 4)) missing3
       writePiece mgr 1 6 (B.pack [0, 0, 0, 0])
-      missing <- nextMissingPart mgr 1
-      assertEqual "next missing part is wrong" Nothing missing
+      missing4 <- nextMissingPart mgr 1
+      assertEqual "next missing part is wrong" Nothing missing4
   ]

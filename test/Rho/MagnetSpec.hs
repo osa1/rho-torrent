@@ -8,8 +8,9 @@ import qualified Data.ByteString.Char8    as B
 import           Data.List
 import           Data.Maybe
 import           Network.URI
+
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck
@@ -20,7 +21,7 @@ import           Network.HTTP
 import           Text.XML.HXT.Core
 
 import           Rho.Magnet
-import           Rho.PeerCommsSpec        hiding (spec)
+import           Rho.PeerCommsSpec        ()
 import           Rho.Tracker
 
 main :: IO ()
@@ -43,7 +44,7 @@ instance Arbitrary Magnet where
       dn <- oneof [return Nothing, return $ Just "display name"]
       return $ Magnet xt trs dn
 
-    shrink (Magnet h [] dn) = []
+    shrink (Magnet _ [] _ ) = []
     shrink (Magnet h ts dn) = map (\t -> Magnet h t dn) (init $ subsequences ts)
 
 trackerGen :: Gen Tracker

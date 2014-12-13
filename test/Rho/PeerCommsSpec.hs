@@ -14,7 +14,7 @@ import           Data.Monoid
 import           System.FilePath
 
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck              hiding (Result)

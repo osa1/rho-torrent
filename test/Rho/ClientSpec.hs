@@ -1,7 +1,7 @@
 module Rho.ClientSpec where
 
 import           Control.Concurrent
-import qualified Data.ByteString      as B
+import qualified Data.ByteString          as B
 import           Data.Either
 import           Network.Socket
 import           System.Directory
@@ -9,7 +9,7 @@ import           System.FilePath
 import           System.Process
 
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.HUnit
 
 import           Rho.Metainfo
@@ -30,7 +30,7 @@ scrapeTest = TestCase $ do
     torrentContents <- B.readFile torrentPath
     case parseMetainfo torrentContents of
       Left err -> assertFailure $ "Failed to parse torrent: " ++ err
-      Right Metainfo{mInfoHash=infoHash} -> do
+      Right Metainfo{} -> do
         hostAddr <- inet_addr "127.0.0.1"
         let sockAddr = SockAddrInet (fromIntegral 6969) hostAddr
 

@@ -7,10 +7,9 @@ import           Data.Bits
 import qualified Data.ByteString           as B
 import           Data.List                 (foldl')
 import qualified Data.Set                  as S
-import           Data.Word
 
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck           hiding (Result)
@@ -35,7 +34,7 @@ spec = do
       BF.test (BF.set (BF.Bitfield bs (B.length bs * 8)) idx) idx
 
     prop "set and collectBits" $ \(BSIndex' (bs, idxs)) ->
-      let bs'      = foldl' (\bs' i -> BF.setBit bs' i) bs (S.toList idxs)
+      let bs'      = foldl' (\bf i -> BF.setBit bf i) bs (S.toList idxs)
           len      = B.length bs * 8
           missings = BF.missingBits (BF.Bitfield bs' len)
           avails   = BF.availableBits (BF.Bitfield bs' len)

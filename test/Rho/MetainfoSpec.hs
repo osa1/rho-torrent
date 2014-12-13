@@ -11,8 +11,9 @@ import           Data.Either               (isLeft)
 import           System.Directory          (doesDirectoryExist,
                                             getDirectoryContents)
 import           System.FilePath           ((</>))
+
 import           Test.Hspec
-import           Test.Hspec.HUnit
+import           Test.Hspec.Contrib.HUnit
 import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck
@@ -56,10 +57,10 @@ regressions = TestList $ map TestCase [regression1]
   where
     regression1 :: Assertion
     regression1 = do
-      let path = "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
-      mi <- decode <$> B.readFile path
+      let torrentPath = "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
+      mi <- decode <$> B.readFile torrentPath
       case mi of
-        Left msg -> assertFailure $ "Can't parse " ++ path ++ ": " ++ msg
+        Left msg -> assertFailure $ "Can't parse " ++ torrentPath ++ ": " ++ msg
         Right metainfo -> do
           let info_hash = InfoHash $ B.pack
                 [ 0x08, 0x89, 0xCF, 0x68, 0xCF, 0x4A, 0x7A, 0xB7, 0xF1, 0xDB,
