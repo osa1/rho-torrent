@@ -21,12 +21,13 @@ import           Test.QuickCheck              hiding (Result)
 
 import qualified Rho.Bitfield                 as BF
 import           Rho.InfoHash
-import           Rho.Listener
+import           Rho.Listener                 hiding (listener)
 import qualified Rho.ListenerSpec             as LS
 import           Rho.PeerComms
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
+import           Rho.TestUtils
 
 dataRoot :: FilePath
 dataRoot = "test/test_data/"
@@ -155,17 +156,17 @@ recvMessageRegression = TestLabel "regression -- recvMessage sometimes returns w
     assertEqual "second message is wrong" second (B.unpack $ unwrapRecvd msg2)
     checkBuffer listener
 
-recvAndParseHs :: Listener -> Assertion
+recvAndParseHs :: Listener -> Assertion' Handshake
 recvAndParseHs listener = do
     hsMsg <- recvHandshake listener
     case hsMsg of
-      ConnClosed _ -> assertFailure "Receiving handshake failed"
+      ConnClosed _ -> assertFailure' "Receiving handshake failed"
       Msg hs ->
         case parseHandshake hs of
-          Left err -> assertFailure $ "Parsing handshake failed: " ++ err
-          Right _ -> return ()
+          Left err  -> assertFailure' $ "Parsing handshake failed: " ++ err
+          Right hs' -> return hs'
 
-recvAndParse :: Listener -> Int -> Assertion
+recvAndParse :: Listener -> Int -> Assertion' [PeerMsg]
 recvAndParse listener n = do
   msgs <- replicateM n (recvMessage listener)
   let ms = mapMaybe (\msg -> case msg of { Msg m -> Just m; _ -> Nothing }) msgs
@@ -180,12 +181,14 @@ checkBuffer Listener{deque=buf} = do
       assertFailure $ "Buffer is not empty: " ++ show bufContents
     assertEqual "Buffer length is not zero" 0 l
 
-parseMsgs :: (B.ByteString -> Either String a) -> [B.ByteString] -> Assertion
-parseMsgs _ [] = return ()
+parseMsgs :: (B.ByteString -> Either String a) -> [B.ByteString] -> Assertion' [a]
+parseMsgs _ [] = return []
 parseMsgs p (m : ms) = do
     case p m of
-      Left err -> assertFailure $ "Failed to parse msg: " ++ show (B.unpack m) ++ " (" ++ err ++ ")"
-      Right _ -> parseMsgs p ms
+      Left err -> assertFailure' $ "Failed to parse msg: " ++ show (B.unpack m) ++ " (" ++ err ++ ")"
+      Right m' -> do
+        ms' <- parseMsgs p ms
+        return $ m' : ms'
 
 recvMsg :: RecvMsg -> Either B.ByteString B.ByteString
 recvMsg (ConnClosed bs) = Left bs

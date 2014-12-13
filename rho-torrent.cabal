@@ -102,6 +102,7 @@ test-suite test
     Rho.PeerComms.PeerPieceAsgnSpec
     Rho.PeerCommsSpec
     Rho.PieceMgrSpec
+    Rho.TestUtils
     Rho.TrackerCommsSpec
 
   build-depends:
@@ -110,6 +111,7 @@ test-suite test
     , bencoding
     , bytestring
     , containers
+    , deepseq
     , dequeue
     , directory
     , filepath
