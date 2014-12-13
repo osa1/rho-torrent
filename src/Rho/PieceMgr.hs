@@ -46,6 +46,32 @@ writePiece (PieceMgr ps _ _ m) pieceIdx pieceOffset pieceData = do
       [0..] (B.unpack pieceData)
     putMVar m (arr, bits)
 
+-- | Returns `Just (offset, length)` if we're missing some parts of the
+-- given piece.
+nextMissingPart :: PieceMgr -> Word32 -> IO (Maybe (Word32, Word32))
+nextMissingPart (PieceMgr pSize _ _ m) pIdx = do
+    (_, arr) <- readMVar m
+    let bs = MV.slice (fromIntegral $ pSize * pIdx) (fromIntegral pSize) arr
+    findFirstMissing bs 0
+  where
+    findFirstMissing :: MV.IOVector Bool -> Int -> IO (Maybe (Word32, Word32))
+    findFirstMissing v i
+      | MV.length v == i = return Nothing
+      | otherwise = do
+          b <- MV.read v i
+          if b then findFirstMissing v (i + 1)
+               else do
+                 end <- findFirstAvail v (i + 1)
+                 return $ Just (fromIntegral i, end - fromIntegral i)
+
+    findFirstAvail :: MV.IOVector Bool -> Int -> IO Word32
+    findFirstAvail v i
+      | MV.length v == i = return $ fromIntegral i
+      | otherwise = do
+          b <- MV.read v i
+          if b then return $ fromIntegral i
+               else findFirstAvail v (i + 1)
+
 -- | Generate list of (piece index, piece offset, length until next piece)
 -- triples.
 --

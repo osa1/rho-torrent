@@ -23,6 +23,7 @@ spec = do
     fromHUnitTest lastPieceZeroTest
     fromHUnitTest bigPieceTest
     fromHUnitTest testTorrentPieceTest
+    fromHUnitTest testNextMissingPart
 
 cons :: a -> (b, c) -> (a, b, c)
 cons a (b, c) = (a, b, c)
@@ -108,3 +109,20 @@ testTorrentPieceTest = TestLabel "test.torrent pieces" $ TestCase $ do
                   ]
             assertEqual "generated files are wrong" expectedFiles files
           Right msg -> assertFailure $ "Parsed piece message to somehing else: " ++ show msg
+
+testNextMissingPart :: Test
+testNextMissingPart = TestList
+  [ TestLabel "nextMissingPart - 1" $ TestCase $ do
+      mgr <- newPieceMgr 50 10
+      missing <- nextMissingPart mgr 1
+      assertEqual "next missing part is wrong" (Just (0, 10)) missing
+      writePiece mgr 1 3 (B.pack [0, 0, 0])
+      missing <- nextMissingPart mgr 1
+      assertEqual "next missing part is wrong" (Just (0, 3)) missing
+      writePiece mgr 1 0 (B.pack [0, 0, 0])
+      missing <- nextMissingPart mgr 1
+      assertEqual "next missing part is wrong" (Just (6, 4)) missing
+      writePiece mgr 1 6 (B.pack [0, 0, 0, 0])
+      missing <- nextMissingPart mgr 1
+      assertEqual "next missing part is wrong" Nothing missing
+  ]
