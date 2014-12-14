@@ -52,6 +52,8 @@ spec = do
             , "udp://tracker.publicbt.com:80/scrape"
             , "udp://tracker.istole.it:80/scrape"
             , "udp://coppersurfer.tk:6969/scrape"
+            -- TODO: support https
+            -- , "https://tracker.defcon.org:443/announce"
             ]
       forM_ trackers $ \tracker ->
         case parseTrackerBS tracker of
