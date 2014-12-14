@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Rho.PeerCommsSpec where
@@ -9,8 +9,10 @@ import qualified Data.ByteString              as B
 import qualified Data.Dequeue                 as D
 import           Data.IORef
 import           Data.List
+import qualified Data.Map                     as M
 import           Data.Maybe
 import           Data.Monoid
+import           Data.Text.Encoding           (decodeUtf8)
 import           System.FilePath
 
 import           Test.Hspec
@@ -44,7 +46,12 @@ spec = do
       parseHandshake (mkHandshake infoHash peerId) == Right (Handshake infoHash peerId Supports)
 
     modifyMaxSuccess (const 10000) $ prop "printing-parsing messages" $ \msg ->
-      (mkPeerMsg defaultMsgTable msg >>= parsePeerMsg) == Right msg
+      let
+        ret = mkPeerMsg defaultMsgTable msg >>= parsePeerMsg
+        ex  = unlines [ "expected: " ++ (show :: Either B.ByteString PeerMsg -> String) (Right msg)
+                      , "found: " ++ show ret ]
+      in
+        counterexample ex (ret == Right msg)
 
     fromHUnitTest recvMessageRegression
 
@@ -83,8 +90,13 @@ parseLongMsg = TestLabel "parsing long message (using listener, starting with ha
     extendedMsg <- B.readFile (dataRoot </> "extended_msg")
     emitter <- mkMessageEmitter extendedMsg
     listener <- initListener emitter
-    recvAndParseHs listener
-    recvAndParse listener 26
+    _ <- recvAndParseHs listener
+    (extendedHs : _) <- recvAndParse listener 26
+    case extendedHs of
+      Extended (ExtendedHandshake _ _ hsData) -> do
+        assertEqual "wrong `v` field" (Just "µTorrent 1.7.7") (decodeUtf8 <$> ehdV hsData)
+        assertEqual "wrong `reqq` field" Nothing (ehdReqq hsData)
+      notHs -> assertFailure $ "message is not extended handshake: " ++ show notHs
     checkBuffer listener
 
 parseExtendedHsAndBF :: Test
@@ -92,7 +104,19 @@ parseExtendedHsAndBF = TestLabel "parsing extended handshake followed by bitfiel
   msg <- B.readFile (dataRoot </> "extended_hs_with_bf")
   emitter <- mkMessageEmitter msg
   listener <- initListener emitter
-  recvAndParse listener 2
+  (extendedHs : _) <- recvAndParse listener 2
+  case extendedHs of
+    Extended (ExtendedHandshake msgTbl msgData hsData) -> do
+      assertEqual "wrong `v` field" (Just "Transmission 2.84") (ehdV hsData)
+      assertEqual "wrong `reqq` field" (Just 512) (ehdReqq hsData)
+      case M.lookup UtMetadata msgTbl of
+        Nothing -> assertFailure "can't find UtMetadata in message table"
+        Just i -> assertEqual "ut_metadata id is wrong" 3 i
+      case (find (\case { UtMetadataSize _ -> True; _ -> False }) msgData
+              >>= \(UtMetadataSize i) -> return i) of
+        Just size -> assertEqual "metadata size is wrong" 7778 size
+        Nothing -> assertFailure "can't find metadata size"
+    notHs -> assertFailure $ "message is not extended handshake: " ++ show notHs
   checkBuffer listener
 
 parsePieceReqs :: Test
@@ -100,7 +124,7 @@ parsePieceReqs = TestLabel "parsing piece requests" $ TestCase $ do
   msg <- B.readFile (dataRoot </> "piece_requests")
   emitter <- mkMessageEmitter msg
   listener <- initListener emitter
-  recvAndParse listener 2
+  _ <- recvAndParse listener 2
   checkBuffer listener
 
 utorrentExample :: Test
@@ -109,8 +133,8 @@ utorrentExample = TestLabel "parsing utorrent leecher example" $
     extendedMsg <- B.readFile (dataRoot </> "utorrent_example")
     emitter <- mkMessageEmitter extendedMsg
     listener <- initListener emitter
-    recvAndParseHs listener
-    recvAndParse listener 3
+    _ <- recvAndParseHs listener
+    _ <- recvAndParse listener 3
     checkBuffer listener
 
 transmissionExample :: Test
@@ -119,8 +143,8 @@ transmissionExample = TestLabel "parsing transmission seeder example" $
     extendedMsg <- B.readFile (dataRoot </> "transmission_example")
     emitter <- mkMessageEmitter extendedMsg
     listener <- initListener emitter
-    recvAndParseHs listener
-    recvAndParse listener 3
+    _ <- recvAndParseHs listener
+    _ <- recvAndParse listener 3
     checkBuffer listener
 
 regression1 :: Test
@@ -134,9 +158,9 @@ regression1 = TestLabel "regression -- parsing series of messages" $
                (B.null rest'' && (firstMsg <> secondMsg <> thirdMsg == msg))
     emitter <- LS.mkMessageEmitter [firstMsg, secondMsg, thirdMsg]
     listener <- initListener emitter
-    recvAndParseHs listener
+    _ <- recvAndParseHs listener
     msgs <- replicateM 3 (recvMessage listener)
-    let ms = mapMaybe (\msg -> case msg of { Msg m -> Just m; _ -> Nothing }) msgs
+    let ms = mapMaybe (\m -> case m of { Msg m' -> Just m'; _ -> Nothing }) msgs
     case map parsePeerMsg ms of
       [Right (Extended ExtendedHandshake{}), Right Bitfield{}, Right Unchoke{}] -> return ()
       w -> assertFailure ("messages are parsed wrong: " ++ show w)
@@ -199,8 +223,8 @@ mkMessageEmitter :: B.ByteString -> IO (IO B.ByteString)
 mkMessageEmitter msg = do
     msgRef <- newIORef msg
     return $ do
-      msg <- readIORef msgRef
-      case B.uncons msg of
+      m <- readIORef msgRef
+      case B.uncons m of
         Just (w, rest) -> do
           writeIORef msgRef rest
           return (B.singleton w)
@@ -258,11 +282,37 @@ instance Arbitrary PeerMsg where
 
 instance Arbitrary ExtendedPeerMsg where
     arbitrary = oneof
-      [ ExtendedHandshake defaultMsgTable . (:[]) . UtMetadataSize <$> arbitrary
-      , return $ ExtendedHandshake defaultMsgTable []
+      [ genExtendedHandshake
       , MetadataRequest <$> arbitrary
       , MetadataData <$> arbitrary <*> arbitrary <*> genBytes 10
       , MetadataReject <$> arbitrary
       ]
 
-    shrink _ = undefined
+    shrink _ = []
+
+genExtendedHandshake :: Gen ExtendedPeerMsg
+genExtendedHandshake = do
+    msgTable <- genExtendedPeerMsgTable
+    msgData <- genExtendedMsgTypeData msgTable
+    hsData <- genExtendedHsData
+    return $ ExtendedHandshake msgTable msgData hsData
+  where
+    genExtendedPeerMsgTable :: Gen ExtendedPeerMsgTable
+    genExtendedPeerMsgTable = M.fromList <$> oneof
+      [ return []
+      , do i <- arbitrary
+           return [(UtMetadata, i)]
+      ]
+
+    genExtendedMsgTypeData :: ExtendedPeerMsgTable -> Gen [ExtendedMsgTypeData]
+    genExtendedMsgTypeData tbl
+      -- we only generate UtMetadataSize when we have UtMetadata in `m`
+      -- dictionary
+      | UtMetadata `M.member` tbl = do
+          i <- arbitrary
+          return [UtMetadataSize i]
+      | otherwise = return []
+
+    genExtendedHsData :: Gen ExtendedHandshakeData
+    genExtendedHsData =
+      ExtendedHandshakeData <$> genMaybe (genBytes 5) <*> genMaybe arbitrary

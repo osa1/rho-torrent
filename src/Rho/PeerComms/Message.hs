@@ -1,4 +1,4 @@
-{-# LANGUAGE NondecreasingIndentation, OverloadedStrings #-}
+{-# LANGUAGE NondecreasingIndentation, OverloadedStrings, TupleSections #-}
 
 module Rho.PeerComms.Message where
 
@@ -10,6 +10,7 @@ import qualified Data.ByteString         as B
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy    as LB
 import qualified Data.Map                as M
+import           Data.Maybe              (catMaybes)
 import           Data.Monoid
 import           Data.Word
 import           Network.Socket          hiding (KeepAlive)
@@ -60,8 +61,21 @@ data ExtendedMsgTypeData
   = UtMetadataSize Word32
   deriving (Show, Eq)
 
+data ExtendedHandshakeData = ExtendedHandshakeData
+  { ehdV    :: Maybe B.ByteString -- ^ `v` from BEP 10
+  , ehdReqq :: Maybe Word32 -- ^ `reqq` from BEP 10
+  } deriving (Show, Eq)
+
+extendedHandshakeData :: ExtendedHandshakeData
+extendedHandshakeData = ExtendedHandshakeData Nothing Nothing
+
 defaultMsgTable :: ExtendedPeerMsgTable
 defaultMsgTable = M.fromList [(UtMetadata, 3)]
+
+defaultExtendedHS :: Maybe Word32 -> ExtendedPeerMsg
+defaultExtendedHS metadataSize =
+  ExtendedHandshake defaultMsgTable (catMaybes [fmap UtMetadataSize metadataSize])
+                    (ExtendedHandshakeData (Just "rho-torrent 0.1") (Just 128))
 
 data ExtendedPeerMsg
   = ExtendedHandshake
@@ -70,6 +84,8 @@ data ExtendedPeerMsg
       -- extra data about extended message types.
       -- (metadata_size from ut_metadata etc.)
       [ExtendedMsgTypeData]
+      -- extra data attached to handshake (see BEP 10)
+      ExtendedHandshakeData
   | UnknownExtendedMsg Word8
   -- Messages from BEP 9
   | MetadataRequest Word32 -- piece index
@@ -107,15 +123,13 @@ mkPeerMsg' _ (Cancel pidx offset len) = return
 mkPeerMsg' _ (Port (PortNum w16)) = return
     [BB.word32BE 3, BB.word8 9, BB.word16LE w16 {- TODO: not sure about endianness of port -}]
 -- TODO: ut_metadata message generators have duplicate code
-mkPeerMsg' _ (Extended (ExtendedHandshake tbl tblData)) =
-    let mDictFields :: [(B.ByteString, BE.BValue)]
+mkPeerMsg' _ (Extended (ExtendedHandshake tbl tblData hsData)) =
+    let mDictFields, fields :: [(B.ByteString, BE.BValue)]
         mDictFields = map (\(k, v) -> (extendedPeerMsgTypeKey k, BE.toBEncode v)) $ M.toList tbl
-        fields      :: [(B.ByteString, BE.BValue)]
-        fields      = extendedMsgDataFields tblData
-        -- TODO: sort fields
-        mDict           = BE.fromAscList mDictFields
-        resp            = BE.fromAscList $ ("m", BE.BDict mDict) : fields
-        bcString        = LB.toStrict $ BE.encode resp in
+        fields      = extendedMsgDataFields tblData ++ hsDataFields hsData
+        mDict       = BE.fromAscList mDictFields
+        resp        = BE.fromAscList $ ("m", BE.BDict mDict) : fields
+        bcString    = LB.toStrict $ BE.encode resp in
     return [ BB.word32BE (fromIntegral $ 2 + B.length bcString)
            , BB.word8 20, BB.word8 0, BB.byteString bcString ]
   where
@@ -124,6 +138,9 @@ mkPeerMsg' _ (Extended (ExtendedHandshake tbl tblData)) =
       where
         f :: ExtendedMsgTypeData -> [(B.ByteString, BE.BValue)]
         f (UtMetadataSize s) = [("metadata_size", BE.toBEncode s)]
+    hsDataFields :: ExtendedHandshakeData -> [(B.ByteString, BE.BValue)]
+    hsDataFields (ExtendedHandshakeData v reqq) =
+      maybe [] ((:[]) . ("v",) . BE.toBEncode) v <> maybe [] ((:[]) . ("reqq",) . BE.toBEncode) reqq
 mkPeerMsg' _ (Extended UnknownExtendedMsg{}) = Left "Can't generate message for UnknownExtendedMsg"
 mkPeerMsg' tbl (Extended (MetadataRequest pidx)) =
     case M.lookup UtMetadata tbl of
@@ -190,18 +207,29 @@ parseExtendedPeerMsg len = do
     -- TODO: redundant bytestring unpacking/packing here
     payload <- B.pack <$> replicateM (fromIntegral len - 2) readWord
     if extendedMsgType == 0
-      then uncurry ExtendedHandshake <$> parseExtendedHandshake payload
+      then do
+        (msgTbl, msgData, hsData) <- parseExtendedHandshake payload
+        return $ ExtendedHandshake msgTbl msgData hsData
       else parseExtendedMsg extendedMsgType payload
   where
     p :: Either String a -> Parser a
     p = either fail return
 
-    parseExtendedHandshake :: B.ByteString -> Parser (ExtendedPeerMsgTable, [ExtendedMsgTypeData])
+    opt :: Either String a -> Parser (Maybe a)
+    opt (Left _) = return Nothing
+    opt (Right a) = return $ Just a
+
+    parseExtendedHandshake
+      :: B.ByteString
+      -> Parser (ExtendedPeerMsgTable, [ExtendedMsgTypeData], ExtendedHandshakeData)
     parseExtendedHandshake payload = do
       bc <- p $ BE.decode payload
+      v <- opt $ getField bc "v"
+      reqq <- opt $ getField bc "reqq"
+      let hsData = ExtendedHandshakeData v reqq
       mdict <- p $ getField bc "m"
       case getField mdict "ut_metadata" of
-        Left _ -> return (M.empty, [])
+        Left _ -> return (M.empty, [], hsData)
         Right (BE.BInteger i) -> do
           -- even though the spec doesn't mention it, `metadata_size` is
           -- actually optinal. e.g. when a client who requesting the info
@@ -211,7 +239,7 @@ parseExtendedPeerMsg len = do
                                Left _ -> []
                                Right (BE.BInteger size) -> [UtMetadataSize (fromIntegral size)]
                                Right _ -> [] -- TODO: error?
-          return (M.singleton UtMetadata (fromIntegral i), metainfoData)
+          return (M.singleton UtMetadata (fromIntegral i), metainfoData, hsData)
         Right bv -> fail $ "ut_metadata value is not a number: " ++ show bv
 
     parseExtendedMsg :: Word8 -> B.ByteString -> Parser ExtendedPeerMsg

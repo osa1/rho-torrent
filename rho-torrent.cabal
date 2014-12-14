@@ -124,6 +124,7 @@ test-suite test
     , QuickCheck == 2.*
     , quickcheck-instances
     , RhoTorrent
+    , text
 
     -- for scraping magnets/torrents
     , HTTP

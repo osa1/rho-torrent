@@ -1,4 +1,5 @@
-{-# LANGUAGE MultiWayIf, NondecreasingIndentation, OverloadedStrings #-}
+{-# LANGUAGE LambdaCase, MultiWayIf, NondecreasingIndentation, OverloadedStrings
+             #-}
 
 -- | Handling communications with peers after a successful handshake.
 module Rho.PeerComms.PeerConnection where
@@ -7,6 +8,7 @@ import           Control.Concurrent
 import           Control.Monad
 import qualified Data.ByteString             as B
 import           Data.IORef
+import           Data.List                   (find)
 import qualified Data.Map                    as M
 import           Data.Maybe
 import           Data.Monoid
@@ -66,13 +68,18 @@ handleMessage peer pieces msg _sock peerAddr = do
       Right (Piece pIdx offset pData) -> do
         putStrLn "Got piece response"
         writePiece pieces pIdx offset pData
-      Right (Extended (ExtendedHandshake tbl [UtMetadataSize size])) -> do
+      Right (Extended (ExtendedHandshake msgTbl msgData hsData)) -> do
         pc <- readIORef peer
         putStrLn "Got extended handshake."
         -- TODO: We should send extended handshake before receiving one
-        sendMessage pc (Extended (ExtendedHandshake defaultMsgTable []))
+        sendMessage pc (Extended $ defaultExtendedHS Nothing) -- FIXME: info size
         atomicModifyIORef' peer $ \pc' ->
-          (pc'{pcExtendedMsgTbl = tbl, pcMetadataSize = Just size}, ())
+          (pc'{pcExtendedMsgTbl = msgTbl,
+               pcMetadataSize   = find (\case UtMetadataSize s -> True
+                                              _ -> False) msgData >>= \(UtMetadataSize i) -> return i,
+               pcClientName     = ehdV hsData,
+               pcReqq           = fromMaybe (pcReqq pc') (ehdReqq hsData)},
+           ())
       Right pmsg -> putStrLn $ "Unhandled peer msg: " ++ show pmsg
 
 sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)
