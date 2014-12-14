@@ -13,6 +13,7 @@ import qualified Data.Map                     as M
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Text.Encoding           (decodeUtf8)
+import           Data.Word
 import           System.FilePath
 
 import           Test.Hspec
@@ -274,7 +275,7 @@ instance Arbitrary PeerMsg where
       , Piece <$> arbitrary <*> arbitrary <*> genBytes 20
       , Cancel <$> arbitrary <*> arbitrary <*> arbitrary
       -- TODO: fix this
-      -- , Port . fromIntegral <$> (arbitrary :: Gen Word16)
+      , Port . fromIntegral <$> (arbitrary :: Gen Word16)
       , Extended <$> arbitrary
       ]
 

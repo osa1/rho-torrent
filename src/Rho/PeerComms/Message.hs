@@ -52,6 +52,7 @@ data ExtendedPeerMsgType
 extendedPeerMsgTypeKey :: ExtendedPeerMsgType -> BE.BKey {- = B.ByteString -}
 extendedPeerMsgTypeKey UtMetadata = "ut_metadata"
 
+-- | Extended message id we use for ut_metadata.
 uT_METADATA_KEY :: Word8
 uT_METADATA_KEY = 3
 
@@ -61,17 +62,17 @@ data ExtendedMsgTypeData
   = UtMetadataSize Word32
   deriving (Show, Eq)
 
+-- | Some widely used fields in extended handshake.
 data ExtendedHandshakeData = ExtendedHandshakeData
   { ehdV    :: Maybe B.ByteString -- ^ `v` from BEP 10
   , ehdReqq :: Maybe Word32 -- ^ `reqq` from BEP 10
   } deriving (Show, Eq)
 
-extendedHandshakeData :: ExtendedHandshakeData
-extendedHandshakeData = ExtendedHandshakeData Nothing Nothing
-
+-- | Our extended message id table.
 defaultMsgTable :: ExtendedPeerMsgTable
 defaultMsgTable = M.fromList [(UtMetadata, 3)]
 
+-- | Our extended handshake.
 defaultExtendedHS :: Maybe Word32 -> ExtendedPeerMsg
 defaultExtendedHS metadataSize =
   ExtendedHandshake defaultMsgTable (catMaybes [fmap UtMetadataSize metadataSize])
@@ -121,7 +122,7 @@ mkPeerMsg' _ (Piece pidx offset piece) = return
 mkPeerMsg' _ (Cancel pidx offset len) = return
     [BB.word32BE 13, BB.word8 8, BB.word32BE pidx, BB.word32BE offset, BB.word32BE len]
 mkPeerMsg' _ (Port (PortNum w16)) = return
-    [BB.word32BE 3, BB.word8 9, BB.word16LE w16 {- TODO: not sure about endianness of port -}]
+    [BB.word32BE 3, BB.word8 9, BB.word16LE w16]
 -- TODO: ut_metadata message generators have duplicate code
 mkPeerMsg' _ (Extended (ExtendedHandshake tbl tblData hsData)) =
     let mDictFields, fields :: [(B.ByteString, BE.BValue)]
@@ -238,7 +239,7 @@ parseExtendedPeerMsg len = do
           let metainfoData = case getField bc "metadata_size" of
                                Left _ -> []
                                Right (BE.BInteger size) -> [UtMetadataSize (fromIntegral size)]
-                               Right _ -> [] -- TODO: error?
+                               Right bv -> fail $ "metadata_size field is not a number: " ++ show bv
           return (M.singleton UtMetadata (fromIntegral i), metainfoData, hsData)
         Right bv -> fail $ "ut_metadata value is not a number: " ++ show bv
 
