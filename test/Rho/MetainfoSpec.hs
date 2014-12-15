@@ -65,7 +65,7 @@ regressions = TestList $ map TestCase [regression1]
           let info_hash = InfoHash $ B.pack
                 [ 0x08, 0x89, 0xCF, 0x68, 0xCF, 0x4A, 0x7A, 0xB7, 0xF1, 0xDB,
                   0x69, 0xC2, 0xFF, 0xAB, 0xE3, 0xDB, 0xFE, 0x53, 0xD0, 0x95 ]
-          assertEqual "info_hash is wrong" (mInfoHash metainfo) info_hash
+          assertEqual "info_hash is wrong" (iHash $ mInfo metainfo) info_hash
           ppProp metainfo
 
 -- | Check property: `BE.fromBEncode . BE.toBEncode` should preserve
@@ -86,19 +86,23 @@ getFiles root = getDirectoryContents root >>= fmap concat . mapM (\f -> do
 -- * Arbitrary instances
 
 instance Arbitrary Metainfo where
-  arbitrary = do
-    info <- arbitrary
-    let infoHash = mkInfoHash $ toBEncode info
+  arbitrary =
     liftM5 Metainfo arbitrary arbitrary arbitrary arbitrary arbitrary
-      <*> arbitrary <*> pure infoHash <*> pure info
+      <*> arbitrary <*> arbitrary
   shrink = recursivelyShrink
 
 instance Arbitrary Info where
   arbitrary = do
-    singleFile <- arbitrary
-    files <- if singleFile then Left <$> genSingleFile else Right <$> arbitrary
-    Info <$> arbitrary <*> arbitrary <*> listOf (B.pack <$> vector 20)
-         <*> arbitrary <*> pure files
+    name     <- arbitrary
+    pieceLen <- arbitrary
+    pieces   <- listOf (B.pack <$> vector 20)
+    private  <- arbitrary
+    files    <- oneof [Left <$> genSingleFile, Right <$> arbitrary]
+    let info  = Info name undefined pieceLen pieces private files
+        bv    = BE.toBEncode info
+        hash  = mkInfoHash bv
+    return info{iHash=hash}
+
   shrink _ = []
 
 genSingleFile :: Gen File

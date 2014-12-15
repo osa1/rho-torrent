@@ -21,4 +21,4 @@ mkTorrentFromMetainfo m = Torrent (Left m) 0 0 0
 
 infoHash :: Torrent -> InfoHash
 infoHash Torrent{source=Right Magnet{mHash=hash}} = hash
-infoHash Torrent{source=Left Metainfo{mInfoHash=hash}} = hash
+infoHash Torrent{source=Left Metainfo{mInfo=Info{iHash=hash}}} = hash

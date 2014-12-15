@@ -125,7 +125,7 @@ checkPieces (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
     return $ word160ToBS (hash bytes) == pHash
 
 generateFiles :: PieceMgr -> Info -> IO [(FilePath, B.ByteString)]
-generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ files) = do
+generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ _ files) = do
     let (names, sizes) = unzip $ map (\(p, s) -> (BC.unpack name </> p, s)) $ collectFiles files
     bytes <- fst <$> readMVar pData
     unless (fromIntegral (sum sizes) == MV.length bytes) . error . concat $

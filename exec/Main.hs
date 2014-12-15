@@ -52,10 +52,10 @@ runTorrent filePath = do
     case parseMetainfo contents of
       Left err -> putStrLn $ "Can't parse metainfo: " ++ err
       Right m@Metainfo{mAnnounce=HTTPTracker uri} -> do
-        putStrLn $ "info_hash: " ++ show (mInfoHash m)
+        putStrLn $ "info_hash: " ++ show (iHash $ mInfo m)
         peerId <- generatePeerId
         req <- peerRequestHTTP peerId uri (mkTorrentFromMetainfo m) m
-        runPeers req (mInfo m) (mInfoHash m) peerId
+        runPeers req (mInfo m) (iHash $ mInfo m) peerId
       Right m@Metainfo{mAnnounce=UDPTracker addr_str port} -> do
         peerId <- generatePeerId
         addrInfo <- getAddrInfo (Just defaultHints) (Just $ B.unpack addr_str) (Just $ show port)
@@ -64,7 +64,7 @@ runTorrent filePath = do
         commHandler <- initUDPCommHandler
         putStrLn "comm handler initialized"
         peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMetainfo m)
-        runPeers peers (mInfo m) (mInfoHash m) peerId
+        runPeers peers (mInfo m) (iHash $ mInfo m) peerId
 
 runPeers :: Either String PeerResponse -> Info -> InfoHash -> PeerId -> IO ()
 runPeers (Left err) _ _ _ = error err
