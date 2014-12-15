@@ -77,10 +77,6 @@ spec = do
 
     fromHUnitTest regression1
 
--- FIXME: copied from ListenerSpec, maybe move to some shared module
-ll :: [B.ByteString] -> Int
-ll = foldl' (\acc b -> acc + B.length b) 0
-
 unwrapRecvd :: RecvMsg -> B.ByteString
 unwrapRecvd (ConnClosed bs) = bs
 unwrapRecvd (Msg bs) = bs

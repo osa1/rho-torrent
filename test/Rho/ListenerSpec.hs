@@ -7,7 +7,6 @@ import           Control.Monad
 import qualified Data.ByteString          as B
 import qualified Data.Dequeue             as D
 import           Data.IORef
-import           Data.List
 import           Data.Monoid
 
 import           Test.Hspec
@@ -17,6 +16,7 @@ import           Test.HUnit
 import           Test.QuickCheck
 
 import           Rho.Listener
+import           Rho.TestUtils
 
 main :: IO ()
 main = hspec spec
@@ -125,9 +125,6 @@ spec = do
         listener <- initListener emitter
         rcvdMsgs <- mapM (recvLen listener) recvLens
         return $ all (\(rcvdLen, msg) -> rcvdLen == B.length msg) (zip recvLens rcvdMsgs)
-
-ll :: [B.ByteString] -> Int
-ll = foldl' (\acc b -> acc + B.length b) 0
 
 genMsgs :: Int -> Int -> Gen [B.ByteString]
 genMsgs maxMsgs maxMsgSize = do
