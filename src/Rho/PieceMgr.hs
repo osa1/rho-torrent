@@ -28,13 +28,24 @@ type PieceData = (Word32, Word32, Word32)
 
 newPieceMgr :: Word64 -> Word32 -> IO PieceMgr
 newPieceMgr totalSize pieceLength = do
-    arr <- MV.new (fromIntegral totalSize)
+    arr  <- MV.new (fromIntegral totalSize)
     bits <- MV.replicate (fromIntegral totalSize) False
-    var <- newMVar (arr, bits)
+    var  <- newMVar (arr, bits)
     let pieces =
           let (d, m) = totalSize `divMod` fromIntegral pieceLength
           in if m == 0 then d else d + 1
     return $ PieceMgr pieceLength totalSize (fromIntegral pieces) var
+
+newPieceMgrFromData :: B.ByteString -> Word32 -> IO PieceMgr
+newPieceMgrFromData bs pieceLength = do
+    let totalSize = B.length bs
+    arr  <- V.unsafeThaw $ V.fromList $ B.unpack bs
+    bits <- MV.replicate totalSize True
+    var  <- newMVar (arr, bits)
+    let pieces =
+          let (d, m) = totalSize `divMod` fromIntegral pieceLength
+          in if m == 0 then d else d + 1
+    return $ PieceMgr pieceLength (fromIntegral totalSize) (fromIntegral pieces) var
 
 writePiece :: PieceMgr -> Word32 -> Word32 -> B.ByteString -> IO ()
 writePiece (PieceMgr ps _ _ m) pieceIdx pieceOffset pieceData = do

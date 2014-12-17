@@ -7,11 +7,9 @@ import           Control.Applicative
 import           Data.BEncode            as BE
 import qualified Data.BEncode.BDict      as BE
 import qualified Data.ByteString         as B
-import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy    as LB
 import           Data.Digest.SHA1
 import           Data.Maybe              (fromMaybe)
-import           Data.Monoid
 import           Data.Typeable
 import           Data.Word
 import           GHC.Generics

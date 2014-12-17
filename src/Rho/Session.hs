@@ -1,14 +1,18 @@
 {-# LANGUAGE NondecreasingIndentation, OverloadedStrings #-}
 
--- | Communications with peers.
-module Rho.PeerComms where
+-- | Handling all the state required to download a single torrent.
+-- A new session is created for every torrent.
+module Rho.Session where
 
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
+import qualified Data.BEncode                 as BE
 import qualified Data.ByteString              as B
+import qualified Data.ByteString.Lazy         as LB
 import           Data.IORef
 import qualified Data.Map                     as M
+import           Data.Word
 import           GHC.IO.Exception
 import           Network.Socket               hiding (KeepAlive, recv, recvFrom,
                                                recvLen, send, sendTo)
@@ -18,47 +22,56 @@ import qualified System.Log.Logger            as L
 
 import           Rho.InfoHash
 import           Rho.Listener                 (Listener, initListener, recvLen)
+import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
+import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection hiding (errorLog, logger, warning)
 import           Rho.PeerComms.PeerConnState
 import           Rho.PieceMgr
+import           Rho.SessionState
 
-data PeerCommHandler = PeerCommHandler
-  { pchPeers    :: MVar (M.Map SockAddr (IORef PeerConn))
-  , pchPieceMgr :: PieceMgr
-  , pchPeerId   :: PeerId
-    -- ^ our peer id
-  }
-
--- | Initialize listeners, data structures etc. for peer communications.
-initPeerCommsHandler :: Info -> PeerId -> IO PeerCommHandler
-initPeerCommsHandler torrentInfo pid = do
-    pieceMgr <- newPieceMgr (torrentSize torrentInfo) (iPieceLength torrentInfo)
-    -- state of all connected peers
-    peers <- newMVar M.empty
-    -- sock for incoming connections
+-- | Initialize listeners, data structures etc. for peer communications,
+-- using magnet URI.
+initMagnetSession :: Magnet -> PeerId -> IO Session
+initMagnetSession (Magnet ih _ _) pid = do
+    peers      <- newMVar M.empty
+    pieceMgr   <- newMVar Nothing
+    miPieceMgr <- newMVar Nothing
+    let sess    = Session pid ih peers pieceMgr miPieceMgr
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet (fromIntegral (5433 :: Int)) 0) -- TODO: hard-coded port
-    let ret = PeerCommHandler peers pieceMgr pid
-    -- We don't block the thread that listens for incoming handshakes
-    void $ async $ listenPeerSocket ret sock
-    return ret
+    void $ async $ listenPeerSocket sess sock
+    return sess
+
+-- | Initialize listeners, data structures etc. for peer communications,
+-- using info dictionary.
+initTorrentSession :: Info -> PeerId -> IO Session
+initTorrentSession info pid = do
+    peers      <- newMVar M.empty
+    pieceMgr   <- newMVar . Just =<< newPieceMgr (torrentSize info) (iPieceLength info)
+    let miData  = LB.toStrict $ BE.encode info
+    miPieceMgr <- newMVar . Just =<< newPieceMgrFromData miData (2 ^ (14 :: Word32))
+    let sess    = Session pid (iHash info) peers pieceMgr miPieceMgr
+    sock       <- socket AF_INET Stream defaultProtocol
+    bind sock (SockAddrInet (fromIntegral (5433 :: Int)) 0) -- TODO: hard-coded port
+    void $ async $ listenPeerSocket sess sock
+    return sess
 
 -- | Accept incoming connections and spawn a connected socket listener for
 -- every accepted connection.
-listenPeerSocket :: PeerCommHandler -> Socket -> IO ()
-listenPeerSocket comms sock = do
+listenPeerSocket :: Session -> Socket -> IO ()
+listenPeerSocket sess sock = do
     (peerSock, peerAddr) <- accept sock
     listener <- initListener $ recv peerSock 4096
     -- we should have a handshake message as first thing
-    void $ async $ listenHandshake comms listener peerSock peerAddr
-    listenPeerSocket comms sock
+    void $ async $ listenHandshake sess listener peerSock peerAddr
+    listenPeerSocket sess sock
 
 -- | Wait for an incoming handshake, update peers state upon successfully
 -- parsing the handshake and continue listening the connected socket.
-listenHandshake :: PeerCommHandler -> Listener -> Socket -> SockAddr -> IO ()
-listenHandshake comms listener sock peerAddr = do
+listenHandshake :: Session -> Listener -> Socket -> SockAddr -> IO ()
+listenHandshake sess listener sock peerAddr = do
     msg <- recvHandshake listener
     case msg of
       ConnClosed bs
@@ -70,18 +83,18 @@ listenHandshake comms listener sock peerAddr = do
             warning $ "Can't parse handshake: " ++ err ++ " msg: " ++ show bs
           Right hs -> do
             -- TODO: we probably need to check info_hash
-            send sock $ mkHandshake (hInfoHash hs) (pchPeerId comms)
-            handleHandshake comms sock peerAddr hs
+            sendAll sock $ mkHandshake (hInfoHash hs) (sessPeerId sess)
+            handleHandshake sess sock peerAddr hs
 
-handshake :: PeerCommHandler -> SockAddr -> InfoHash -> IO ()
-handshake comms@(PeerCommHandler peers pieces peerId) addr infoHash = do
+handshake :: Session -> SockAddr -> InfoHash -> IO ()
+handshake sess@(Session peerId _ _ _ _) addr infoHash = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
       Left err ->
         putStrLn $ "Handshake failed: " ++ err
       Right (sock, hs) -> do
         putStrLn $ "Handshake successful. Extension support: " ++ show (hExtension hs)
-        handleHandshake comms sock addr hs
+        handleHandshake sess sock addr hs
 
 -- | Send a handshake message to given target using a fresh socket. Return
 -- the connected socket in case of a success. (e.g. receiving answer to
@@ -94,12 +107,12 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     let msg = mkHandshake infoHash peerId
     connect sock addr
     listener <- initListener $ recv sock 4096
-    sent <- send sock msg
+    sendAll sock msg
     incomingHs <- recvHandshake listener
     case incomingHs of
       ConnClosed hs
         | B.null hs -> return $ Left "refused"
-        | otherwise  -> return $ Left $ "partial message: " ++ show (B.unpack hs)
+        | otherwise -> return $ Left $ "partial message: " ++ show (B.unpack hs)
       Msg hs -> case parseHandshake hs of
                   Left err -> do
                     warning $ err ++ " msg: " ++ show (B.unpack hs)
@@ -113,26 +126,40 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     errHandler err =
       return $ Left $ "Unhandled error: " ++ show err
 
+sendExtendedHs :: Session -> PeerConn -> IO ()
+sendExtendedHs sess pc = do
+    mi <- readMVar $ sessMIPieceMgr sess
+    case mi of
+      Nothing -> do
+        -- we don't know metainfo size
+        void $ sendMessage pc (Extended $ defaultExtendedHs Nothing)
+      Just pm ->
+        void $ sendMessage pc (Extended $ defaultExtendedHs $ Just $ pmTotalSize pm)
+
 -- | Process incoming handshake; update data structures, spawn socket
 -- listener.
-handleHandshake :: PeerCommHandler -> Socket -> SockAddr -> Handshake -> IO ()
-handleHandshake comms@(PeerCommHandler peers pieces _) sock addr hs = do
-    peers' <- takeMVar peers
-    case M.lookup addr peers' of
-      Nothing -> do
-        -- first time handshaking with the peer, spawn a socket listener
-        listener <- initListener $ recv sock 4096
-        peerConn <- newIORef $ newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
-        void $ async $ do
-          listenConnectedSock peerConn pieces listener sock addr
-          modifyMVar_ peers $ return . M.delete addr
-        -- TODO: check info_hash
-        putMVar peers $ M.insert addr peerConn peers'
-      Just pc -> do
-        -- TODO: I don't know how can this happen. We already established
-        -- a connection. Just reset the peer info.
-        peerConn <- newIORef $ newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock
-        putMVar peers $ M.insert addr peerConn peers'
+handleHandshake :: Session -> Socket -> SockAddr -> Handshake -> IO ()
+handleHandshake sess@(Session _ ih peers _ _) sock addr hs
+  | ih == hInfoHash hs = do
+      peers' <- takeMVar peers
+      case M.lookup addr peers' of
+        Nothing -> do
+          -- first time handshaking with the peer, spawn a socket listener
+          listener <- initListener $ recv sock 4096
+          let pc    = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr
+          peerConn <- newIORef pc
+          void $ async $ do
+            listenConnectedSock sess peerConn listener
+            modifyMVar_ peers $ return . M.delete addr
+          sendExtendedHs sess pc
+          putMVar peers $ M.insert addr peerConn peers'
+        Just pc -> do
+          -- TODO: I don't know how can this happen. We already established
+          -- a connection. Just reset the peer info.
+          peerConn <- newIORef $ newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr
+          putMVar peers $ M.insert addr peerConn peers'
+    | otherwise = do
+        warning $ "Got handshake for a different torrent: " ++ show (hInfoHash hs)
 
 -- | Try to recv a message of length 68.
 recvHandshake :: Listener -> IO RecvMsg
@@ -144,7 +171,7 @@ recvHandshake listener = do
 
 -- | Logger used in this module.
 logger :: String
-logger = "Rho.PeerComms"
+logger = "Rho.Session"
 
 warning :: String -> IO ()
 warning = L.warningM logger

@@ -59,7 +59,7 @@ uT_METADATA_KEY = 3
 -- | We keep extra data of extensions in handshakes in a separate data
 -- type. Ugly, but I don't know any better ways to handle this right now.
 data ExtendedMsgTypeData
-  = UtMetadataSize Word32
+  = UtMetadataSize Word64
   deriving (Show, Eq)
 
 -- | Some widely used fields in extended handshake.
@@ -73,8 +73,8 @@ defaultMsgTable :: ExtendedPeerMsgTable
 defaultMsgTable = M.fromList [(UtMetadata, 3)]
 
 -- | Our extended handshake.
-defaultExtendedHS :: Maybe Word32 -> ExtendedPeerMsg
-defaultExtendedHS metadataSize =
+defaultExtendedHs :: Maybe Word64 -> ExtendedPeerMsg
+defaultExtendedHs metadataSize =
   ExtendedHandshake defaultMsgTable (catMaybes [fmap UtMetadataSize metadataSize])
                     (ExtendedHandshakeData (Just "rho-torrent 0.1") (Just 128))
 

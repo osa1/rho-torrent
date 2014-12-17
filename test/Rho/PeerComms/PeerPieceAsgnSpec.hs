@@ -95,7 +95,7 @@ showCounterExample pd s = concat
     peerConnConstr :: PeerConn -> String
     peerConnConstr PeerConn{pcPeerId=PeerId pid} =
       let pid' = BC.unpack $ B.dropWhile (== 0) pid
-      in "newPeerConn (mkPeerId " ++ pid' ++ ") undefined undefined undefined"
+      in "newPeerConn (mkPeerId " ++ pid' ++ ") undefined undefined undefined undefined"
 
     wsConstr :: S.Set Word32 -> String
     wsConstr ws = "S.fromList " ++ show (S.toList ws)
@@ -144,7 +144,7 @@ newPeer pg = do
     return $ mkPeerConn next
 
 mkPeerConn :: Int -> PeerConn
-mkPeerConn i = newPeerConn (mkPeerId i) undefined undefined undefined
+mkPeerConn i = newPeerConn (mkPeerId i) undefined undefined undefined undefined
 
 mkPeerId :: Int -> PeerId
 mkPeerId i =

@@ -3,7 +3,7 @@ module Rho.PeerComms.PeerConnState where
 import qualified Data.ByteString         as B
 import qualified Data.Map                as M
 import           Data.Word
-import           Network.Socket          (Socket)
+import           Network.Socket          (SockAddr, Socket)
 
 import qualified Rho.Bitfield            as BF
 import           Rho.InfoHash
@@ -27,11 +27,13 @@ data PeerConn = PeerConn
     -- TODO: remove Maybe and initialize with empty bitfield
   , pcSock           :: Socket
     -- ^ socket connected to the peer
+  , pcSockAddr       :: SockAddr
+    -- ^ address of the peer
   , pcExtended       :: ExtendedMsgSupport
     -- ^ Supports BEP10
   , pcExtendedMsgTbl :: ExtendedPeerMsgTable
     -- ^ BEP10, extension table
-  , pcMetadataSize   :: Maybe Word32
+  , pcMetadataSize   :: Maybe Word64
     -- ^ BEP9, metadata_size key of ut_metadata handshake
   , pcMaxPieceSize   :: Word32
     -- ^ piece length we use while requesting piece from the peer
@@ -59,9 +61,9 @@ instance Eq PeerConn where
 instance Show PeerConn where
   show PeerConn{pcPeerId=PeerId pid} = "<Peer with id: " ++ show (B.dropWhile (== 0) pid) ++ ">"
 
-newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> PeerConn
-newPeerConn peerId infoHash extension sock =
-    PeerConn True False True False peerId infoHash Nothing sock extension M.empty Nothing
-             (2 ^ 14) -- 16Kb for now, we may need to dynamically adjust the value
-             250      -- default value of libtorrent
+newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> SockAddr -> PeerConn
+newPeerConn peerId infoHash extension sock sockAddr =
+    PeerConn True False True False peerId infoHash Nothing sock sockAddr extension M.empty Nothing
+             (2 ^ (14 :: Word32)) -- 16Kb for now, we may need to dynamically adjust the value
+             250 -- default value of libtorrent
              Nothing

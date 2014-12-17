@@ -26,10 +26,10 @@ import qualified Rho.Bitfield                 as BF
 import           Rho.InfoHash
 import           Rho.Listener                 hiding (listener)
 import qualified Rho.ListenerSpec             as LS
-import           Rho.PeerComms
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
+import           Rho.Session
 import           Rho.TestUtils
 
 dataRoot :: FilePath

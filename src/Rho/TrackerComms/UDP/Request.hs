@@ -34,19 +34,19 @@ data UDPRequest
   deriving (Show, Eq)
 
 tid :: UDPRequest -> TransactionId
-tid (ConnectRequest tid)                = tid
-tid (AnnounceRequest _ tid _ _ _ _ _ _) = tid
-tid (ScrapeRequest _ tid _)             = tid
+tid (ConnectRequest tid')                = tid'
+tid (AnnounceRequest _ tid' _ _ _ _ _ _) = tid'
+tid (ScrapeRequest _ tid' _)             = tid'
 
 mkTrackerMsg :: UDPRequest -> B.ByteString
-mkTrackerMsg (ConnectRequest tid) =
+mkTrackerMsg (ConnectRequest tid') =
     LB.toStrict . BB.toLazyByteString $
-      BB.word64BE 0x41727101980 <> BB.word32BE 0 <> BB.word32BE tid
-mkTrackerMsg (AnnounceRequest cid tid infoHash pid downloaded left uploaded ev) =
+      BB.word64BE 0x41727101980 <> BB.word32BE 0 <> BB.word32BE tid'
+mkTrackerMsg (AnnounceRequest cid tid' infoHash pid downloaded left uploaded ev) =
     LB.toStrict . BB.toLazyByteString . mconcat $
       [ BB.word64BE cid
       , BB.word32BE 1 -- action: announce
-      , BB.word32BE tid
+      , BB.word32BE tid'
       , BB.byteString $ unwrapInfoHash infoHash
       , BB.byteString $ unwrapPeerId pid
       , BB.word64BE downloaded
@@ -58,9 +58,9 @@ mkTrackerMsg (AnnounceRequest cid tid infoHash pid downloaded left uploaded ev) 
       , BB.word32BE (-1) -- numwant
       , BB.word16BE 0 -- port FIXME
       ]
-mkTrackerMsg (ScrapeRequest cid tid infos) =
+mkTrackerMsg (ScrapeRequest cid tid' infos) =
     LB.toStrict . BB.toLazyByteString . mconcat
       $ BB.word64BE cid
       : BB.word32BE 2
-      : BB.word32BE tid
+      : BB.word32BE tid'
       : map (BB.byteString . unwrapInfoHash) infos

@@ -22,10 +22,10 @@ data UDPResponse
   deriving (Show, Eq)
 
 tid :: UDPResponse -> TransactionId
-tid (ConnectResponse tid _)  = tid
-tid (AnnounceResponse tid _) = tid
-tid (ScrapeResponse tid _)   = tid
-tid (ErrorResponse tid _)    = tid
+tid (ConnectResponse tid' _)  = tid'
+tid (AnnounceResponse tid' _) = tid'
+tid (ScrapeResponse tid' _)   = tid'
+tid (ErrorResponse tid' _)    = tid'
 
 parseUDPResponse :: B.ByteString -> Either String UDPResponse
 parseUDPResponse bs =
@@ -39,24 +39,24 @@ parseUDPResponse bs =
 
 parseConnectResp :: B.ByteString -> Either String (TransactionId, ConnectionId)
 parseConnectResp bs = fmap fst . execParser bs $ do
-    tid <- readWord32
-    cid <- readWord64
-    return (tid, cid)
+    tid' <- readWord32
+    cid  <- readWord64
+    return (tid', cid)
 
 parseAnnounceResp :: B.ByteString -> Either String (TransactionId, PeerResponse)
 parseAnnounceResp bs = fmap fst . execParser bs $ do
-    tid <- readWord32
+    tid' <- readWord32
     interval <- readWord32
     leechers <- readWord32
     seeders <- readWord32
     addrs <- readAddrs
-    return (tid, PeerResponse interval (Just leechers) (Just seeders) addrs)
+    return (tid', PeerResponse interval (Just leechers) (Just seeders) addrs)
 
 parseScrapeResp :: B.ByteString -> Either String (TransactionId, [(Word32, Word32, Word32)])
 parseScrapeResp bs = fmap fst . execParser bs $ do
-    tid <- readWord32
-    lst <- parseList
-    return (tid, lst)
+    tid' <- readWord32
+    lst  <- parseList
+    return (tid', lst)
   where
     parseList = do
       e <- tryP ((,,) <$> readWord32 <*> readWord32 <*> readWord32)
@@ -66,6 +66,6 @@ parseScrapeResp bs = fmap fst . execParser bs $ do
 
 parseErrorResp :: B.ByteString -> Either String (TransactionId, String)
 parseErrorResp bs = fmap fst . execParser bs $ do
-    transactionId <- readWord32
-    msg <- consume
-    return (transactionId, BC.unpack msg)
+    tid' <- readWord32
+    msg  <- consume
+    return (tid', BC.unpack msg)

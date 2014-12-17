@@ -32,7 +32,7 @@ assignPieces missings peers = loop piecePeers
         case g of
           ([], []) -> [] -- end of the algortihm
 
-          (((pd, pcs) : pairs), others) ->
+          (((pd, pcs) : _), others) ->
             let
               -- generate assignments
               asgn :: (PeerConn, PieceData)

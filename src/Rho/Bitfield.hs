@@ -13,6 +13,9 @@ empty :: Int -> Bitfield
 empty len = let (d, m) = len `divMod` 8
             in Bitfield (B.pack $ replicate (if m == 0 then d else d + 1) 0) len
 
+setLen :: Bitfield -> Int -> Bitfield
+setLen (Bitfield bs _) len = Bitfield bs len
+
 test :: Bitfield -> Int -> Bool
 test (Bitfield bs len) i
   | i > len - 1 =

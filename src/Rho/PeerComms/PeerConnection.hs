@@ -20,62 +20,77 @@ import qualified System.Log.Logger           as L
 
 import qualified Rho.Bitfield                as BF
 import           Rho.Listener                (Listener, recvLen)
-import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerPieceAsgn
 import           Rho.PieceMgr
+import           Rho.SessionState
 import           Rho.Utils
 
 -- | Listen a connected socket and handle incoming messages.
-listenConnectedSock :: IORef PeerConn -> PieceMgr -> Listener -> Socket -> SockAddr -> IO ()
-listenConnectedSock peer pieces listener sock sockAddr = flip catchIOError errHandler $ loop
+listenConnectedSock :: Session -> IORef PeerConn -> Listener -> IO ()
+listenConnectedSock sess peer listener = flip catchIOError errHandler $ loop
   where
     loop = do
       msg <- recvMessage listener
       case msg of
-        ConnClosed msg
-          | B.null msg -> return ()
-          | otherwise  -> putStrLn ("recvd a partial message: " ++ show (B.unpack msg)) >> return ()
-        Msg msg -> handleMessage peer pieces msg sock sockAddr >> loop
+        ConnClosed msg'
+          | B.null msg' -> return ()
+          | otherwise  -> putStrLn ("recvd a partial message: " ++ show (B.unpack msg')) >> return ()
+        Msg msg' -> handleMessage sess peer msg' >> yield >> loop
 
     errHandler err = do
       putStrLn $ "Error happened while listening a socket: " ++ show err
                   ++ ". Closing the connection."
 
-handleMessage :: IORef PeerConn -> PieceMgr -> B.ByteString -> Socket -> SockAddr -> IO ()
-handleMessage peer pieces msg _sock peerAddr = do
+handleMessage :: Session -> IORef PeerConn -> B.ByteString -> IO ()
+handleMessage sess peer msg = do
     case parsePeerMsg msg of
       Left err -> warning . concat $
         [ "Can't parse peer message: ", err,
           " msg: ", show msg, " msg length: ", show (B.length msg) ]
       Right KeepAlive -> return () -- TODO: should I ignore keep-alives?
-      Right (Bitfield (BF.Bitfield bytes _)) ->
-        -- we ignore parsed length and use number of pieces that we know
+      Right (Bitfield bf@(BF.Bitfield bytes _)) -> do
         -- FIXME: we need to check piece index in have message before
         -- calling `Bitfield.set` to prevent `error`.
-        atomicModifyIORef' peer $ \pc ->
-          (pc{pcPieces = Just (BF.Bitfield bytes $ fromIntegral $ pmPieces pieces)}, ())
+        pm <- takeMVar $ sessPieceMgr sess
+        case pm of
+          Nothing ->
+            -- we don't know how many pieces we have yet, just set it using
+            -- parsed bitfield
+            atomicModifyIORef' peer $ \pc -> (pc{pcPieces = Just bf}, ())
+          Just pm' ->
+            -- TODO: Check spare bits and close the connection if they're
+            -- not 0
+            atomicModifyIORef' peer $ \pc ->
+              (pc{pcPieces = Just (BF.Bitfield bytes $ fromIntegral $ pmPieces pm')}, ())
+        putMVar (sessPieceMgr sess) pm
       Right (Have piece) ->
         atomicModifyIORef' peer $ \pc ->
-          let bf' = Just $ BF.set (fromMaybe (BF.empty $ fromIntegral $ pmPieces pieces) $ pcPieces pc)
-                                  (fromIntegral piece)
-          in (pc{pcPieces = bf'}, ())
+          case pcPieces pc of
+            Nothing ->
+              -- we need to initialize bitfield with big-enough size for `piece`
+              let bf = BF.set (BF.empty (fromIntegral piece + 1)) (fromIntegral piece) in
+              (pc{pcPieces=Just bf}, ())
+            Just bf ->
+              -- just update the bitfield
+              (pc{pcPieces=Just (BF.set bf (fromIntegral piece))}, ())
       Right Choke -> atomicModifyIORef' peer $ \pc -> (pc{pcChoking = True}, ())
       Right Unchoke -> atomicModifyIORef' peer $ \pc -> (pc{pcChoking = False}, ())
       Right Interested -> atomicModifyIORef' peer $ \pc -> (pc{pcPeerInterested = True}, ())
       Right NotInterested -> atomicModifyIORef' peer $ \pc -> (pc{pcPeerInterested = False}, ())
       Right (Piece pIdx offset pData) -> do
         putStrLn "Got piece response"
-        writePiece pieces pIdx offset pData
+        pm <- readMVar $ sessPieceMgr sess
+        case pm of
+          Nothing -> warning "Got a piece message before initializing piece manager."
+          Just pieces -> writePiece pieces pIdx offset pData
       Right (Extended (ExtendedHandshake msgTbl msgData hsData)) -> do
         pc <- readIORef peer
         putStrLn "Got extended handshake."
-        -- TODO: We should send extended handshake before receiving one
-        sendMessage pc (Extended $ defaultExtendedHS Nothing) -- FIXME: info size
         atomicModifyIORef' peer $ \pc' ->
           (pc'{pcExtendedMsgTbl = msgTbl,
-               pcMetadataSize   = find (\case UtMetadataSize s -> True
+               pcMetadataSize   = find (\case UtMetadataSize{} -> True
                                               _ -> False) msgData >>= \(UtMetadataSize i) -> return i,
                pcClientName     = ehdV hsData,
                pcReqq           = fromMaybe (pcReqq pc') (ehdReqq hsData)},
@@ -86,11 +101,10 @@ sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)
 sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
     case mkPeerMsg tbl msg of
       Left err -> return $ Just err
-      Right bytes -> send sock bytes >> return Nothing
+      Right bytes -> sendAll sock bytes >> return Nothing
 
 sendPieceRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO ()
 sendPieceRequests peers pieces = do
-    -- TODO: fix horrible piece request algortihm
     missings <- missingPieces pieces
     putStrLn $ "Missing pieces: " ++ show missings
     availablePeers <- readMVar peers >>= fmap (filter $ not . pcChoking) . mapM readIORef . M.elems

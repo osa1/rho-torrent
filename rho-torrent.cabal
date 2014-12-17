@@ -24,13 +24,14 @@ library
     Rho.Magnet
     Rho.Metainfo
     Rho.Parser
-    Rho.PeerComms
     Rho.PeerComms.Handshake
     Rho.PeerComms.Message
     Rho.PeerComms.PeerConnection
     Rho.PeerComms.PeerConnState
     Rho.PeerComms.PeerPieceAsgn
     Rho.PieceMgr
+    Rho.Session
+    Rho.SessionState
     Rho.Torrent
     Rho.Tracker
     Rho.TrackerComms.HTTP
@@ -70,7 +71,7 @@ library
 executable rho
   hs-source-dirs: exec
   main-is: Main.hs
-  ghc-options:         -Wall
+  ghc-options:         -Wall -threaded
   default-language:    Haskell2010
 
   build-depends:

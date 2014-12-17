@@ -4,11 +4,12 @@ module Main where
 import           Rho.InfoHash
 import           Rho.Magnet
 import           Rho.Metainfo
-import           Rho.PeerComms
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
 import           Rho.PeerComms.PeerConnState
+import           Rho.Session
+import           Rho.SessionState
 import           Rho.Torrent
 import           Rho.Tracker
 import           Rho.TrackerComms.HTTP
@@ -24,6 +25,7 @@ import qualified Data.ByteString.Char8         as B
 import qualified Data.ByteString.Lazy          as LB
 import           Data.IORef
 import qualified Data.Map                      as M
+import           Data.Maybe
 import           Data.Monoid
 import           Network.Socket
 import           System.Environment            (getArgs)
@@ -66,21 +68,23 @@ runTorrent filePath = do
         peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMetainfo m)
         runPeers peers (mInfo m) (iHash $ mInfo m) peerId
 
+-- runPeers = undefined
+
 runPeers :: Either String PeerResponse -> Info -> InfoHash -> PeerId -> IO ()
 runPeers (Left err) _ _ _ = error err
 runPeers (Right peers) info infoHash peerId = do
     putStrLn $ "Sending handshake to peers..."
-    peerComms <- initPeerCommsHandler info peerId
+    sess <- initTorrentSession info peerId
     forM_ (prPeers peers) $ \peer -> do
-      async $ handshake peerComms peer infoHash
+      async $ handshake sess peer infoHash
 
     -- threadDelay 30000000
-    connectedPeers <- M.elems `fmap` readMVar (pchPeers peerComms)
+    connectedPeers <- M.elems `fmap` readMVar (sessPeers sess)
     putStrLn $ "Peers: " ++ show (length connectedPeers)
 
     threadDelay 1000000
 
-    ps <- M.toList `fmap` readMVar (pchPeers peerComms)
+    ps <- M.toList `fmap` readMVar (sessPeers sess)
     forM_ ps $ \(addr, peerConn) -> do
       pc <- readIORef peerConn
       putStrLn $ "Sending interested to: " ++ show addr
@@ -91,10 +95,11 @@ runPeers (Right peers) info infoHash peerId = do
 
     forever $ do
       putStrLn "Sending piece requests"
-      sendPieceRequests (pchPeers peerComms) (pchPieceMgr peerComms)
+      pm <- readMVar $ sessPieceMgr sess
+      sendPieceRequests (sessPeers sess) (fromJust pm)
       threadDelay 10000000
 
-    connectedPeers' <- M.elems `fmap` readMVar (pchPeers peerComms)
+    connectedPeers' <- M.elems `fmap` readMVar (sessPeers sess)
     putStrLn $ "Peers: " ++ show (length connectedPeers')
 
 -- scrapeMagnet :: String -> IO ()
