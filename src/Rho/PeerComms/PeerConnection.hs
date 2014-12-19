@@ -88,13 +88,23 @@ handleMessage sess peer msg = do
           Just pieces -> writePiece pieces pIdx offset pData
       Right (Extended (ExtendedHandshake msgTbl msgData hsData)) -> do
         putStrLn "Got extended handshake."
-        atomicModifyIORef' peer $ \pc' ->
+        metadataSize <- atomicModifyIORef' peer $ \pc' ->
+          let metadataSize = find (\case UtMetadataSize{} -> True
+                                         _ -> False) msgData >>= \(UtMetadataSize i) -> return i in
           (pc'{pcExtendedMsgTbl = msgTbl,
-               pcMetadataSize   = find (\case UtMetadataSize{} -> True
-                                              _ -> False) msgData >>= \(UtMetadataSize i) -> return i,
+               pcMetadataSize   = metadataSize,
                pcClientName     = ehdV hsData,
                pcReqq           = fromMaybe (pcReqq pc') (ehdReqq hsData)},
-           ())
+           metadataSize)
+        case metadataSize of
+          Nothing -> return ()
+          Just s  -> do
+            pm <- takeMVar $ sessMIPieceMgr sess
+            case pm of
+              Nothing -> do
+                pm' <- newPieceMgr s (2 ^ (14 :: Word32))
+                putMVar (sessMIPieceMgr sess) (Just pm')
+              Just _ -> putMVar (sessMIPieceMgr sess) pm
       Right (Extended (MetadataRequest pIdx)) -> do
         miPieces <- readMVar (sessMIPieceMgr sess)
         pc <- readIORef peer

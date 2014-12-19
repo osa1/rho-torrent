@@ -161,7 +161,12 @@ handleHandshake sess@(Session _ ih peers _ _) sock addr hs
           void $ async $ do
             listenConnectedSock sess peerConn listener
             modifyMVar_ peers $ return . M.delete addr
-          sendExtendedHs sess pc
+          -- FIXME: this delay should not be necessary. the problem is that
+          -- if we send extended hs immediately that the initiator may miss
+          -- the message in the process of spawning a listener and setting
+          -- data structures. (this happens in `metadataTransferTest` in
+          -- `ClientSpec`)
+          async $ threadDelay 100000 >> sendExtendedHs sess pc
           putMVar peers $ M.insert addr peerConn peers'
         Just pc -> do
           -- TODO: I don't know how can this happen. We already established

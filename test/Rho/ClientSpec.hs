@@ -77,7 +77,7 @@ metadataTransferTest = TestCase $ do
         threadDelay 100000
         hsResult <- handshake clientWMagnet (SockAddrInet port1 localhost) hash
         -- hsResult <- handshake clientWInfo (SockAddrInet port2 localhost) hash
-        threadDelay 100000
+        threadDelay 1000000
         case hsResult of
           Left err            -> assertFailure $ "Handshake failed: " ++ err
           Right DoesntSupport -> assertFailure "Wrong extended message support"
