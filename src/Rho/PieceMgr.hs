@@ -1,3 +1,5 @@
+{-# LANGUAGE NondecreasingIndentation #-}
+
 module Rho.PieceMgr where
 
 import           Control.Applicative
@@ -56,6 +58,28 @@ writePiece (PieceMgr ps _ _ m) pieceIdx pieceOffset pieceData = do
       MV.write bits (arrIdx + byteIdx) True)
       [0..] (B.unpack pieceData)
     putMVar m (arr, bits)
+
+-- | Return piece data for given piece index, offest and length.
+-- Length may be smaller then the given length for last piece.
+-- Returns `Nothing` if either missing some part of the piece or given
+-- piece is not in range.
+getPieceData :: PieceMgr -> Word32 -> Word32 -> Word32 -> IO (Maybe B.ByteString)
+getPieceData (PieceMgr pSize pTotal _ pData) pIdx pOffset pLen = do
+    let
+      start, end :: Int
+      start = fromIntegral $ pIdx * pSize + pOffset
+      end   = min (start + fromIntegral pLen) (fromIntegral pTotal) - 1
+    if start > end
+      then return Nothing
+      else do
+    d@(pd, bits) <- takeMVar pData
+    -- TODO: Why no folds for mutable vectors in vector lib?
+    rets <- forM [start..end] $ \idx -> MV.read bits idx
+    ret <- if and rets
+             then Just . B.pack <$> (forM [start..end] $ \idx -> MV.read pd idx)
+             else return Nothing
+    putMVar pData d
+    return ret
 
 -- | Returns `Just (offset, length)` if we're missing some parts of the
 -- given piece.

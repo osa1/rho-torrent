@@ -12,6 +12,7 @@ import           Data.List                   (find)
 import qualified Data.Map                    as M
 import           Data.Maybe
 import           Data.Monoid
+import           Data.Word
 import           Network.Socket              hiding (KeepAlive, recv, recvFrom,
                                               recvLen, send, sendTo)
 import           Network.Socket.ByteString
@@ -86,7 +87,6 @@ handleMessage sess peer msg = do
           Nothing -> warning "Got a piece message before initializing piece manager."
           Just pieces -> writePiece pieces pIdx offset pData
       Right (Extended (ExtendedHandshake msgTbl msgData hsData)) -> do
-        pc <- readIORef peer
         putStrLn "Got extended handshake."
         atomicModifyIORef' peer $ \pc' ->
           (pc'{pcExtendedMsgTbl = msgTbl,
@@ -95,6 +95,28 @@ handleMessage sess peer msg = do
                pcClientName     = ehdV hsData,
                pcReqq           = fromMaybe (pcReqq pc') (ehdReqq hsData)},
            ())
+      Right (Extended (MetadataRequest pIdx)) -> do
+        miPieces <- readMVar (sessMIPieceMgr sess)
+        pc <- readIORef peer
+        case miPieces of
+          Nothing ->
+            -- we don't have metainfo pieces, reject
+            void $ sendMessage pc $ Extended $ MetadataReject pIdx
+          Just miPieces' -> do
+            pieceData <- getPieceData miPieces' pIdx 0 (2 ^ (14 :: Word32))
+            case pieceData of
+              Nothing ->
+                -- we don't have this particular piece, reject
+                void $ sendMessage pc $ Extended $ MetadataReject pIdx
+              Just pd -> do
+                void $ sendMessage pc $ Extended $ MetadataData pIdx (pmTotalSize miPieces') pd
+      Right (Extended (MetadataData pIdx totalSize pData)) -> do
+        miPieces <- readMVar (sessMIPieceMgr sess)
+        miPieces' <- case miPieces of
+                       Nothing -> newPieceMgr totalSize (2 ^ (14 :: Word32))
+                       Just pm -> return pm
+        -- TODO: what happens if we already have the piece?
+        writePiece miPieces' pIdx 0 pData
       Right pmsg -> putStrLn $ "Unhandled peer msg: " ++ show pmsg
 
 sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)

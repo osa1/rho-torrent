@@ -25,6 +25,7 @@ spec = do
     fromHUnitTest bigPieceTest
     fromHUnitTest testTorrentPieceTest
     fromHUnitTest testNextMissingPart
+    fromHUnitTest testGetPieceData
 
 cons :: a -> (b, c) -> (a, b, c)
 cons a (b, c) = (a, b, c)
@@ -109,6 +110,8 @@ testTorrentPieceTest = TestLabel "test.torrent pieces" $ TestCase $ do
                   , ("seed_files/file2.txt", "file2\n")
                   ]
             assertEqual "generated files are wrong" expectedFiles files
+            d <- getPieceData pieceMgr 0 0 20
+            assertEqual "returned piece data is wrong" (Just pData) d
           Right msg -> assertFailure $ "Parsed piece message to somehing else: " ++ show msg
 
 testNextMissingPart :: Test
@@ -126,4 +129,31 @@ testNextMissingPart = TestList
       writePiece mgr 1 6 (B.pack [0, 0, 0, 0])
       missing4 <- nextMissingPart mgr 1
       assertEqual "next missing part is wrong" Nothing missing4
+  ]
+
+testGetPieceData :: Test
+testGetPieceData = TestList
+  [ TestLabel "getPieceData - 1" $ TestCase $ do
+      pieceMgr <- newPieceMgr 100 10
+      pd1 <- getPieceData pieceMgr 3 5 5
+      assertEqual "returned piece data is wrong" Nothing pd1
+      writePiece pieceMgr 3 5 (B.pack [1])
+      pd2 <- getPieceData pieceMgr 3 5 5
+      assertEqual "returned piece data is wrong" Nothing pd2
+      writePiece pieceMgr 3 6 (B.pack [1, 1, 1])
+      pd3 <- getPieceData pieceMgr 3 5 5
+      assertEqual "returned piece data is wrong" Nothing pd3
+      writePiece pieceMgr 3 9 (B.pack [1])
+      pd4 <- getPieceData pieceMgr 3 5 5
+      assertEqual "returned piece data is wrong" (Just $ B.pack [1,1,1,1,1]) pd4
+  , TestLabel "getPieceData - smallar response than requested" $ TestCase $ do
+      pieceMgr <- newPieceMgr 10 10
+      writePiece pieceMgr 0 0 (B.pack $ replicate 10 1)
+      pd <- getPieceData pieceMgr 0 5 10
+      assertEqual "returned piece data is wrong" (Just $ B.pack $ replicate 5 1) pd
+  , TestLabel "getPieceData - wrong range" $ TestCase $ do
+      pieceMgr <- newPieceMgr 10 10
+      writePiece pieceMgr 0 0 (B.pack $ replicate 10 1)
+      pd <- getPieceData pieceMgr 0 10 10
+      assertEqual "returned piece data is wrong" Nothing pd
   ]
