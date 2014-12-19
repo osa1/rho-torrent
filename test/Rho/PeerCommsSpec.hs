@@ -4,8 +4,11 @@
 module Rho.PeerCommsSpec where
 
 import           Control.Applicative
+import           Control.Concurrent.Async
 import           Control.Monad
 import qualified Data.ByteString              as B
+import qualified Data.ByteString.Builder      as BB
+import qualified Data.ByteString.Lazy         as LB
 import qualified Data.Dequeue                 as D
 import           Data.IORef
 import           Data.List
@@ -14,6 +17,7 @@ import           Data.Maybe
 import           Data.Monoid
 import           Data.Text.Encoding           (decodeUtf8)
 import           Data.Word
+import           Network.Socket.ByteString
 import           System.FilePath
 
 import           Test.Hspec
@@ -59,7 +63,7 @@ spec = do
     -- QuickCheck sucks. It doesn't prove any easy ways to report failure
     -- resons(unlike HUnit) and forces us to define lots of newtypes and
     -- Arbitrary instances.
-    modifyMaxSuccess (const 100) $ prop "recvMessages receives correct lengths" $ \(PFXd msgs) ->
+    modifyMaxSuccess (const 10) $ prop "recvMessages receives correct lengths" $ \(PFXd msgs) ->
       ioProperty $ do
         emitter <- LS.mkMessageEmitter msgs
         listener <- initListener emitter
@@ -76,6 +80,23 @@ spec = do
     fromHUnitTest transmissionExample
 
     fromHUnitTest regression1
+
+{-
+    -- TODO: Implement timeouts. This test gets stuck after a while. (tries
+    -- to recv bigger than what's sent)
+    modifyMaxSuccess (const 100) $ prop "recvMessage using socket recieves correct lengths" $
+      \(PFXd msgs) -> ioProperty $ do
+        (sock1, sock2) <- initConnectedSocks
+        listener <- initListener (recv sock2 4096)
+
+        action1 <- async $ forM_ msgs (\msg -> send sock1 msg)
+        action2 <- async $ replicateM_ (length msgs) (recvMessage listener)
+
+        wait action1
+        wait action2
+
+        return True
+-}
 
 unwrapRecvd :: RecvMsg -> B.ByteString
 unwrapRecvd (ConnClosed bs) = bs
@@ -234,9 +255,11 @@ newtype PFXd = PFXd [B.ByteString] deriving (Eq)
 
 instance Arbitrary PFXd where
     arbitrary = PFXd <$> (listOf $ do
-      len <- arbitrary
+      -- longest message will probably be the metadata data message:
+      -- 16kb piece data + meta info. we generate 32kb messages here.
+      len <- choose (0, 2 ^ (15 :: Word16))
       msg <- replicateM (fromIntegral len) arbitrary
-      return . B.pack $ [0, 0, 0, len] ++ msg)
+      return $ B.pack [0, 0] <> (LB.toStrict . BB.toLazyByteString . BB.word16BE $ len) <> B.pack msg)
 
     shrink _ = []
 
