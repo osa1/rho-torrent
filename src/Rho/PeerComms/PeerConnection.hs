@@ -121,19 +121,41 @@ handleMessage sess peer msg = do
               Just pd -> do
                 void $ sendMessage pc $ Extended $ MetadataData pIdx (pmTotalSize miPieces') pd
       Right (Extended (MetadataData pIdx totalSize pData)) -> do
+        putStrLn "got metadata piece"
         miPieces <- readMVar (sessMIPieceMgr sess)
         miPieces' <- case miPieces of
                        Nothing -> newPieceMgr totalSize (2 ^ (14 :: Word32))
                        Just pm -> return pm
         -- TODO: what happens if we already have the piece?
         writePiece miPieces' pIdx 0 pData
+        -- request another piece
+        missings <- missingPieces miPieces'
+        case reverse missings of
+          ((newPIdx, _, _) : _) -> do
+            pc <- readIORef peer
+            void $ sendMessage pc $ Extended $ MetadataRequest newPIdx
+          _ -> return ()
       Right pmsg -> putStrLn $ "Unhandled peer msg: " ++ show pmsg
 
 sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)
 sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
     case mkPeerMsg tbl msg of
-      Left err -> return $ Just err
+      Left err    -> return $ Just err
       Right bytes -> sendAll sock bytes >> return Nothing
+
+sendMetainfoRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO ()
+sendMetainfoRequests peers pieces = do
+    missings <- missingPieces pieces
+    availablePeers <- readMVar peers >>= fmap (filter peerFilter) . mapM readIORef . M.elems
+    let mips  = map (\(pIdx, _, _) -> pIdx) missings
+        asgns = zip availablePeers mips
+    putStrLn $ "assignments: " ++ show asgns
+    forM_ asgns $ \(pc, pIdx) ->
+      sendMessage pc $ Extended $ MetadataRequest pIdx
+  where
+    peerFilter :: PeerConn -> Bool
+    peerFilter PeerConn{pcMetadataSize=Just _} = True
+    peerFilter _                               = False
 
 sendPieceRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO ()
 sendPieceRequests peers pieces = do
@@ -162,7 +184,9 @@ recvMessage listener = do
       else do
     let [w1, w2, w3, w4] = B.unpack lengthPrefix
         len = mkWord32 w1 w2 w3 w4
+    putStrLn $ "trying to receive " ++ show len ++ " bytes"
     msg <- recvLen listener (fromIntegral len)
+    putStrLn $ "received " ++ show len ++ " bytes"
     return $ Msg $ lengthPrefix <> msg
 
 -- * Logging stuff

@@ -2,12 +2,12 @@ module Rho.ClientSpec where
 
 import           Control.Applicative
 import           Control.Concurrent
-import qualified Data.BEncode                as BE
-import qualified Data.ByteString             as B
-import qualified Data.ByteString.Lazy        as LB
+import qualified Data.BEncode                 as BE
+import qualified Data.ByteString              as B
+import qualified Data.ByteString.Lazy         as LB
 import           Data.Either
 import           Data.IORef
-import qualified Data.Map                    as M
+import qualified Data.Map                     as M
 import           Data.Maybe
 import           Data.Word
 import           Network.Socket
@@ -23,7 +23,9 @@ import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
+import           Rho.PeerComms.PeerConnection
 import           Rho.PeerComms.PeerConnState
+import           Rho.PieceMgr
 import           Rho.Session
 import           Rho.SessionState
 import           Rho.TrackerComms.UDP
@@ -59,7 +61,8 @@ connectTest = TestCase $ do
 
 metadataTransferTest :: Test
 metadataTransferTest = TestCase $ do
-    mi <- parseMetainfo <$> B.readFile "test/test.torrent"
+    -- mi <- parseMetainfo <$> B.readFile "test/test.torrent"
+    mi <- parseMetainfo <$> B.readFile "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
     case mi of
       Left err -> assertFailure $ "Can't parse test.torrent: " ++ err
       Right Metainfo{mInfo=info} -> do
@@ -73,6 +76,7 @@ metadataTransferTest = TestCase $ do
         localhost     <- inet_addr "127.0.0.1"
         clientWInfo   <- initTorrentSession' port1 localhost info pid1
         checkMIPieceMgrInit clientWInfo
+        checkMIPieceMgrMissings "clientWInfo" clientWInfo
         clientWMagnet <- initMagnetSession' port2 localhost magnet pid2
         threadDelay 100000
         hsResult <- handshake clientWMagnet (SockAddrInet port1 localhost) hash
@@ -92,6 +96,11 @@ metadataTransferTest = TestCase $ do
             checkPeerForMI infoSize clientWMagnet
             -- clientWMagnet's metainfo piece manager should be initialized
             checkMIPieceMgrInit clientWMagnet
+
+            miPieces <- fromJust <$> (readMVar $ sessMIPieceMgr clientWMagnet)
+            sendMetainfoRequests (sessPeers clientWMagnet) miPieces
+            threadDelay 10000000
+            checkMIPieceMgrMissings "clientWMagnet" clientWMagnet
   where
     checkConnectedPeer :: String -> Session -> Assertion
     checkConnectedPeer info Session{sessPeers=peers} = do
@@ -121,6 +130,15 @@ metadataTransferTest = TestCase $ do
     checkMIPieceMgrInit Session{sessMIPieceMgr=mi} = do
       mi' <- readMVar mi
       assertBool "sessMIPieceMgr is not initialized" (isJust mi')
+
+    checkMIPieceMgrMissings :: String -> Session -> Assertion
+    checkMIPieceMgrMissings info Session{sessMIPieceMgr=mi} = do
+      mi' <- readMVar mi
+      case mi' of
+        Nothing -> assertFailure $ "session manager is not initialized(" ++ info ++ ")"
+        Just mi'' -> do
+          missings <- missingPieces mi''
+          assertEqual ("some pieces are missings(" ++ info ++ ")") [] missings
 
 spawnTracker :: FilePath -> [String] -> IO ProcessHandle
 spawnTracker pwd args = do
