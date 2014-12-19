@@ -22,6 +22,7 @@ import           Test.HUnit
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
+import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnState
 import           Rho.Session
 import           Rho.SessionState
@@ -75,17 +76,38 @@ metadataTransferTest = TestCase $ do
         clientWMagnet <- initMagnetSession' port2 localhost magnet pid2
         threadDelay 100000
         hsResult <- handshake clientWMagnet (SockAddrInet port1 localhost) hash
-        threadDelay 1000000
+        -- hsResult <- handshake clientWInfo (SockAddrInet port2 localhost) hash
+        threadDelay 100000
         case hsResult of
           Left err            -> assertFailure $ "Handshake failed: " ++ err
           Right DoesntSupport -> assertFailure "Wrong extended message support"
           Right Supports      -> do
+            checkConnectedPeer "clientWInfo" clientWInfo
+            checkConnectedPeer "clientWMagnet" clientWMagnet
+
+            checkExtendedMsgTbl "clientWInfo" clientWInfo
+            checkExtendedMsgTbl "clientWMagnet" clientWMagnet
             -- clientWMagnet should have connected with clientWInfo and
             -- clientWInfo's `pcMetadataSize` should be set
             checkPeerForMI infoSize clientWMagnet
             -- clientWMagnet's metainfo piece manager should be initialized
             checkMIPieceMgrInit clientWMagnet
   where
+    checkConnectedPeer :: String -> Session -> Assertion
+    checkConnectedPeer info Session{sessPeers=peers} = do
+      ps' <- M.elems <$> readMVar peers
+      assertEqual ("connected to wrong number of clients(" ++ info ++ ")") 1 (length ps')
+
+    checkExtendedMsgTbl :: String -> Session -> Assertion
+    checkExtendedMsgTbl info Session{sessPeers=peers} = do
+      ps' <- M.elems <$> readMVar peers
+      case ps' of
+        [peerWInfo] -> do
+          p <- readIORef peerWInfo
+          assertEqual ("wrong extended msg tbl(" ++ info ++ ")") defaultMsgTable (pcExtendedMsgTbl p)
+        _ -> assertFailure $
+               "Connected to wrong number of clients(" ++ info ++ "): " ++ show (length ps')
+
     checkPeerForMI :: Word64 -> Session -> Assertion
     checkPeerForMI infoSize Session{sessPeers=peers} = do
       ps' <- M.elems <$> readMVar peers
