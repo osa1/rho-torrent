@@ -74,7 +74,7 @@ runPeers :: Either String PeerResponse -> Info -> InfoHash -> PeerId -> IO ()
 runPeers (Left err) _ _ _ = error err
 runPeers (Right peers) info infoHash peerId = do
     putStrLn $ "Sending handshake to peers..."
-    sess <- initTorrentSession info peerId
+    sess <- initTorrentSession (fromIntegral (5433 :: Int)) info peerId
     forM_ (prPeers peers) $ \peer -> do
       async $ handshake sess peer infoHash
 

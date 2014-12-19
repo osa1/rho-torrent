@@ -33,28 +33,36 @@ import           Rho.SessionState
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using magnet URI.
-initMagnetSession :: Magnet -> PeerId -> IO Session
-initMagnetSession (Magnet ih _ _) pid = do
+initMagnetSession :: PortNumber -> Magnet -> PeerId -> IO Session
+initMagnetSession port m pid = initMagnetSession' port 0 m pid
+
+-- | Initialize listeners, data structures etc. for peer communications,
+-- using info dictionary.
+initTorrentSession :: PortNumber -> Info -> PeerId -> IO Session
+initTorrentSession port info pid = initTorrentSession' port 0 info pid
+
+initMagnetSession' :: PortNumber -> HostAddress -> Magnet -> PeerId -> IO Session
+initMagnetSession' port host (Magnet ih _ _) pid = do
     peers      <- newMVar M.empty
     pieceMgr   <- newMVar Nothing
     miPieceMgr <- newMVar Nothing
     let sess    = Session pid ih peers pieceMgr miPieceMgr
     sock <- socket AF_INET Stream defaultProtocol
-    bind sock (SockAddrInet (fromIntegral (5433 :: Int)) 0) -- TODO: hard-coded port
+    bind sock (SockAddrInet port host)
+    listen sock 1
     void $ async $ listenPeerSocket sess sock
     return sess
 
--- | Initialize listeners, data structures etc. for peer communications,
--- using info dictionary.
-initTorrentSession :: Info -> PeerId -> IO Session
-initTorrentSession info pid = do
+initTorrentSession' :: PortNumber -> HostAddress -> Info -> PeerId -> IO Session
+initTorrentSession' port host info pid = do
     peers      <- newMVar M.empty
     pieceMgr   <- newMVar . Just =<< newPieceMgr (torrentSize info) (iPieceLength info)
     let miData  = LB.toStrict $ BE.encode info
     miPieceMgr <- newMVar . Just =<< newPieceMgrFromData miData (2 ^ (14 :: Word32))
     let sess    = Session pid (iHash info) peers pieceMgr miPieceMgr
     sock       <- socket AF_INET Stream defaultProtocol
-    bind sock (SockAddrInet (fromIntegral (5433 :: Int)) 0) -- TODO: hard-coded port
+    bind sock (SockAddrInet port host)
+    listen sock 1
     void $ async $ listenPeerSocket sess sock
     return sess
 
@@ -86,15 +94,17 @@ listenHandshake sess listener sock peerAddr = do
             sendAll sock $ mkHandshake (hInfoHash hs) (sessPeerId sess)
             handleHandshake sess sock peerAddr hs
 
-handshake :: Session -> SockAddr -> InfoHash -> IO ()
+handshake :: Session -> SockAddr -> InfoHash -> IO (Either String ExtendedMsgSupport)
 handshake sess@(Session peerId _ _ _ _) addr infoHash = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
-      Left err ->
+      Left err -> do
         putStrLn $ "Handshake failed: " ++ err
+        return $ Left err
       Right (sock, hs) -> do
         putStrLn $ "Handshake successful. Extension support: " ++ show (hExtension hs)
         handleHandshake sess sock addr hs
+        return $ Right (hExtension hs)
 
 -- | Send a handshake message to given target using a fresh socket. Return
 -- the connected socket in case of a success. (e.g. receiving answer to
