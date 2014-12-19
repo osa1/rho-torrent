@@ -184,9 +184,7 @@ recvMessage listener = do
       else do
     let [w1, w2, w3, w4] = B.unpack lengthPrefix
         len = mkWord32 w1 w2 w3 w4
-    putStrLn $ "trying to receive " ++ show len ++ " bytes"
     msg <- recvLen listener (fromIntegral len)
-    putStrLn $ "received " ++ show len ++ " bytes"
     return $ Msg $ lengthPrefix <> msg
 
 -- * Logging stuff
