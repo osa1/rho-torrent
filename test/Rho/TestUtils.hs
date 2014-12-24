@@ -5,6 +5,7 @@ import           Control.Concurrent.Async
 import           Control.DeepSeq
 import qualified Control.Exception        as E
 import qualified Data.ByteString          as B
+import           Data.IORef
 import           Data.List                (foldl')
 import           Network.Socket
 
@@ -39,3 +40,29 @@ initConnectedSocks = do
 
     sock1' <- wait connectedSock
     return (sock1', sock2)
+
+-- | Create an IO action that returns next bytestring from the list in each
+-- call.
+mkMessageEmitter :: [B.ByteString] -> IO (IO B.ByteString)
+mkMessageEmitter msgs = do
+    msgsRef <- newIORef msgs
+    return $ do
+      ms <- readIORef msgsRef
+      case ms of
+        []       -> return B.empty -- signal closed channel
+        (m : ms) -> do
+          writeIORef msgsRef ms
+          return m
+
+-- | Create an IO action that returns next byte from the bytestring in each
+-- call.
+mkByteEmitter :: B.ByteString -> IO (IO B.ByteString)
+mkByteEmitter msg = do
+    msgRef <- newIORef msg
+    return $ do
+      m <- readIORef msgRef
+      case B.uncons m of
+        Just (w, rest) -> do
+          writeIORef msgRef rest
+          return (B.singleton w)
+        Nothing -> return B.empty -- signal closed socket

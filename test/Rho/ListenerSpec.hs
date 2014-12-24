@@ -136,17 +136,6 @@ genMsg maxMsgSize = do
     len <- oneof $ map return [1..maxMsgSize]
     B.pack <$> replicateM len arbitrary
 
-mkMessageEmitter :: [B.ByteString] -> IO (IO B.ByteString)
-mkMessageEmitter msgs = do
-    msgsRef <- newIORef msgs
-    return $ do
-      ms <- readIORef msgsRef
-      case ms of
-        []       -> return B.empty -- signal closed channel
-        (m : ms) -> do
-          writeIORef msgsRef ms
-          return m
-
 -- | Generate list of ints with given sum.
 generateRecvLens :: Int -> Gen [Int]
 generateRecvLens 0 = return []

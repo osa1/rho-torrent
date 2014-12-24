@@ -4,7 +4,6 @@
 module Rho.PeerCommsSpec where
 
 import           Control.Applicative
-import           Control.Concurrent.Async
 import           Control.Monad
 import qualified Data.ByteString              as B
 import qualified Data.ByteString.Builder      as BB
@@ -17,7 +16,6 @@ import           Data.Maybe
 import           Data.Monoid
 import           Data.Text.Encoding           (decodeUtf8)
 import           Data.Word
-import           Network.Socket.ByteString
 import           System.FilePath
 
 import           Test.Hspec
@@ -29,7 +27,6 @@ import           Test.QuickCheck              hiding (Result)
 import qualified Rho.Bitfield                 as BF
 import           Rho.InfoHash
 import           Rho.Listener                 hiding (listener)
-import qualified Rho.ListenerSpec             as LS
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
@@ -65,7 +62,7 @@ spec = do
     -- Arbitrary instances.
     modifyMaxSuccess (const 10) $ prop "recvMessages receives correct lengths" $ \(PFXd msgs) ->
       ioProperty $ do
-        emitter <- LS.mkMessageEmitter msgs
+        emitter <- mkMessageEmitter msgs
         listener <- initListener emitter
         recvd <- map unwrapRecvd `fmap` replicateM (length msgs) (recvMessage listener)
         return ( length recvd == length msgs && ll recvd == ll msgs )
@@ -106,7 +103,7 @@ parseLongMsg :: Test
 parseLongMsg = TestLabel "parsing long message (using listener, starting with handshake)" $
   TestCase $ do
     extendedMsg <- B.readFile (dataRoot </> "extended_msg")
-    emitter <- mkMessageEmitter extendedMsg
+    emitter <- mkByteEmitter extendedMsg
     listener <- initListener emitter
     _ <- recvAndParseHs listener
     (extendedHs : _) <- recvAndParse listener 26
@@ -120,7 +117,7 @@ parseLongMsg = TestLabel "parsing long message (using listener, starting with ha
 parseExtendedHsAndBF :: Test
 parseExtendedHsAndBF = TestLabel "parsing extended handshake followed by bitfield" $ TestCase $ do
   msg <- B.readFile (dataRoot </> "extended_hs_with_bf")
-  emitter <- mkMessageEmitter msg
+  emitter <- mkByteEmitter msg
   listener <- initListener emitter
   (extendedHs : _) <- recvAndParse listener 2
   case extendedHs of
@@ -140,7 +137,7 @@ parseExtendedHsAndBF = TestLabel "parsing extended handshake followed by bitfiel
 parsePieceReqs :: Test
 parsePieceReqs = TestLabel "parsing piece requests" $ TestCase $ do
   msg <- B.readFile (dataRoot </> "piece_requests")
-  emitter <- mkMessageEmitter msg
+  emitter <- mkByteEmitter msg
   listener <- initListener emitter
   _ <- recvAndParse listener 2
   checkBuffer listener
@@ -149,7 +146,7 @@ utorrentExample :: Test
 utorrentExample = TestLabel "parsing utorrent leecher example" $
   TestCase $ do
     extendedMsg <- B.readFile (dataRoot </> "utorrent_example")
-    emitter <- mkMessageEmitter extendedMsg
+    emitter <- mkByteEmitter extendedMsg
     listener <- initListener emitter
     _ <- recvAndParseHs listener
     _ <- recvAndParse listener 3
@@ -159,7 +156,7 @@ transmissionExample :: Test
 transmissionExample = TestLabel "parsing transmission seeder example" $
   TestCase $ do
     extendedMsg <- B.readFile (dataRoot </> "transmission_example")
-    emitter <- mkMessageEmitter extendedMsg
+    emitter <- mkByteEmitter extendedMsg
     listener <- initListener emitter
     _ <- recvAndParseHs listener
     _ <- recvAndParse listener 3
@@ -174,7 +171,7 @@ regression1 = TestLabel "regression -- parsing series of messages" $
         (thirdMsg, rest'') = B.splitAt 5 rest'
     assertBool ("message splitted wrong: " ++ show (B.unpack rest''))
                (B.null rest'' && (firstMsg <> secondMsg <> thirdMsg == msg))
-    emitter <- LS.mkMessageEmitter [firstMsg, secondMsg, thirdMsg]
+    emitter <- mkMessageEmitter [firstMsg, secondMsg, thirdMsg]
     listener <- initListener emitter
     _ <- recvAndParseHs listener
     msgs <- replicateM 3 (recvMessage listener)
@@ -190,7 +187,7 @@ recvMessageRegression = TestLabel "regression -- recvMessage sometimes returns w
     let first = [0,0,0,1,1]
         second = [0,0,0,0]
         msgs = [B.pack first, B.pack second]
-    emitter <- LS.mkMessageEmitter msgs
+    emitter <- mkMessageEmitter msgs
     listener <- initListener emitter
     msg1 <- recvMessage listener
     msg2 <- recvMessage listener
@@ -235,18 +232,6 @@ parseMsgs p (m : ms) = do
 recvMsg :: RecvMsg -> Either B.ByteString B.ByteString
 recvMsg (ConnClosed bs) = Left bs
 recvMsg (Msg bs) = Right bs
-
--- | Sends messages one byte at a time.
-mkMessageEmitter :: B.ByteString -> IO (IO B.ByteString)
-mkMessageEmitter msg = do
-    msgRef <- newIORef msg
-    return $ do
-      m <- readIORef msgRef
-      case B.uncons m of
-        Just (w, rest) -> do
-          writeIORef msgRef rest
-          return (B.singleton w)
-        Nothing -> return B.empty -- signal closed socket
 
 
 -- * Arbitrary stuff
