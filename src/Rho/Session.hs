@@ -22,7 +22,7 @@ import qualified System.Log.Logger            as L
 
 import           Rho.InfoHash
 import           Rho.Listener                 (Listener, initListener, recvLen,
-                                               stopped)
+                                               stopListener)
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
@@ -140,8 +140,6 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     errHandler err =
       return $ Left $ "Unhandled error: " ++ show err
 
-    stopListener listener = putMVar (stopped listener) ()
-
 sendExtendedHs :: Session -> PeerConn -> IO ()
 sendExtendedHs sess pc = do
     mi <- readMVar $ sessMIPieceMgr sess
@@ -167,7 +165,7 @@ handleHandshake sess@(Session _ ih peers _ _) sock addr listener hs
             modifyMVar_ peers $ return . M.delete addr
           sendExtendedHs sess pc
           putMVar peers $ M.insert addr peerConn peers'
-        Just pc -> do
+        Just _ -> do
           -- TODO: I don't know how can this happen. We already established
           -- a connection. Just reset the peer info.
           peerConn <- newIORef $ newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr

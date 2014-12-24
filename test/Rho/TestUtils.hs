@@ -50,8 +50,8 @@ mkMessageEmitter msgs = do
       ms <- readIORef msgsRef
       case ms of
         []       -> return B.empty -- signal closed channel
-        (m : ms) -> do
-          writeIORef msgsRef ms
+        (m : ms') -> do
+          writeIORef msgsRef ms'
           return m
 
 -- | Create an IO action that returns next byte from the bytestring in each
@@ -66,3 +66,18 @@ mkByteEmitter msg = do
           writeIORef msgRef rest
           return (B.singleton w)
         Nothing -> return B.empty -- signal closed socket
+
+mkMessagePusher :: IO (B.ByteString -> IO (), IO B.ByteString)
+mkMessagePusher = do
+    ref <- newIORef []
+    return (push ref, read_ ref)
+  where
+    push :: IORef [B.ByteString] -> B.ByteString -> IO ()
+    push ref bs = atomicModifyIORef' ref $ \bss -> (bss ++ [bs], ())
+
+    read_ :: IORef [B.ByteString] -> IO B.ByteString
+    read_ ref =
+      atomicModifyIORef' ref $ \bss ->
+        case bss of
+          []        -> ([], B.empty)
+          (b : bs') -> (bs', b)

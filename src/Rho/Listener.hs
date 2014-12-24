@@ -119,7 +119,7 @@ listen recv deq updated lock stopped = catchIOError loop errHandler
       stopped' <- not `fmap` isEmptyMVar stopped
       unless stopped' $ do
         bytes <- recv
-        if | B.null bytes -> stop
+        if | B.null bytes -> stop'
            | otherwise    -> do
                takeMVar lock
                modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
@@ -129,6 +129,9 @@ listen recv deq updated lock stopped = catchIOError loop errHandler
 
     errHandler err = do
       putStrLn $ "Error happened while listening a socket: " ++ show err
-      stop
+      stop'
 
-    stop = tryPutMVar updated () >> putMVar stopped ()
+    stop' = tryPutMVar updated () >> putMVar stopped ()
+
+stopListener :: Listener -> IO ()
+stopListener (Listener _ u _ _ s) = tryPutMVar u () >> tryPutMVar s () >> return ()

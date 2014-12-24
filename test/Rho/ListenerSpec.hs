@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Rho.ListenerSpec where
 
 import           Control.Applicative
@@ -69,6 +71,22 @@ spec = do
         (buffer, _) <- readIORef (deque listener_)
         assertEqual "buffer not empty" 0 (D.length buffer)
 
+    fromHUnitTest $ TestLabel "recvLen should not receive after listener is manually stopped" $
+      TestCase $ do
+        (push, recv) <- mkMessagePusher
+        listener_ <- initListener recv
+        let msg1 = "message 1"
+            msg2 = "message 2"
+        push msg1
+        msg1' <- recvLen listener_ 9
+        assertEqual "received message is wrong" msg1 msg1'
+        stopListener listener_
+        msg2' <- recvLen listener_ 9
+        assertEqual "received message is wrong" B.empty msg2'
+        push msg2
+        msg2'' <- recvLen listener_ 9
+        assertEqual "received message is wrong" B.empty msg2''
+
     fromHUnitTest $ TestLabel "sending bytes one-by-one" $
       TestCase $ do
         let bytes = map B.singleton $ replicate 100 0x12
@@ -108,12 +126,12 @@ spec = do
       let msgsLen = ll msgs
       return $ ioProperty $ do
         emitter <- mkMessageEmitter msgs
-        listener <- initListener emitter
-        readMVar (stopped listener)
+        listener_ <- initListener emitter
+        readMVar (stopped listener_)
         -- The line below fails with "thread blocked indefinitely in an MVar operation"
         -- Try to guess why. `getChanContents` is awful.
         -- receivedMsg <- mconcat <$> getChanContents (buffer listener)
-        receivedMsgs <- readBuffer listener
+        receivedMsgs <- readBuffer listener_
         return $ ll receivedMsgs == msgsLen
 
     modifyMaxSuccess (const 1000) $ prop "recvLen should be able to receive all messages" $ do
@@ -122,8 +140,8 @@ spec = do
       recvLens <- generateRecvLens msgsLen
       return $ ioProperty $ do
         emitter <- mkMessageEmitter msgs
-        listener <- initListener emitter
-        rcvdMsgs <- mapM (recvLen listener) recvLens
+        listener_ <- initListener emitter
+        rcvdMsgs <- mapM (recvLen listener_) recvLens
         return $ all (\(rcvdLen, msg) -> rcvdLen == B.length msg) (zip recvLens rcvdMsgs)
 
 genMsgs :: Int -> Int -> Gen [B.ByteString]
@@ -145,6 +163,6 @@ generateRecvLens n = do
     return $ i : r
 
 readBuffer :: Listener -> IO [B.ByteString]
-readBuffer l@Listener{deque=deq} = do
+readBuffer Listener{deque=deq} = do
     (d, _) <- readIORef deq
     return $ D.takeFront (D.length d) d
