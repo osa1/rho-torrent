@@ -31,7 +31,8 @@ spec :: Spec
 spec = do
   describe "parsing" $ do
     fromHUnitTest $ TestLabel "should parse (from file)" shouldParse
-    fromHUnitTest $ TestLabel "should parse (scraping from ThePirateBay)" (TestCase scrapeMagnets)
+    -- TODO: enable this once the site is up again
+    -- fromHUnitTest $ TestLabel "should parse (scraping from ThePirateBay)" (TestCase scrapeMagnets)
 
   describe "parsing-printing" $ do
     prop "forall m, parseMagnet . printMagnet m == m" $ \m ->
