@@ -140,6 +140,5 @@ req UDPCommHandler{sock=skt, transactionChans=tChan} addr req = do
     let reqTid = Req.tid req
     respVar <- newEmptyMVar
     modifyMVar_ tChan $ return . M.insert reqTid respVar
-    -- TODO: error handling
-    sent <- sendTo skt (mkTrackerMsg req) addr
+    sendAllTo skt (mkTrackerMsg req) addr
     takeMVar respVar
