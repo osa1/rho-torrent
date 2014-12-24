@@ -21,7 +21,8 @@ import           System.IO.Error
 import qualified System.Log.Logger            as L
 
 import           Rho.InfoHash
-import           Rho.Listener                 (Listener, initListener, recvLen)
+import           Rho.Listener                 (Listener, initListener, recvLen,
+                                               stopped)
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
@@ -92,7 +93,7 @@ listenHandshake sess listener sock peerAddr = do
           Right hs -> do
             -- TODO: we probably need to check info_hash
             sendAll sock $ mkHandshake (hInfoHash hs) (sessPeerId sess)
-            handleHandshake sess sock peerAddr hs
+            handleHandshake sess sock peerAddr listener hs
 
 handshake :: Session -> SockAddr -> InfoHash -> IO (Either String ExtendedMsgSupport)
 handshake sess@(Session peerId _ _ _ _) addr infoHash = do
@@ -101,15 +102,15 @@ handshake sess@(Session peerId _ _ _ _) addr infoHash = do
       Left err -> do
         putStrLn $ "Handshake failed: " ++ err
         return $ Left err
-      Right (sock, hs) -> do
+      Right (sock, listener, hs) -> do
         putStrLn $ "Handshake successful. Extension support: " ++ show (hExtension hs)
-        handleHandshake sess sock addr hs
+        handleHandshake sess sock addr listener hs
         return $ Right (hExtension hs)
 
 -- | Send a handshake message to given target using a fresh socket. Return
 -- the connected socket in case of a success. (e.g. receiving answer to
 -- handshake)
-sendHandshake :: SockAddr -> InfoHash -> PeerId -> IO (Either String (Socket, Handshake))
+sendHandshake :: SockAddr -> InfoHash -> PeerId -> IO (Either String (Socket, Listener, Handshake))
 sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet aNY_PORT 0)
@@ -121,13 +122,16 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     incomingHs <- recvHandshake listener
     case incomingHs of
       ConnClosed hs
-        | B.null hs -> return $ Left "refused"
-        | otherwise -> return $ Left $ "partial message: " ++ show (B.unpack hs)
+        | B.null hs ->
+            stopListener listener >> return (Left "refused")
+        | otherwise ->
+            stopListener listener >> return (Left $ "partial message: " ++ show (B.unpack hs))
       Msg hs -> case parseHandshake hs of
                   Left err -> do
+                    stopListener listener
                     warning $ err ++ " msg: " ++ show (B.unpack hs)
                     return $ Left err
-                  Right hs' -> return $ Right (sock, hs')
+                  Right hs' -> return $ Right (sock, listener, hs')
   where
     errHandler err@IOError{ioe_type=NoSuchThing} =
       return $ Left $ "Problems with connection: " ++ show err
@@ -135,6 +139,8 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
       return $ Left $ "Timeout happened: " ++ show err
     errHandler err =
       return $ Left $ "Unhandled error: " ++ show err
+
+    stopListener listener = putMVar (stopped listener) ()
 
 sendExtendedHs :: Session -> PeerConn -> IO ()
 sendExtendedHs sess pc = do
@@ -148,25 +154,18 @@ sendExtendedHs sess pc = do
 
 -- | Process incoming handshake; update data structures, spawn socket
 -- listener.
-handleHandshake :: Session -> Socket -> SockAddr -> Handshake -> IO ()
-handleHandshake sess@(Session _ ih peers _ _) sock addr hs
+handleHandshake :: Session -> Socket -> SockAddr -> Listener -> Handshake -> IO ()
+handleHandshake sess@(Session _ ih peers _ _) sock addr listener hs
   | ih == hInfoHash hs = do
       peers' <- takeMVar peers
       case M.lookup addr peers' of
         Nothing -> do
-          -- first time handshaking with the peer, spawn a socket listener
-          listener <- initListener $ recv sock 4096
           let pc    = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr
           peerConn <- newIORef pc
           void $ async $ do
             listenConnectedSock sess peerConn listener
             modifyMVar_ peers $ return . M.delete addr
-          -- FIXME: this delay should not be necessary. the problem is that
-          -- if we send extended hs immediately that the initiator may miss
-          -- the message in the process of spawning a listener and setting
-          -- data structures. (this happens in `metadataTransferTest` in
-          -- `ClientSpec`)
-          async $ threadDelay 100000 >> sendExtendedHs sess pc
+          sendExtendedHs sess pc
           putMVar peers $ M.insert addr peerConn peers'
         Just pc -> do
           -- TODO: I don't know how can this happen. We already established

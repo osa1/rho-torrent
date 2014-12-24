@@ -38,7 +38,7 @@ listenConnectedSock sess peer listener = flip catchIOError errHandler $ loop
         ConnClosed msg'
           | B.null msg' -> return ()
           | otherwise  -> putStrLn ("recvd a partial message: " ++ show (B.unpack msg')) >> return ()
-        Msg msg' -> handleMessage sess peer msg' >> yield >> loop
+        Msg msg' -> handleMessage sess peer msg' >> loop
 
     errHandler err = do
       putStrLn $ "Error happened while listening a socket: " ++ show err

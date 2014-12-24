@@ -33,9 +33,9 @@
 --
 module Rho.Listener where
 
-import           Control.Concurrent       (yield)
 import           Control.Concurrent.Async
 import           Control.Concurrent.MVar
+import           Control.Monad
 import qualified Data.ByteString          as B
 import qualified Data.Dequeue             as D
 import           Data.IORef
@@ -116,18 +116,16 @@ listen :: IO B.ByteString -> IORef Deque -> MVar () -> MVar () -> MVar () -> IO 
 listen recv deq updated lock stopped = catchIOError loop errHandler
   where
     loop = do
-      bytes <- recv
-      if | B.null bytes -> stop
-         | otherwise    -> do
-             takeMVar lock
-             modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
-             _ <- tryPutMVar updated ()
-             putMVar lock ()
-             -- see https://www.haskell.org/pipermail/haskell-cafe/2014-December/117285.html
-             -- another thing that solves the issue is to compile with
-             -- `-threaded` and run with `+RTS -N`
-             yield
-             loop
+      stopped' <- not `fmap` isEmptyMVar stopped
+      unless stopped' $ do
+        bytes <- recv
+        if | B.null bytes -> stop
+           | otherwise    -> do
+               takeMVar lock
+               modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
+               _ <- tryPutMVar updated ()
+               putMVar lock ()
+               loop
 
     errHandler err = do
       putStrLn $ "Error happened while listening a socket: " ++ show err

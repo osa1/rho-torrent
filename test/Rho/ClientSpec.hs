@@ -81,7 +81,7 @@ metadataTransferTest = TestCase $ do
         threadDelay 100000
         hsResult <- handshake clientWMagnet (SockAddrInet port1 localhost) hash
         -- hsResult <- handshake clientWInfo (SockAddrInet port2 localhost) hash
-        threadDelay 1000000
+        threadDelay 100000
         case hsResult of
           Left err            -> assertFailure $ "Handshake failed: " ++ err
           Right DoesntSupport -> assertFailure "Wrong extended message support"
@@ -99,7 +99,7 @@ metadataTransferTest = TestCase $ do
 
             miPieces <- fromJust <$> (readMVar $ sessMIPieceMgr clientWMagnet)
             sendMetainfoRequests (sessPeers clientWMagnet) miPieces
-            threadDelay 10000000
+            threadDelay 100000
             checkMIPieceMgrMissings "clientWMagnet" clientWMagnet
   where
     checkConnectedPeer :: String -> Session -> Assertion
