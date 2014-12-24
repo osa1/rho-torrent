@@ -6,7 +6,9 @@ env:
 before_install:
  - cabal install --only-dependencies --enable-tests
 
-script:
- - cabal configure --enable-tests --ghc-options=-Werror
+install:
+ - cabal configure --enable-tests
  - cabal build
- - cabal test
+
+script:
+ - ./dist/build/test/test && ./dist/build/doctests/doctests
