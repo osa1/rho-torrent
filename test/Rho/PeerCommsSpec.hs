@@ -4,6 +4,7 @@
 module Rho.PeerCommsSpec where
 
 import           Control.Applicative
+import           Control.Concurrent.Async
 import           Control.Monad
 import qualified Data.ByteString              as B
 import qualified Data.ByteString.Builder      as BB
@@ -16,6 +17,7 @@ import           Data.Maybe
 import           Data.Monoid
 import           Data.Text.Encoding           (decodeUtf8)
 import           Data.Word
+import           Network.Socket.ByteString    (recv, send)
 import           System.FilePath
 
 import           Test.Hspec
@@ -78,10 +80,7 @@ spec = do
 
     fromHUnitTest regression1
 
-{-
-    -- TODO: Implement timeouts. This test gets stuck after a while. (tries
-    -- to recv bigger than what's sent)
-    modifyMaxSuccess (const 100) $ prop "recvMessage using socket recieves correct lengths" $
+    modifyMaxSuccess (const 10) $ prop "recvMessage using socket recieves correct lengths" $
       \(PFXd msgs) -> ioProperty $ do
         (sock1, sock2) <- initConnectedSocks
         listener <- initListener (recv sock2 4096)
@@ -93,7 +92,6 @@ spec = do
         wait action2
 
         return True
--}
 
 unwrapRecvd :: RecvMsg -> B.ByteString
 unwrapRecvd (ConnClosed bs) = bs
