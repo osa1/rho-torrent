@@ -14,17 +14,14 @@ import           Network.HTTP                  (defaultGETRequest, rspBody)
 import           Network.URI                   (URI, uriQuery)
 
 import           Rho.InfoHash
-import           Rho.Metainfo
 import           Rho.Parser
 import           Rho.PeerComms.Handshake
 import           Rho.Torrent
 import           Rho.TrackerComms.PeerResponse
 import           Rho.Utils
 
-peerRequestHTTP
-  :: PeerId -> URI -> Torrent -> Metainfo -> IO (Either String PeerResponse)
-peerRequestHTTP (PeerId peerId) uri torrent metainfo = do
-    putStrLn $ "info_hash: " ++ show (B.length $ unwrapInfoHash $ iHash $ mInfo metainfo)
+peerRequestHTTP :: PeerId -> URI -> Torrent -> InfoHash -> IO (Either String PeerResponse)
+peerRequestHTTP (PeerId peerId) uri torrent hash = do
     (_, resp) <- browse $ do
       setAllowRedirects True -- handle HTTP redirects
       request $ defaultGETRequest updatedURI
@@ -36,7 +33,7 @@ peerRequestHTTP (PeerId peerId) uri torrent metainfo = do
 
     args :: [(String, String)]
     args =
-      [ ("info_hash", urlEncodeBytes . unwrapInfoHash . iHash . mInfo $ metainfo)
+      [ ("info_hash", urlEncodeBytes $ unwrapInfoHash hash)
       , ("peer_id", urlEncodeBytes peerId)
       , ("port", "5432") -- FIXME
       , ("uploaded", show $ uploaded torrent)

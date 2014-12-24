@@ -58,6 +58,9 @@ parseMetainfo = decode
 printMetainfo :: Metainfo -> B.ByteString
 printMetainfo = LB.toStrict . encode
 
+parseInfoDict :: B.ByteString -> Either String Info
+parseInfoDict = decode
+
 -- * BEncode instances
 
 instance BEncode Metainfo where

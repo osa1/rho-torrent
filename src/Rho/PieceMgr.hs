@@ -81,6 +81,12 @@ getPieceData (PieceMgr pSize pTotal _ pData) pIdx pOffset pLen = do
     putMVar pData d
     return ret
 
+getBytes :: PieceMgr -> IO B.ByteString
+getBytes (PieceMgr _ _ _ pData) = do
+    (d, _) <- readMVar pData
+    d' <- V.freeze d
+    return $ B.pack $ V.toList d'
+
 -- | Returns `Just (offset, length)` if we're missing some parts of the
 -- given piece.
 nextMissingPart :: PieceMgr -> Word32 -> IO (Maybe (Word32, Word32))

@@ -44,7 +44,7 @@ data UDPCommHandler = UDPCommHandler
 initUDPCommHandler :: IO UDPCommHandler
 initUDPCommHandler = do
     sock <- socket AF_INET Datagram defaultProtocol
-    bind sock (SockAddrInet (fromIntegral (5432 :: Int)) 0)
+    bind sock (SockAddrInet aNY_PORT 0)
 
     tChans <- newMVar M.empty
 
