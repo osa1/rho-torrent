@@ -3,6 +3,9 @@ language: haskell
 ghc: 7.8
 
 before_install:
+ - sudo add-apt-repository ppa:mystic-mirage/opentracker -y
+ - sudo apt-get update -q
+ - sudo apt-get install opentracker opentracker-ipv6
  - cabal install --only-dependencies --enable-tests
 
 install:
