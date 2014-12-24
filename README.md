@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/osa1/rho-torrent.svg?branch=master)](https://travis-ci.org/osa1/rho-torrent)
+
 `rho` is a BitTorrent client written in Haskell. Main features are:
 
 - Fully-functional, supporting most widely-used extensions. (including encryption protocols)
