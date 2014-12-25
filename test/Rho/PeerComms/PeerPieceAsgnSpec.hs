@@ -103,7 +103,7 @@ showCounterExample pd s = concat
 genPeers :: Gen [PeerConn]
 genPeers = do
     len <- arbitrary `suchThat` (< 100)
-    return $ map (\i -> mkPeerConn i) [0..len-1]
+    return $ map mkPeerConn [0..len]
 
 genPieceData :: Int -> Gen [PieceData]
 genPieceData end = do
