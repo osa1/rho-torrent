@@ -18,7 +18,7 @@ Extensions that are currently in code base (at least partially):
 |-----------|--------------------------------------------|--------|
 | BEP 3     | The BitTorrent Protocol Specification      | Done   |
 | BEP 6     | Fast extension                             | WIP    |
-| BEP 9     | Extension for Peers to Send Metadata Files | WIP    |
+| BEP 9     | Extension for Peers to Send Metadata Files | Done   |
 | BEP 10    | Extension Protocol                         | Done   |
 | BEP 15    | UDP Tracker Protocol                       | Done   |
 | BEP 23    | Tracker Returns Compact Peer List          | Done   |
