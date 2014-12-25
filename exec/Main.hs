@@ -28,6 +28,7 @@ import           Data.IORef
 import qualified Data.Map                      as M
 import           Data.Maybe
 import           Data.Monoid
+import           Data.Word
 import           Network.Socket
 import           System.Environment            (getArgs)
 import           System.Log.Formatter
@@ -49,11 +50,11 @@ main = do
 scrapeMagnet :: String -> IO ()
 scrapeMagnet = undefined
 
-requestPeers :: PeerId -> InfoHash -> Torrent -> Tracker -> IO PeerResponse
-requestPeers pid hash torrent (HTTPTracker uri) = do
+requestPeers :: PeerId -> PortNumber -> InfoHash -> Torrent -> Tracker -> IO PeerResponse
+requestPeers pid port hash torrent (HTTPTracker uri) = do
     putStrLn $ "HTTP: " ++ show uri
-    peerRequestHTTP pid uri torrent hash >>= either error return
-requestPeers pid _ torrent udp@(UDPTracker host port) = do
+    peerRequestHTTP pid port uri torrent hash >>= either error return
+requestPeers pid _ _ torrent udp@(UDPTracker host port) = do
     putStrLn $ "UDP: " ++ show udp
     print $ B.unpack host
     print port
@@ -74,9 +75,10 @@ runMagnet magnetStr = do
       Left err -> error $ "Can't parse magnet string: " ++ err
       Right m@(Magnet hash trackers _) -> do
         peerId  <- generatePeerId
+        let port = fromIntegral (5678 :: Word16)
+        session <- initMagnetSession port m peerId
         PeerResponse _ _ _ peers <- mconcat <$>
-          mapM (requestPeers peerId hash (mkTorrentFromMagnet m)) trackers
-        session <- initMagnetSession 5678 m peerId
+          mapM (requestPeers peerId port hash (mkTorrentFromMagnet m)) trackers
         forM_ peers $ \peer -> void $ forkIO $ void $ handshake session peer hash
         putStrLn $ "Waiting 5 seconds to establish connections with "
                    ++ show (length peers) ++ " peers."
@@ -107,28 +109,30 @@ runTorrent filePath = do
     contents <- B.readFile filePath
     case parseMetainfo contents of
       Left err -> putStrLn $ "Can't parse metainfo: " ++ err
-      Right m@Metainfo{mAnnounce=HTTPTracker uri} -> do
+      Right m@Metainfo{mAnnounce=HTTPTracker uri, mInfo=info} -> do
         putStrLn $ "info_hash: " ++ show (iHash $ mInfo m)
         peerId <- generatePeerId
-        req <- peerRequestHTTP peerId uri (mkTorrentFromMetainfo m) (iHash $ mInfo m)
-        runPeers req (mInfo m) (iHash $ mInfo m) peerId
-      Right m@Metainfo{mAnnounce=UDPTracker addr_str port} -> do
+        let port = fromIntegral (5433 :: Word16)
+        sess <- initTorrentSession port info peerId
+        preq <- peerRequestHTTP peerId port uri (mkTorrentFromMetainfo m) (iHash $ mInfo m)
+        runPeers preq sess (iHash info)
+      Right m@Metainfo{mAnnounce=UDPTracker addr_str port, mInfo=info} -> do
         peerId <- generatePeerId
         addrInfo <- getAddrInfo (Just defaultHints) (Just $ B.unpack addr_str) (Just $ show port)
         let trackerAddr = addrAddress (last addrInfo)
         putStrLn "initializing comm handler"
         commHandler <- initUDPCommHandler
         putStrLn "comm handler initialized"
+        sess  <- initTorrentSession (fromIntegral (5433 :: Word16)) info peerId
         peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMetainfo m)
-        runPeers peers (mInfo m) (iHash $ mInfo m) peerId
+        runPeers peers sess (iHash info)
 
 -- runPeers = undefined
 
-runPeers :: Either String PeerResponse -> Info -> InfoHash -> PeerId -> IO ()
-runPeers (Left err) _ _ _ = error err
-runPeers (Right peers) info hash peerId = do
+runPeers :: Either String PeerResponse -> Session -> InfoHash -> IO ()
+runPeers (Left err) _ _ = error err
+runPeers (Right peers) sess hash = do
     putStrLn $ "Sending handshake to peers..."
-    sess <- initTorrentSession (fromIntegral (5433 :: Int)) info peerId
     forM_ (prPeers peers) $ \peer -> do
       async $ handshake sess peer hash
 
@@ -157,10 +161,6 @@ runPeers (Right peers) info hash peerId = do
     putStrLn $ "Peers: " ++ show (length connectedPeers')
 
 -- | Generate 20-byte peer id.
---
--- I don't need how this is really used. All I can see is that we send
--- this to trackers in annonuce request but why not generate a fresh
--- peer id for every request? Looked pretty useless to me.
 generatePeerId :: IO PeerId
 generatePeerId =
     PeerId . LB.toStrict . BB.toLazyByteString . mconcat . map BB.word8 <$> replicateM 20 randomIO

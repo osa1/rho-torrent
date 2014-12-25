@@ -11,6 +11,7 @@ import           Data.Maybe                    (fromMaybe)
 import           Network.Browser               (browse, request,
                                                 setAllowRedirects)
 import           Network.HTTP                  (defaultGETRequest, rspBody)
+import           Network.Socket                (PortNumber)
 import           Network.URI                   (URI, uriQuery)
 
 import           Rho.InfoHash
@@ -20,8 +21,9 @@ import           Rho.Torrent
 import           Rho.TrackerComms.PeerResponse
 import           Rho.Utils
 
-peerRequestHTTP :: PeerId -> URI -> Torrent -> InfoHash -> IO (Either String PeerResponse)
-peerRequestHTTP (PeerId peerId) uri torrent hash = do
+peerRequestHTTP
+  :: PeerId -> PortNumber -> URI -> Torrent -> InfoHash -> IO (Either String PeerResponse)
+peerRequestHTTP (PeerId peerId) port uri torrent hash = do
     (_, resp) <- browse $ do
       setAllowRedirects True -- handle HTTP redirects
       request $ defaultGETRequest updatedURI
@@ -35,7 +37,7 @@ peerRequestHTTP (PeerId peerId) uri torrent hash = do
     args =
       [ ("info_hash", urlEncodeBytes $ unwrapInfoHash hash)
       , ("peer_id", urlEncodeBytes peerId)
-      , ("port", "5432") -- FIXME
+      , ("port", show port)
       , ("uploaded", show $ uploaded torrent)
       , ("downloaded", show $ downloaded torrent)
       , ("left", show $ left torrent)
