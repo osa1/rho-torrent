@@ -59,15 +59,12 @@ spec = do
 
     fromHUnitTest recvMessageRegression
 
-    -- QuickCheck sucks. It doesn't prove any easy ways to report failure
-    -- resons(unlike HUnit) and forces us to define lots of newtypes and
-    -- Arbitrary instances.
-    modifyMaxSuccess (const 10) $ prop "recvMessages receives correct lengths" $ \(PFXd msgs) ->
+    modifyMaxSuccess (const 10) $ prop "recvMessages delivers" $ \(PFXd msgs) ->
       ioProperty $ do
-        emitter <- mkMessageEmitter msgs
+        emitter  <- mkMessageEmitter msgs
         listener <- initListener emitter
-        recvd <- map unwrapRecvd `fmap` replicateM (length msgs) (recvMessage listener)
-        return ( length recvd == length msgs && ll recvd == ll msgs )
+        recvd    <- map unwrapRecvd `fmap` replicateM (length msgs) (recvMessage listener)
+        return $ msgs == recvd
 
     fromHUnitTest parseLongMsg
     fromHUnitTest parseExtendedHsAndBF
@@ -80,18 +77,17 @@ spec = do
 
     fromHUnitTest regression1
 
-    modifyMaxSuccess (const 10) $ prop "recvMessage using socket recieves correct lengths" $
+    modifyMaxSuccess (const 10) $ prop "recvMessage using socket delivers" $
       \(PFXd msgs) -> ioProperty $ do
         (sock1, sock2) <- initConnectedSocks
         listener <- initListener (recv sock2 4096)
 
         action1 <- async $ forM_ msgs (\msg -> send sock1 msg)
-        action2 <- async $ replicateM_ (length msgs) (recvMessage listener)
+        action2 <- async $ replicateM (length msgs) (recvMessage listener)
 
         wait action1
-        wait action2
-
-        return True
+        recvd <- wait action2
+        return $ map unwrapRecvd recvd == msgs
 
 unwrapRecvd :: RecvMsg -> B.ByteString
 unwrapRecvd (ConnClosed bs) = bs
