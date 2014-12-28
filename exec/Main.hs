@@ -1,21 +1,6 @@
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables #-}
 module Main where
 
-import           Rho.InfoHash
-import           Rho.Magnet
-import           Rho.Metainfo
-import           Rho.PeerComms.Handshake
-import           Rho.PeerComms.Message
-import           Rho.PeerComms.PeerConnection
-import           Rho.PieceMgr
-import           Rho.Session
-import           Rho.SessionState
-import           Rho.Torrent
-import           Rho.Tracker
-import           Rho.TrackerComms.HTTP
-import           Rho.TrackerComms.PeerResponse
-import           Rho.TrackerComms.UDP
-
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
@@ -24,8 +9,6 @@ import           Control.Monad
 import qualified Data.ByteString.Builder       as BB
 import qualified Data.ByteString.Char8         as B
 import qualified Data.ByteString.Lazy          as LB
-import           Data.IORef
-import qualified Data.Map                      as M
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Word
@@ -36,6 +19,20 @@ import           System.Log.Handler
 import           System.Log.Handler.Simple
 import           System.Log.Logger
 import           System.Random                 (randomIO)
+
+import           Rho.InfoHash
+import           Rho.Magnet
+import           Rho.Metainfo
+import           Rho.PeerComms.Handshake
+import           Rho.PeerComms.PeerConnection
+import           Rho.PieceMgr
+import           Rho.Session
+import           Rho.SessionState
+import           Rho.Torrent
+import           Rho.Tracker
+import           Rho.TrackerComms.HTTP
+import           Rho.TrackerComms.PeerResponse
+import           Rho.TrackerComms.UDP
 
 main :: IO ()
 main = do
@@ -73,7 +70,8 @@ runMagnet magnetStr = do
         peerId  <- generatePeerId
         let port = fromIntegral (5678 :: Word16)
         miDone <- newEmptyMVar
-        session <- initMagnetSession port m peerId (putMVar miDone ())
+        torrentDone <- newEmptyMVar
+        session <- initMagnetSession port m peerId (putMVar miDone ()) (putMVar torrentDone ())
         PeerResponse _ _ _ peers <- mconcat <$>
           mapM (requestPeers peerId port hash (mkTorrentFromMagnet m)) trackers
         forM_ peers $ \peer -> void $ forkIO $ void $ handshake session peer hash
@@ -88,7 +86,7 @@ runMagnet magnetStr = do
 
         -- loop thread never terminates, I'm just using `waitAnyCancel` to
         -- interrupt loop thread when metainfo download is complete.
-        waitAnyCancel [loopThread, miDoneThread]
+        void $ waitAnyCancel [loopThread, miDoneThread]
 
         putStrLn $ "Downloaded the info. Parsing..."
         bytes <- getBytes miPieceMgr
@@ -101,7 +99,6 @@ runMagnet magnetStr = do
               else putStrLn "Wrong hash"
   where
     loop sess pieces = do
-      missings <- missingPieces pieces
       sendMetainfoRequests (sessPeers sess) pieces
       threadDelay (1000000 * 5)
       loop sess pieces
@@ -111,56 +108,34 @@ runTorrent filePath = do
     contents <- B.readFile filePath
     case parseMetainfo contents of
       Left err -> putStrLn $ "Can't parse metainfo: " ++ err
-      Right m@Metainfo{mAnnounce=HTTPTracker uri, mInfo=info} -> do
-        putStrLn $ "info_hash: " ++ show (iHash $ mInfo m)
+      Right mi -> do
+        let hash = iHash $ mInfo mi
         peerId <- generatePeerId
-        let port = fromIntegral (5433 :: Word16)
-        sess <- initTorrentSession port info peerId
-        preq <- peerRequestHTTP peerId port uri (mkTorrentFromMetainfo m) (iHash $ mInfo m)
-        runPeers preq sess (iHash info)
-      Right m@Metainfo{mAnnounce=UDPTracker addr_str port, mInfo=info} -> do
-        peerId <- generatePeerId
-        addrInfo <- getAddrInfo (Just defaultHints) (Just $ B.unpack addr_str) (Just $ show port)
-        let trackerAddr = addrAddress (last addrInfo)
-        putStrLn "initializing comm handler"
-        commHandler <- initUDPCommHandler
-        putStrLn "comm handler initialized"
-        sess  <- initTorrentSession (fromIntegral (5433 :: Word16)) info peerId
-        peers <- peerRequestUDP commHandler trackerAddr peerId (mkTorrentFromMetainfo m)
-        runPeers peers sess (iHash info)
+        let port = fromIntegral (5678 :: Word16)
+        torrentDone <- newEmptyMVar
+        session <- initTorrentSession port (mInfo mi) peerId (putMVar torrentDone ())
+        PeerResponse _ _ _ peers <-
+          requestPeers peerId port hash (mkTorrentFromMetainfo mi) (mAnnounce mi)
+        forM_ peers $ \peer -> void $ forkIO $ void $ handshake session peer hash
+        putStrLn $ "Waiting 5 seconds to establish connections with "
+                   ++ show (length peers) ++ " peers."
+        threadDelay (1000000 * 5)
+        runPeers session torrentDone
 
--- runPeers = undefined
+runPeers :: Session -> MVar () -> IO ()
+runPeers sess torrentDone = do
+    pieces <- fromJust <$> readMVar (sessPieceMgr sess)
+    loopThread <- async $ loop pieces
+    torrentDoneThread <- async $ readMVar torrentDone
 
-runPeers :: Either String PeerResponse -> Session -> InfoHash -> IO ()
-runPeers (Left err) _ _ = error err
-runPeers (Right peers) sess hash = do
-    putStrLn $ "Sending handshake to peers..."
-    forM_ (prPeers peers) $ \peer -> do
-      async $ handshake sess peer hash
-
-    -- threadDelay 30000000
-    connectedPeers <- M.elems `fmap` readMVar (sessPeers sess)
-    putStrLn $ "Peers: " ++ show (length connectedPeers)
-
-    threadDelay 1000000
-
-    ps <- M.toList `fmap` readMVar (sessPeers sess)
-    forM_ ps $ \(addr, peerConn) -> do
-      pc <- readIORef peerConn
-      putStrLn $ "Sending interested to: " ++ show addr
-      void $ sendMessage pc Unchoke
-      void $ sendMessage pc Interested
-
-    threadDelay 100000
-
-    void $ forever $ do
-      putStrLn "Sending piece requests"
-      pm <- readMVar $ sessPieceMgr sess
-      sendPieceRequests (sessPeers sess) (fromJust pm)
-      threadDelay 10000000
-
-    connectedPeers' <- M.elems `fmap` readMVar (sessPeers sess)
-    putStrLn $ "Peers: " ++ show (length connectedPeers')
+    void $ waitAnyCancel [loopThread, torrentDoneThread]
+    putStrLn "Torrent download completed."
+  where
+    loop :: PieceMgr -> IO ()
+    loop pieces = do
+      sendPieceRequests (sessPeers sess) pieces
+      threadDelay 1000000
+      loop pieces
 
 -- | Generate 20-byte peer id.
 generatePeerId :: IO PeerId
