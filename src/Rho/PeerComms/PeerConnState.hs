@@ -23,6 +23,10 @@ data PeerConn = PeerConn
   , pcPeerId         :: PeerId
   , pcOffers         :: InfoHash
     -- ^ torrent that the peer offers
+  , pcRequest        :: Maybe Word32
+    -- ^ the piece data we're expecting this peer to send
+    -- NOTE: this should probably be a set if we want to take the advantage
+    -- of multiple requests. (`reqq` parameter etc.)
   , pcPieces         :: Maybe BF.Bitfield
     -- TODO: remove Maybe and initialize with empty bitfield
   , pcSock           :: Socket
@@ -63,7 +67,8 @@ instance Show PeerConn where
 
 newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> SockAddr -> PeerConn
 newPeerConn peerId infoHash extension sock sockAddr =
-    PeerConn True False True False peerId infoHash Nothing sock sockAddr extension M.empty Nothing
-             (2 ^ (14 :: Word32)) -- 16Kb for now, we may need to dynamically adjust the value
-             250 -- default value of libtorrent
-             Nothing
+  PeerConn True False True False peerId infoHash Nothing
+           Nothing sock sockAddr extension M.empty Nothing
+           (2 ^ (14 :: Word32)) -- 16Kb for now, we may need to dynamically adjust the value
+           250 -- default value of libtorrent
+           Nothing

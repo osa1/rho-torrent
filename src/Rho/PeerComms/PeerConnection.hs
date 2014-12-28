@@ -89,12 +89,30 @@ handleMessage' _ peer Interested =
 handleMessage' _ peer NotInterested =
     atomicModifyIORef' peer $ \pc -> (pc{pcPeerInterested = False}, ())
 
-handleMessage' sess _ (Piece pIdx offset pData) = do
+handleMessage' sess peer (Piece pIdx offset pData) = do
     putStrLn "Got piece response"
     pm <- readMVar $ sessPieceMgr sess
     case pm of
-      Nothing -> warning "Got a piece message before initializing piece manager."
-      Just pieces -> writePiece pieces pIdx offset pData
+      Nothing     -> warning "Got a piece message before initializing piece manager."
+      Just pieces -> do
+        writePiece pieces pIdx offset pData
+        -- request next missing part of the piece
+        missing <- nextMissingPart pieces pIdx
+        case missing of
+          Nothing -> do
+            -- piece is complete.
+            -- TODO: maybe check the hash here?
+            putStrLn "downloaded a piece"
+            atomicModifyIORef' peer $ \pc -> (pc{pcRequest=Nothing}, ())
+            missings <- missingPieces pieces
+            if null missings
+              then do
+                cb <- modifyMVar (sessOnTorrentComplete sess) $ \cb -> return (return (), cb)
+                cb
+              else return ()
+          Just (pOffset, len) -> do
+            pc <- readIORef peer
+            void $ sendMessage pc $ Request pIdx pOffset (min len $ pcMaxPieceSize pc)
 
 handleMessage' sess peer (Extended (ExtendedHandshake msgTbl msgData hsData)) = do
     putStrLn "Got extended handshake."
@@ -176,15 +194,25 @@ sendPieceRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO ()
 sendPieceRequests peers pieces = do
     missings <- missingPieces pieces
     putStrLn $ "Missing pieces: " ++ show missings
-    availablePeers <- readMVar peers >>= fmap (filter $ not . pcChoking) . mapM readIORef . M.elems
-    let availablePeerPieces =
+    peersMap <- readMVar peers
+    let peerRefs = M.elems peersMap
+    peerVals <- mapM readIORef peerRefs
+    let availablePeers      = filter peerFilter peerVals
+        peerRefsMap         = M.fromList $ zip peerVals peerRefs
+        availablePeerPieces =
           M.fromList $ mapMaybe (\p -> case pcPieces p of
                                          Nothing -> Nothing
                                          Just ps -> Just (p, BF.availableBits ps)) availablePeers
-        asgns = assignPieces missings availablePeerPieces
+        asgns               = assignPieces missings availablePeerPieces
     putStrLn $ "assignments: " ++ show asgns
-    forM_ asgns $ \(pc, (pIdx, pOffset, pSize)) ->
-      sendMessage pc $ Request pIdx pOffset (min pSize $ pcMaxPieceSize pc)
+    forM_ asgns $ \(pc, (pIdx, pOffset, pSize)) -> do
+      void $ sendMessage pc $ Request pIdx pOffset (min pSize $ pcMaxPieceSize pc)
+      -- FIXME: this part is ugly.
+      atomicModifyIORef' (fromJust $ M.lookup pc peerRefsMap) $ \pc' -> (pc'{pcRequest=Just pIdx}, ())
+  where
+    peerFilter :: PeerConn -> Bool
+    peerFilter PeerConn{pcChoking=False, pcRequest=Nothing} = True
+    peerFilter _                                            = False
 
 -- * Receive helpers
 

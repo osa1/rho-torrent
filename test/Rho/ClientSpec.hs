@@ -91,12 +91,13 @@ metadataTransferTest = TestCase $ do
             hash     = iHash info
             magnet   = Magnet hash [] Nothing
         localhost     <- inet_addr "127.0.0.1"
-        clientWInfo   <- initTorrentSession' port1 localhost info pid1
+        clientWInfo   <- initTorrentSession' port1 localhost info pid1 (return ())
         checkMIPieceMgrInit clientWInfo
         checkMIPieceMgrMissings "clientWInfo" clientWInfo
         magnetComplete <- newEmptyMVar
         let magnetCompleteAction = putMVar magnetComplete ()
-        clientWMagnet <- initMagnetSession' port2 localhost magnet pid2 magnetCompleteAction
+        clientWMagnet <-
+          initMagnetSession' port2 localhost magnet pid2 magnetCompleteAction (return ())
         threadDelay 100000
         hsResult <- handshake clientWMagnet (SockAddrInet port1 localhost) hash
         -- hsResult <- handshake clientWInfo (SockAddrInet port2 localhost) hash

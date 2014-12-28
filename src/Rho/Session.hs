@@ -34,35 +34,37 @@ import           Rho.SessionState
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using magnet URI.
-initMagnetSession :: PortNumber -> Magnet -> PeerId -> IO () -> IO Session
-initMagnetSession port m pid mic = initMagnetSession' port 0 m pid mic
+initMagnetSession :: PortNumber -> Magnet -> PeerId -> IO () -> IO () -> IO Session
+initMagnetSession port m pid mic tc = initMagnetSession' port 0 m pid mic tc
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using info dictionary.
-initTorrentSession :: PortNumber -> Info -> PeerId -> IO Session
-initTorrentSession port info pid = initTorrentSession' port 0 info pid
+initTorrentSession :: PortNumber -> Info -> PeerId -> IO () -> IO Session
+initTorrentSession port info pid tc = initTorrentSession' port 0 info pid tc
 
-initMagnetSession' :: PortNumber -> HostAddress -> Magnet -> PeerId -> IO () -> IO Session
-initMagnetSession' port host (Magnet ih _ _) pid mic = do
+initMagnetSession' :: PortNumber -> HostAddress -> Magnet -> PeerId -> IO () -> IO () -> IO Session
+initMagnetSession' port host (Magnet ih _ _) pid mic tc = do
     peers      <- newMVar M.empty
     pieceMgr   <- newMVar Nothing
     miPieceMgr <- newMVar Nothing
     onMIComplete <- newMVar mic
-    let sess    = Session pid ih peers pieceMgr miPieceMgr onMIComplete
+    onTorrentComplete <- newMVar tc
+    let sess    = Session pid ih peers pieceMgr miPieceMgr onMIComplete onTorrentComplete
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet port host)
     listen sock 1
     void $ async $ listenPeerSocket sess sock
     return sess
 
-initTorrentSession' :: PortNumber -> HostAddress -> Info -> PeerId -> IO Session
-initTorrentSession' port host info pid = do
+initTorrentSession' :: PortNumber -> HostAddress -> Info -> PeerId -> IO () -> IO Session
+initTorrentSession' port host info pid tc = do
     peers      <- newMVar M.empty
     pieceMgr   <- newMVar . Just =<< newPieceMgr (torrentSize info) (iPieceLength info)
     let miData  = LB.toStrict $ BE.encode info
     miPieceMgr <- newMVar . Just =<< newPieceMgrFromData miData (2 ^ (14 :: Word32))
     onMIComplete <- newMVar (return ())
-    let sess    = Session pid (iHash info) peers pieceMgr miPieceMgr onMIComplete
+    onTorrentComplete <- newMVar tc
+    let sess    = Session pid (iHash info) peers pieceMgr miPieceMgr onMIComplete onTorrentComplete
     sock       <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet port host)
     listen sock 1
