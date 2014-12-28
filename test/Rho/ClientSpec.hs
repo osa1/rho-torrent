@@ -21,6 +21,7 @@ import           Test.HUnit
 
 import           Rho.Magnet
 import           Rho.Metainfo
+import           Rho.MetainfoSpec             (parseMIAssertion)
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
@@ -43,45 +44,37 @@ spec = do
 connectTest :: Test
 connectTest = TestCase $ do
     pwd <- getCurrentDirectory
-    let torrentPath = pwd </> "test/test.torrent"
-    torrentContents <- B.readFile torrentPath
-    case parseMetainfo torrentContents of
-      Left err -> assertFailure $ "Failed to parse torrent: " ++ err
-      Right Metainfo{} -> do
-        hostAddr <- inet_addr "127.0.0.1"
-        let sockAddr = SockAddrInet (fromIntegral (6969 :: Word16)) hostAddr
+    hostAddr <- inet_addr "127.0.0.1"
+    let sockAddr = SockAddrInet (fromIntegral (6969 :: Word16)) hostAddr
 
-        putStrLn "Spawning tracker"
-        tracker <- spawnTracker pwd []
-        threadDelay 500000
+    putStrLn "Spawning tracker"
+    tracker <- spawnTracker pwd []
+    threadDelay 500000
 
-        udpComms <- initUDPCommHandler
-        ret <- connectRequest udpComms sockAddr
-        assertBool "Peer can't connect" $ isRight ret
-        terminateProcess tracker
+    udpComms <- initUDPCommHandler
+    ret <- connectRequest udpComms sockAddr
+    assertBool "Peer can't connect" $ isRight ret
+    terminateProcess tracker
 
 scrapeTest :: Test
 scrapeTest = TestCase $ do
-  pwd <- getCurrentDirectory
-  let torrentPath = pwd </> "test/test.torrent"
-  torrentContents <- B.readFile torrentPath
-  case parseMetainfo torrentContents of
-    Left err -> assertFailure $ "Failed to parse torrent: " ++ err
-    Right mi -> do
-      hostAddr <- inet_addr "127.0.0.1"
-      let sockAddr = SockAddrInet (fromIntegral (6969 :: Word16)) hostAddr
+    pwd <- getCurrentDirectory
+    mi  <- parseMIAssertion (pwd </> "test/test.torrent")
 
-      putStrLn "Spawning tracker"
-      tracker <- spawnTracker pwd []
-      threadDelay 500000
+    hostAddr <- inet_addr "127.0.0.1"
+    let sockAddr = SockAddrInet (fromIntegral (6969 :: Word16)) hostAddr
 
-      udpComms <- initUDPCommHandler
-      scrapeRet <- scrapeRequestUDP udpComms sockAddr [iHash $ mInfo mi]
-      case scrapeRet of
-        Left err -> assertFailure $ "Can't scrape: " ++ err
-        Right sr -> putStrLn $ "Scrape result: " ++ show sr
+    putStrLn "Spawning tracker"
+    tracker <- spawnTracker pwd []
+    threadDelay 500000
 
-      terminateProcess tracker
+    udpComms <- initUDPCommHandler
+    scrapeRet <- scrapeRequestUDP udpComms sockAddr [iHash $ mInfo mi]
+    case scrapeRet of
+      Left err -> assertFailure $ "Can't scrape: " ++ err
+      Right sr -> putStrLn $ "Scrape result: " ++ show sr
+
+    terminateProcess tracker
 
 metadataTransferTest :: Test
 metadataTransferTest = TestCase $ do

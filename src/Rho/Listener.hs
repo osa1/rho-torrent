@@ -134,4 +134,5 @@ listen recv deq updated lock stopped = catchIOError loop errHandler
     stop' = tryPutMVar updated () >> putMVar stopped ()
 
 stopListener :: Listener -> IO ()
-stopListener (Listener _ u _ _ s) = tryPutMVar u () >> tryPutMVar s () >> return ()
+stopListener (Listener _ u lock l s) =
+    cancel l >> tryPutMVar u () >> tryPutMVar s () >> tryPutMVar lock () >> return ()

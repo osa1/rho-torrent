@@ -78,7 +78,7 @@ spec = do
         let msg1 = "message 1"
             msg2 = "message 2"
         push msg1
-        threadDelay 1000
+        yield
         msg1' <- recvLen listener_ 9
         assertEqual "received message is wrong" msg1 msg1'
         stopListener listener_

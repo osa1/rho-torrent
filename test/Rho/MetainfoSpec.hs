@@ -22,6 +22,7 @@ import           Test.QuickCheck.Instances ()
 import           Rho.InfoHash
 import           Rho.MagnetSpec            (trackerGen)
 import           Rho.Metainfo
+import           Rho.TestUtils
 import           Rho.Tracker
 
 main :: IO ()
@@ -57,16 +58,19 @@ regressions = TestList $ map TestCase [regression1]
   where
     regression1 :: Assertion
     regression1 = do
-      let torrentPath = "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
-      mi <- decode <$> B.readFile torrentPath
-      case mi of
-        Left msg -> assertFailure $ "Can't parse " ++ torrentPath ++ ": " ++ msg
-        Right metainfo -> do
-          let info_hash = InfoHash $ B.pack
-                [ 0x08, 0x89, 0xCF, 0x68, 0xCF, 0x4A, 0x7A, 0xB7, 0xF1, 0xDB,
-                  0x69, 0xC2, 0xFF, 0xAB, 0xE3, 0xDB, 0xFE, 0x53, 0xD0, 0x95 ]
-          assertEqual "info_hash is wrong" (iHash $ mInfo metainfo) info_hash
-          ppProp metainfo
+      mi <- parseMIAssertion "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
+      let info_hash = InfoHash $ B.pack
+            [ 0x08, 0x89, 0xCF, 0x68, 0xCF, 0x4A, 0x7A, 0xB7, 0xF1, 0xDB,
+              0x69, 0xC2, 0xFF, 0xAB, 0xE3, 0xDB, 0xFE, 0x53, 0xD0, 0x95 ]
+      assertEqual "info_hash is wrong" (iHash $ mInfo mi) info_hash
+      ppProp mi
+
+parseMIAssertion :: FilePath -> Assertion' Metainfo
+parseMIAssertion path = do
+    mi <- parseMetainfo <$> B.readFile path
+    case mi of
+      Left err  -> assertFailure' $ "Cant parse " ++ path ++ ": " ++ err
+      Right mi' -> return mi'
 
 -- | Check property: `BE.fromBEncode . BE.toBEncode` should preserve
 -- structure.
