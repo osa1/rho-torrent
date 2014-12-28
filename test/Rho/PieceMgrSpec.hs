@@ -10,6 +10,7 @@ import           Test.Hspec.Contrib.HUnit
 import           Test.HUnit
 
 import           Rho.Metainfo
+import           Rho.MetainfoSpec         (parseMIAssertion)
 import           Rho.PeerComms.Message
 import           Rho.PieceMgr
 
@@ -26,6 +27,7 @@ spec = do
     fromHUnitTest testTorrentPieceTest
     fromHUnitTest testNextMissingPart
     fromHUnitTest testGetPieceData
+    fromHUnitTest testReadFiles
 
 cons :: a -> (b, c) -> (a, b, c)
 cons a (b, c) = (a, b, c)
@@ -156,4 +158,20 @@ testGetPieceData = TestList
       writePiece pieceMgr 0 0 (B.pack $ replicate 10 1)
       pd <- getPieceData pieceMgr 0 10 10
       assertEqual "returned piece data is wrong" Nothing pd
+  ]
+
+testReadFiles :: Test
+testReadFiles = TestList
+  [ TestLabel "tryReadFiles - 1" $ TestCase $ do
+      Metainfo{mInfo=info} <- parseMIAssertion "test/test.torrent"
+      (pieces, filled) <- tryReadFiles info "test"
+      assertBool "Piece manager is not filled" filled
+      missings <- missingPieces pieces
+      assertEqual "Missing pieces are not empty" [] missings
+      files <- generateFiles pieces info
+      let expectedFiles =
+            [ ("seed_files/file1.txt", "file1\n")
+            , ("seed_files/file2.txt", "file2\n")
+            ]
+      assertEqual "Generated files are wrong" expectedFiles files
   ]

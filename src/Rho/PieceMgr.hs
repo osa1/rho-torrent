@@ -9,9 +9,11 @@ import qualified Data.ByteString             as B
 import qualified Data.ByteString.Char8       as BC
 import           Data.Digest.SHA1            (hash)
 import           Data.List                   (foldl')
+import           Data.Monoid
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as MV
 import           Data.Word
+import           System.Directory            (doesFileExist)
 import           System.FilePath             ((</>))
 
 import           Rho.Metainfo
@@ -192,3 +194,39 @@ generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ _ files) = do
 
     mkPath :: [B.ByteString] -> String
     mkPath bs = foldl' (</>) "" $ map BC.unpack bs
+
+-- | Try to generate a piece manager for the torrent from given root path.
+--
+-- If files exist in the path, generate pieces and check hashes. If hashes
+-- match, create a new piece manager with pieces filled and return `True`.
+-- Otherwise create an empty piece manager for the torrent and return
+-- `False`.
+tryReadFiles :: Info -> FilePath -> IO (PieceMgr, Bool)
+tryReadFiles info root = do
+    let root' = root </> BC.unpack (iName info)
+        files = case iFiles info of
+                  Left  _  -> [root']
+                  Right fs -> map (\File{fPath=path} ->
+                                      foldl' (</>) root' (map BC.unpack path)) fs
+    allExist <- and <$> mapM doesFileExist files
+    if allExist
+      then do
+        putStrLn "Files exist, checking hashes"
+        bytes <- mconcat <$> mapM B.readFile files
+        pieces <- newPieceMgrFromData bytes (iPieceLength info)
+        hashesMatch <- and <$> zipWithM (checkPieces pieces) [0..] (iPieces info)
+        if hashesMatch
+          then do
+            putStrLn "Hashes match, returning filled piece manager."
+            return (pieces, True)
+          else do
+            putStrLn "Hashes don't match, returning empty piece manager."
+            freshPieceManager
+      else do
+        putStrLn "Some files missing, returning empty piece manager."
+        freshPieceManager
+  where
+    freshPieceManager :: IO (PieceMgr, Bool)
+    freshPieceManager = do
+      pieces <- newPieceMgr (torrentSize info) (iPieceLength info)
+      return (pieces, False)
