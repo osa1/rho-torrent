@@ -49,10 +49,10 @@ initMagnetSession' port host (Magnet ih _ _) pid mic tc = do
     miPieceMgr <- newMVar Nothing
     onMIComplete <- newMVar mic
     onTorrentComplete <- newMVar tc
-    let sess    = Session pid ih peers pieceMgr miPieceMgr onMIComplete onTorrentComplete
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet port host)
     listen sock 1
+    let sess    = Session pid ih peers pieceMgr miPieceMgr onMIComplete onTorrentComplete
     void $ async $ listenPeerSocket sess sock
     return sess
 
@@ -64,10 +64,10 @@ initTorrentSession' port host info pid tc = do
     miPieceMgr <- newMVar . Just =<< newPieceMgrFromData miData (2 ^ (14 :: Word32))
     onMIComplete <- newMVar (return ())
     onTorrentComplete <- newMVar tc
-    let sess    = Session pid (iHash info) peers pieceMgr miPieceMgr onMIComplete onTorrentComplete
     sock       <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet port host)
     listen sock 1
+    let sess    = Session pid (iHash info) peers pieceMgr miPieceMgr onMIComplete onTorrentComplete
     void $ async $ listenPeerSocket sess sock
     return sess
 
