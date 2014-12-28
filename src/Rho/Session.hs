@@ -129,6 +129,7 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessInfoHas
 
     -- set the callback
     torrentDone <- newEmptyMVar
+    modifyMVar_ (sessOnTorrentComplete sess) $ \_ -> return $ putMVar torrentDone ()
     torrentDoneThread <- async $ readMVar torrentDone
 
     -- start the loop
