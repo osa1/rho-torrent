@@ -4,6 +4,7 @@ import           Control.Applicative
 import           Control.Concurrent
 import qualified Data.BEncode                 as BE
 import qualified Data.ByteString              as B
+import qualified Data.ByteString.Char8        as BC
 import qualified Data.ByteString.Lazy         as LB
 import           Data.Either
 import           Data.IORef
@@ -85,8 +86,8 @@ metadataTransferTest = TestCase $ do
       Left err -> assertFailure $ "Can't parse test.torrent: " ++ err
       Right Metainfo{mInfo=info} -> do
         let infoSize = fromIntegral $ LB.length $ BE.encode info
-            pid1     = PeerId $ B.pack $ replicate 19 0 ++ [1]
-            pid2     = PeerId $ B.pack $ replicate 19 0 ++ [2]
+            pid1     = mkPeerId 1
+            pid2     = mkPeerId 2
             hash     = iHash info
             magnet   = Magnet hash [] Nothing
         localhost     <- inet_addr "127.0.0.1"
@@ -174,3 +175,8 @@ spawnTracker :: FilePath -> [String] -> IO ProcessHandle
 spawnTracker pwd args = do
     (_, _, _, handle) <- createProcess (proc "opentracker" args){cwd=Just pwd}
     return handle
+
+mkPeerId :: Int -> PeerId
+mkPeerId i =
+    let str = show i
+    in PeerId $ BC.pack $ replicate (20 - length str) '0' ++ str
