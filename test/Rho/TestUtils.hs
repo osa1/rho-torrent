@@ -67,6 +67,8 @@ mkByteEmitter msg = do
           return (B.singleton w)
         Nothing -> return B.empty -- signal closed socket
 
+-- | Generate two IO actions, first one to push a message and second one to
+-- read pushed messages.
 mkMessagePusher :: IO (B.ByteString -> IO (), IO B.ByteString)
 mkMessagePusher = do
     ref <- newIORef []
