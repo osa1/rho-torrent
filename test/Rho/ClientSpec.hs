@@ -77,7 +77,9 @@ metadataTransferTest = TestCase $ do
         clientWInfo   <- initTorrentSession' port1 localhost info pid1
         checkMIPieceMgrInit clientWInfo
         checkMIPieceMgrMissings "clientWInfo" clientWInfo
-        clientWMagnet <- initMagnetSession' port2 localhost magnet pid2
+        magnetComplete <- newEmptyMVar
+        let magnetCompleteAction = putMVar magnetComplete ()
+        clientWMagnet <- initMagnetSession' port2 localhost magnet pid2 magnetCompleteAction
         threadDelay 100000
         hsResult <- handshake clientWMagnet (SockAddrInet port1 localhost) hash
         -- hsResult <- handshake clientWInfo (SockAddrInet port2 localhost) hash
@@ -101,6 +103,7 @@ metadataTransferTest = TestCase $ do
             sendMetainfoRequests (sessPeers clientWMagnet) miPieces
             threadDelay 100000
             checkMIPieceMgrMissings "clientWMagnet" clientWMagnet
+            checkCallbackCalled magnetComplete
   where
     checkConnectedPeer :: String -> Session -> Assertion
     checkConnectedPeer info Session{sessPeers=peers} = do
@@ -139,6 +142,11 @@ metadataTransferTest = TestCase $ do
         Just mi'' -> do
           missings <- missingPieces mi''
           assertEqual ("some pieces are missings(" ++ info ++ ")") [] missings
+
+    checkCallbackCalled :: MVar () -> Assertion
+    checkCallbackCalled var = do
+      isEmpty <- isEmptyMVar var
+      if isEmpty then assertFailure "Metainfo downloaded callback is not called" else return ()
 
 spawnTracker :: FilePath -> [String] -> IO ProcessHandle
 spawnTracker pwd args = do

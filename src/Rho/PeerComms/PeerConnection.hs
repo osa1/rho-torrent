@@ -146,7 +146,9 @@ handleMessage' sess peer (Extended (MetadataData pIdx totalSize pData)) = do
       ((newPIdx, _, _) : _) -> do
         pc <- readIORef peer
         void $ sendMessage pc $ Extended $ MetadataRequest newPIdx
-      _ -> return ()
+      _ -> do
+        cb <- modifyMVar (sessOnMIComplete sess) $ \cb -> return (return (), cb)
+        cb
 
 handleMessage' _ _ msg = putStrLn $ "Unhandled peer msg: " ++ show msg
 

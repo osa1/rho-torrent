@@ -34,20 +34,21 @@ import           Rho.SessionState
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using magnet URI.
-initMagnetSession :: PortNumber -> Magnet -> PeerId -> IO Session
-initMagnetSession port m pid = initMagnetSession' port 0 m pid
+initMagnetSession :: PortNumber -> Magnet -> PeerId -> IO () -> IO Session
+initMagnetSession port m pid mic = initMagnetSession' port 0 m pid mic
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using info dictionary.
 initTorrentSession :: PortNumber -> Info -> PeerId -> IO Session
 initTorrentSession port info pid = initTorrentSession' port 0 info pid
 
-initMagnetSession' :: PortNumber -> HostAddress -> Magnet -> PeerId -> IO Session
-initMagnetSession' port host (Magnet ih _ _) pid = do
+initMagnetSession' :: PortNumber -> HostAddress -> Magnet -> PeerId -> IO () -> IO Session
+initMagnetSession' port host (Magnet ih _ _) pid mic = do
     peers      <- newMVar M.empty
     pieceMgr   <- newMVar Nothing
     miPieceMgr <- newMVar Nothing
-    let sess    = Session pid ih peers pieceMgr miPieceMgr
+    onMIComplete <- newMVar mic
+    let sess    = Session pid ih peers pieceMgr miPieceMgr onMIComplete
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet port host)
     listen sock 1
@@ -60,7 +61,8 @@ initTorrentSession' port host info pid = do
     pieceMgr   <- newMVar . Just =<< newPieceMgr (torrentSize info) (iPieceLength info)
     let miData  = LB.toStrict $ BE.encode info
     miPieceMgr <- newMVar . Just =<< newPieceMgrFromData miData (2 ^ (14 :: Word32))
-    let sess    = Session pid (iHash info) peers pieceMgr miPieceMgr
+    onMIComplete <- newMVar (return ())
+    let sess    = Session pid (iHash info) peers pieceMgr miPieceMgr onMIComplete
     sock       <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet port host)
     listen sock 1
@@ -96,7 +98,7 @@ listenHandshake sess listener sock peerAddr = do
             handleHandshake sess sock peerAddr listener hs
 
 handshake :: Session -> SockAddr -> InfoHash -> IO (Either String ExtendedMsgSupport)
-handshake sess@(Session peerId _ _ _ _) addr infoHash = do
+handshake sess@Session{sessPeerId=peerId} addr infoHash = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
       Left err -> do
@@ -153,7 +155,7 @@ sendExtendedHs sess pc = do
 -- | Process incoming handshake; update data structures, spawn socket
 -- listener.
 handleHandshake :: Session -> Socket -> SockAddr -> Listener -> Handshake -> IO ()
-handleHandshake sess@(Session _ ih peers _ _) sock addr listener hs
+handleHandshake sess@Session{sessInfoHash=ih, sessPeers=peers} sock addr listener hs
   | ih == hInfoHash hs = do
       peers' <- takeMVar peers
       case M.lookup addr peers' of

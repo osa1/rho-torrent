@@ -76,7 +76,8 @@ runMagnet magnetStr = do
       Right m@(Magnet hash trackers _) -> do
         peerId  <- generatePeerId
         let port = fromIntegral (5678 :: Word16)
-        session <- initMagnetSession port m peerId
+        miDone <- newEmptyMVar
+        session <- initMagnetSession port m peerId (putMVar miDone ())
         PeerResponse _ _ _ peers <- mconcat <$>
           mapM (requestPeers peerId port hash (mkTorrentFromMagnet m)) trackers
         forM_ peers $ \peer -> void $ forkIO $ void $ handshake session peer hash
@@ -85,7 +86,14 @@ runMagnet magnetStr = do
         threadDelay (1000000 * 5)
         putStrLn $ "Sending metainfo requests."
         miPieceMgr <- fromJust <$> readMVar (sessMIPieceMgr session)
-        loop session miPieceMgr
+
+        loopThread <- async $ loop session miPieceMgr
+        miDoneThread <- async $ void $ readMVar miDone
+
+        -- loop thread never terminates, I'm just using `waitAnyCancel` to
+        -- interrupt loop thread when metainfo download is complete.
+        waitAnyCancel [loopThread, miDoneThread]
+
         putStrLn $ "Downloaded the info. Parsing..."
         bytes <- getBytes miPieceMgr
         case parseInfoDict bytes of
@@ -95,14 +103,12 @@ runMagnet magnetStr = do
             if iHash info == hash
               then putStrLn "Hash correct"
               else putStrLn "Wrong hash"
-        return ()
   where
     loop sess pieces = do
       missings <- missingPieces pieces
-      unless (null missings) $ do
-        sendMetainfoRequests (sessPeers sess) pieces
-        threadDelay (1000000 * 5)
-        loop sess pieces
+      sendMetainfoRequests (sessPeers sess) pieces
+      threadDelay (1000000 * 5)
+      loop sess pieces
 
 runTorrent :: FilePath -> IO ()
 runTorrent filePath = do
