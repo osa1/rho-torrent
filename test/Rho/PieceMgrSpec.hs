@@ -89,32 +89,29 @@ bigPieceTest = TestLabel "piece size > torrent size" $ TestCase $ do
 
 testTorrentPieceTest :: Test
 testTorrentPieceTest = TestLabel "test.torrent pieces" $ TestCase $ do
-    miContents <- B.readFile "test/test.torrent"
-    case parseMetainfo miContents of
-      Left err -> assertFailure $ "Can't parse test.torrent: " ++ err
-      Right mi -> do
-        pieceMgr <- newPieceMgr (fromIntegral $ torrentSize $ mInfo mi)
-                                (fromIntegral $ iPieceLength $ mInfo mi)
-        missings <- missingPieces pieceMgr
-        assertEqual "missing pieces are wrong" [(0, 0, 12)] missings
-        pieceMsg <- B.readFile "test/test_data/test_torrent_piece"
-        case parsePeerMsg pieceMsg of
-          Left err -> assertFailure $ "Can't parse piece message: " ++ err
-          Right (Piece pIdx pOffset pData) -> do
-            writePiece pieceMgr pIdx pOffset pData
-            missings1 <- missingPieces pieceMgr
-            assertEqual "missing pieces are wrong" [] missings1
-            check <- checkPieces pieceMgr 0 (head $ iPieces $ mInfo mi)
-            assertBool "piece hash check failed" check
-            files <- generateFiles pieceMgr (mInfo mi)
-            let expectedFiles =
-                  [ ("seed_files/file1.txt", "file1\n")
-                  , ("seed_files/file2.txt", "file2\n")
-                  ]
-            assertEqual "generated files are wrong" expectedFiles files
-            d <- getPieceData pieceMgr 0 0 20
-            assertEqual "returned piece data is wrong" (Just pData) d
-          Right msg -> assertFailure $ "Parsed piece message to somehing else: " ++ show msg
+    mi <- parseMIAssertion "test/test.torrent"
+    pieceMgr <- newPieceMgr (fromIntegral $ torrentSize $ mInfo mi)
+                            (fromIntegral $ iPieceLength $ mInfo mi)
+    missings <- missingPieces pieceMgr
+    assertEqual "missing pieces are wrong" [(0, 0, 12)] missings
+    pieceMsg <- B.readFile "test/test_data/test_torrent_piece"
+    case parsePeerMsg pieceMsg of
+      Left err -> assertFailure $ "Can't parse piece message: " ++ err
+      Right (Piece pIdx pOffset pData) -> do
+        writePiece pieceMgr pIdx pOffset pData
+        missings1 <- missingPieces pieceMgr
+        assertEqual "missing pieces are wrong" [] missings1
+        check <- checkPieces pieceMgr 0 (head $ iPieces $ mInfo mi)
+        assertBool "piece hash check failed" check
+        files <- generateFiles pieceMgr (mInfo mi)
+        let expectedFiles =
+              [ ("seed_files/file1.txt", "file1\n")
+              , ("seed_files/file2.txt", "file2\n")
+              ]
+        assertEqual "generated files are wrong" expectedFiles files
+        d <- getPieceData pieceMgr 0 0 20
+        assertEqual "returned piece data is wrong" (Just pData) d
+      Right msg -> assertFailure $ "Parsed piece message to somehing else: " ++ show msg
 
 testNextMissingPart :: Test
 testNextMissingPart = TestList
