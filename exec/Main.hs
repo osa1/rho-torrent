@@ -44,11 +44,7 @@ main = do
     case args of
       ["--magnet", magnetStr] -> runMagnet magnetStr
       ["--torrent", torrentPath] -> runTorrent torrentPath
-      ["--magnet", magnetStr, "--scrape"] -> scrapeMagnet magnetStr
       _ -> putStrLn $ "Don't know what to do with args: " ++ show args
-
-scrapeMagnet :: String -> IO ()
-scrapeMagnet = undefined
 
 requestPeers :: PeerId -> PortNumber -> InfoHash -> Torrent -> Tracker -> IO PeerResponse
 requestPeers pid port hash torrent (HTTPTracker uri) = do

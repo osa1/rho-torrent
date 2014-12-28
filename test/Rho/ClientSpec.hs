@@ -37,6 +37,7 @@ spec :: Spec
 spec = do
     describe "client functions" $ do
       fromHUnitTest $ TestLabel "connecting" connectTest
+      fromHUnitTest $ TestLabel "scraping" scrapeTest
       fromHUnitTest $ TestLabel "metadata transfer" metadataTransferTest
 
 connectTest :: Test
@@ -58,6 +59,29 @@ connectTest = TestCase $ do
         ret <- connectRequest udpComms sockAddr
         assertBool "Peer can't connect" $ isRight ret
         terminateProcess tracker
+
+scrapeTest :: Test
+scrapeTest = TestCase $ do
+  pwd <- getCurrentDirectory
+  let torrentPath = pwd </> "test/test.torrent"
+  torrentContents <- B.readFile torrentPath
+  case parseMetainfo torrentContents of
+    Left err -> assertFailure $ "Failed to parse torrent: " ++ err
+    Right mi -> do
+      hostAddr <- inet_addr "127.0.0.1"
+      let sockAddr = SockAddrInet (fromIntegral (6969 :: Word16)) hostAddr
+
+      putStrLn "Spawning tracker"
+      tracker <- spawnTracker pwd []
+      threadDelay 500000
+
+      udpComms <- initUDPCommHandler
+      scrapeRet <- scrapeRequestUDP udpComms sockAddr [iHash $ mInfo mi]
+      case scrapeRet of
+        Left err -> assertFailure $ "Can't scrape: " ++ err
+        Right sr -> putStrLn $ "Scrape result: " ++ show sr
+
+      terminateProcess tracker
 
 metadataTransferTest :: Test
 metadataTransferTest = TestCase $ do
