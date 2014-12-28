@@ -114,6 +114,24 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
             pc <- readIORef peer
             void $ sendMessage pc $ Request pIdx pOffset (min len $ pcMaxPieceSize pc)
 
+handleMessage' sess peer (Request pIdx pOffset pLen) = do
+    pc <- readIORef peer
+    unless (pcPeerChoking pc) $ do
+      pm <- readMVar $ sessPieceMgr sess
+      case pm of
+        Just pm' -> do
+          pData <- getPieceData pm' pIdx pOffset pLen
+          case pData of
+            Nothing ->
+              -- we don't have the piece data
+              -- TODO: should I send a cancel message or close the
+              -- connection?
+              return ()
+            Just bytes -> void $ sendMessage pc (Piece pIdx pOffset bytes)
+        Nothing ->
+          -- TODO: should I close the connection?
+          return ()
+
 handleMessage' sess peer (Extended (ExtendedHandshake msgTbl msgData hsData)) = do
     putStrLn "Got extended handshake."
     metadataSize <- atomicModifyIORef' peer $ \pc' ->
