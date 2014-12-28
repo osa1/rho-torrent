@@ -128,6 +128,10 @@ testNextMissingPart = TestList
       writePiece mgr 1 6 (B.pack [0, 0, 0, 0])
       missing4 <- nextMissingPart mgr 1
       assertEqual "next missing part is wrong" Nothing missing4
+  , TestLabel "nextMissingPart - regression" $ TestCase $ do
+      mgr <- newPieceMgr 12 16384
+      missing1 <- nextMissingPart mgr 0
+      assertEqual "next missing part is wrong" (Just (0, 12)) missing1
   ]
 
 testGetPieceData :: Test
