@@ -21,7 +21,7 @@ import           Network.Socket.ByteString
 import           System.Random                 (randomIO)
 
 import           Rho.InfoHash
-import           Rho.PeerComms.Handshake
+import           Rho.PeerComms.PeerId
 import           Rho.SessionState              (SessStats)
 import           Rho.TrackerComms.PeerResponse
 import           Rho.TrackerComms.UDP.Request  as Req

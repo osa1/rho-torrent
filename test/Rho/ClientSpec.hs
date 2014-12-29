@@ -30,6 +30,7 @@ import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
 import           Rho.PeerComms.PeerConnState
+import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr
 import           Rho.Session
 import           Rho.SessionState

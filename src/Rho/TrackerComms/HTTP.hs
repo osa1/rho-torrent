@@ -17,7 +17,7 @@ import           Network.URI                   (URI, uriQuery)
 
 import           Rho.InfoHash
 import           Rho.Parser
-import           Rho.PeerComms.Handshake
+import           Rho.PeerComms.PeerId
 import           Rho.TrackerComms.PeerResponse
 import           Rho.Utils
 

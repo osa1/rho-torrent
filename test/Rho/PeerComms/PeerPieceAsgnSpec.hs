@@ -18,8 +18,8 @@ import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck
 
-import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.PeerConnState
+import           Rho.PeerComms.PeerId
 import           Rho.PeerComms.PeerPieceAsgn
 import           Rho.PieceMgr
 

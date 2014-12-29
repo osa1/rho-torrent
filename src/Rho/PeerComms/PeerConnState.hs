@@ -9,6 +9,7 @@ import qualified Rho.Bitfield            as BF
 import           Rho.InfoHash
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
+import           Rho.PeerComms.PeerId
 
 -- | State of connection with a peer.
 data PeerConn = PeerConn

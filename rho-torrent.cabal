@@ -28,6 +28,7 @@ library
     Rho.PeerComms.Message
     Rho.PeerComms.PeerConnection
     Rho.PeerComms.PeerConnState
+    Rho.PeerComms.PeerId
     Rho.PeerComms.PeerPieceAsgn
     Rho.PieceMgr
     Rho.Session
@@ -77,15 +78,9 @@ executable rho
 
   build-depends:
       base >=4.7 && <5
-    , async
     , bytestring
-    , containers
     , hslogger
-    , HTTP
     , RhoTorrent
-    -- temp
-    , network
-    , random
 
 test-suite test
   type:             exitcode-stdio-1.0

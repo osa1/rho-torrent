@@ -1,22 +1,17 @@
 module Main where
 
-import           Control.Applicative
-import           Control.Monad
-import qualified Data.ByteString.Builder   as BB
-import qualified Data.ByteString.Char8     as B
-import qualified Data.ByteString.Lazy      as LB
+import qualified Data.ByteString           as B
+import qualified Data.ByteString.Char8     as BC
 import           Data.Maybe
-import           Data.Monoid
 import           System.Environment        (getArgs)
 import           System.Log.Formatter
 import           System.Log.Handler
 import           System.Log.Handler.Simple
 import           System.Log.Logger
-import           System.Random             (randomIO)
 
 import           Rho.Magnet
 import           Rho.Metainfo
-import           Rho.PeerComms.Handshake
+import           Rho.PeerComms.PeerId
 import           Rho.Session
 
 main :: IO ()
@@ -30,7 +25,7 @@ main = do
 
 runMagnet :: String -> IO ()
 runMagnet magnetStr = do
-    case parseMagnet (B.pack magnetStr) of
+    case parseMagnet (BC.pack magnetStr) of
       Left err -> error $ "Can't parse magnet string: " ++ err
       Right m@(Magnet _ trackers _) -> do
         pid  <- generatePeerId
@@ -46,11 +41,6 @@ runTorrent filePath = do
         pid <- generatePeerId
         sess <- initTorrentSession (mInfo mi) pid
         runTorrentSession sess (mAnnounce mi : concat (fromMaybe [] (mAnnounceList mi))) (mInfo mi)
-
--- | Generate 20-byte peer id.
-generatePeerId :: IO PeerId
-generatePeerId =
-    PeerId . LB.toStrict . BB.toLazyByteString . mconcat . map BB.word8 <$> replicateM 20 randomIO
 
 installLogger :: IO ()
 installLogger = do

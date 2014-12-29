@@ -7,8 +7,8 @@ import           Data.Word
 import           Network.Socket              (PortNumber, SockAddr)
 
 import           Rho.InfoHash
-import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.PeerConnState
+import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr
 
 data Session = Session

@@ -8,7 +8,7 @@ import           Data.Monoid
 import           Data.Word
 
 import           Rho.InfoHash
-import           Rho.PeerComms.Handshake
+import           Rho.PeerComms.PeerId
 import           Rho.TrackerComms.UDP.Types
 
 data AnnounceEvent = None | Completed | Started | Stopped deriving (Show, Eq)

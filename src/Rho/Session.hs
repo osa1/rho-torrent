@@ -33,6 +33,7 @@ import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection  hiding (errorLog, logger,
                                                 warning)
 import           Rho.PeerComms.PeerConnState
+import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr
 import           Rho.SessionState
 import           Rho.Tracker

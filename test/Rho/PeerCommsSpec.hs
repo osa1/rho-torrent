@@ -32,6 +32,7 @@ import           Rho.Listener                 hiding (listener)
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
+import           Rho.PeerComms.PeerId
 import           Rho.Session
 import           Rho.TestUtils
 
