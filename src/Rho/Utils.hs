@@ -11,14 +11,19 @@ import           Data.Bits                        (shiftL)
 import qualified Data.ByteString                  as B
 import qualified Data.ByteString.Builder          as BB
 import qualified Data.ByteString.Char8            as BC
+import           Data.ByteString.Internal         (ByteString (PS))
 import qualified Data.ByteString.Lazy             as LB
 import           Data.Char
 import           Data.Digest.SHA1                 (Word160 (..))
 import           Data.Monoid
 import           Data.Time.Clock                  (getCurrentTime, utctDayTime)
+import           Data.Vector.Storable             (Vector, unsafeFromForeignPtr,
+                                                   unsafeToForeignPtr)
 import           Data.Word
+import           Data.Word                        (Word8)
 import           Network.Socket                   (PortNumber (..),
                                                    SockAddr (..))
+
 
 import           Rho.Parser
 
@@ -185,3 +190,14 @@ currentTimeMillis = do
 word160ToBS :: Word160 -> B.ByteString
 word160ToBS (Word160 w1 w2 w3 w4 w5) = LB.toStrict . BB.toLazyByteString . mconcat $
     map BB.word32BE [w1, w2, w3, w4, w5]
+
+-- | Convert a ByteString into a storable Vector.
+toByteVector :: ByteString -> Vector Word8
+toByteVector (PS fptr offset idx) = unsafeFromForeignPtr fptr offset idx
+
+-- | Convert a storable Vector to a ByteString.
+fromByteVector :: Vector Word8 -> ByteString
+fromByteVector v =
+    PS fptr offset idx
+  where
+    (fptr, offset, idx) = unsafeToForeignPtr v

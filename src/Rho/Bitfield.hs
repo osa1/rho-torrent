@@ -1,11 +1,14 @@
 module Rho.Bitfield where
 
 import           Control.Monad
-import qualified Data.Bits                   as B
-import qualified Data.ByteString             as B
-import qualified Data.Set                    as S
-import qualified Data.Vector.Unboxed.Mutable as MV
+import qualified Data.Bits                    as B
+import qualified Data.ByteString              as B
+import qualified Data.Set                     as S
+import qualified Data.Vector.Storable         as SV
+import qualified Data.Vector.Storable.Mutable as MV
 import           Data.Word
+
+import           Rho.Utils
 
 data Bitfield = Bitfield (MV.IOVector Word8) Int
 
@@ -37,6 +40,9 @@ full len = do
     v <- MV.replicate (if m == 0 then d else d + 1) 0xFF
     return $ Bitfield v len
 
+length :: Bitfield -> Int
+length (Bitfield _ len) = len
+
 -- | Create a bitfield from given bytestring and length.
 --
 -- >>> availableBits =<< fromBS (B.pack [0, 1]) 16
@@ -47,22 +53,11 @@ full len = do
 --
 fromBS :: B.ByteString -> Int -> IO Bitfield
 fromBS bs len = do
-    bf@(Bitfield v _) <- empty len
-    iter v (B.unpack bs) 0
-    return bf
-  where
-    iter :: MV.IOVector Word8 -> [Word8] -> Int -> IO ()
-    iter _ [] _ = return ()
-    iter v wl@(w : ws) i
-      | i >= len  = return ()
-      | otherwise = do
-          let byteIdx = i `div` 8
-              bitIdx  = 7 - (i `mod` 8)
-          when (B.testBit w bitIdx) $ do
-            b <- MV.unsafeRead v byteIdx
-            MV.unsafeWrite v byteIdx (B.setBit b bitIdx)
-          if bitIdx == 0 then iter v ws (i + 1)
-                         else iter v wl (i + 1)
+    v <- SV.unsafeThaw (toByteVector (B.copy bs))
+    return $ Bitfield v len
+
+toBS :: Bitfield -> IO B.ByteString
+toBS bf@(Bitfield v _) = fromByteVector `fmap` SV.freeze v
 
 -- | Create a bitfield from given bit indexes and length.
 --

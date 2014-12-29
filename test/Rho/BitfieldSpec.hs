@@ -48,6 +48,13 @@ spec = do
                                                       else not <$> BF.test bf idx
       return $ and tests .&&. and negTests
 
+    modifyMaxSuccess (const 1000) $ prop "bytestring conversions" $ \ws ->
+      ioProperty $ do
+        let bs = B.pack ws
+        bf  <- BF.fromBS bs (B.length bs * 8)
+        bs' <- BF.toBS bf
+        return $ bs' == bs
+
   describe "bitfield edge cases (extra trailing zero bits)" $ do
     fromHUnitTest $ TestLabel "extra bits should be ignored" $ TestCase $ do
       bf       <- BF.fromBS (B.pack [0xFF, 0xFF]) 10
