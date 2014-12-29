@@ -1,4 +1,3 @@
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables #-}
 module Main where
 
 import           Control.Applicative
