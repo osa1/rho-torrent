@@ -52,7 +52,7 @@ trackerGen :: Gen Tracker
 trackerGen = oneof [http, udp]
   where
     http = return $ HTTPTracker $ fromJust $ parseURI "http://testserver.com:1234/announce"
-    udp = return $ UDPTracker "0.0.0.0" (fromIntegral 1234)
+    udp = return $ UDPTracker "0.0.0.0" (fromIntegral (1234 :: Int))
 
 shouldParse :: Test
 shouldParse = TestCase $ do

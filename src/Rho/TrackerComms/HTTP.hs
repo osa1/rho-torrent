@@ -8,6 +8,7 @@ import qualified Data.ByteString               as B
 import qualified Data.ByteString.Char8         as BC
 import           Data.List                     (intercalate)
 import           Data.Maybe                    (fromMaybe)
+import           Data.Word
 import           Network.Browser               (browse, request,
                                                 setAllowRedirects)
 import           Network.HTTP                  (defaultGETRequest, rspBody)
@@ -17,13 +18,13 @@ import           Network.URI                   (URI, uriQuery)
 import           Rho.InfoHash
 import           Rho.Parser
 import           Rho.PeerComms.Handshake
-import           Rho.Torrent
 import           Rho.TrackerComms.PeerResponse
 import           Rho.Utils
 
 peerRequestHTTP
-  :: PeerId -> PortNumber -> URI -> Torrent -> InfoHash -> IO (Either String PeerResponse)
-peerRequestHTTP (PeerId peerId) port uri torrent hash = do
+  :: PeerId -> PortNumber -> URI -> (Word64, Word64, Word64)
+  -> InfoHash -> IO (Either String PeerResponse)
+peerRequestHTTP (PeerId peerId) port uri (downloaded, left, uploaded) hash = do
     (_, resp) <- browse $ do
       setAllowRedirects True -- handle HTTP redirects
       request $ defaultGETRequest updatedURI
@@ -38,9 +39,9 @@ peerRequestHTTP (PeerId peerId) port uri torrent hash = do
       [ ("info_hash", urlEncodeBytes $ unwrapInfoHash hash)
       , ("peer_id", urlEncodeBytes peerId)
       , ("port", show port)
-      , ("uploaded", show $ uploaded torrent)
-      , ("downloaded", show $ downloaded torrent)
-      , ("left", show $ left torrent)
+      , ("uploaded", show uploaded)
+      , ("downloaded", show downloaded)
+      , ("left", show left)
       , ("compact", "1")
       , ("numwant", "80")
       , ("event", "started")

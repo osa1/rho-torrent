@@ -22,7 +22,7 @@ import           System.Random                 (randomIO)
 
 import           Rho.InfoHash
 import           Rho.PeerComms.Handshake
-import           Rho.Torrent
+import           Rho.SessionState              (SessStats)
 import           Rho.TrackerComms.PeerResponse
 import           Rho.TrackerComms.UDP.Request  as Req
 import           Rho.TrackerComms.UDP.Response as Resp
@@ -43,17 +43,17 @@ data UDPCommHandler = UDPCommHandler
 
 initUDPCommHandler :: IO UDPCommHandler
 initUDPCommHandler = do
-    sock <- socket AF_INET Datagram defaultProtocol
-    bind sock (SockAddrInet aNY_PORT 0)
+    skt <- socket AF_INET Datagram defaultProtocol
+    bind skt (SockAddrInet aNY_PORT 0)
 
     tChans <- newMVar M.empty
 
     -- data chan is used to push UDP packages to response handler
     dataChan <- newChan
-    _ <- async $ sockListener sock dataChan
+    _ <- async $ sockListener skt dataChan
     _ <- async $ responseHandler dataChan tChans
 
-    return $ UDPCommHandler sock tChans
+    return $ UDPCommHandler skt tChans
 
 -- | Socket listener reads stream from the socket and passes it to channel.
 --
@@ -92,8 +92,9 @@ responseHandler dataChan tChan = do
       Left err -> putStrLn $ "Can't parse server response: " ++ err
     responseHandler dataChan tChan
 
-peerRequestUDP :: UDPCommHandler -> SockAddr -> PeerId -> Torrent -> IO (Either String PeerResponse)
-peerRequestUDP ch trackerAddr peerId torrent = do
+peerRequestUDP
+  :: UDPCommHandler -> SockAddr -> PeerId -> InfoHash -> SessStats -> IO (Either String PeerResponse)
+peerRequestUDP ch trackerAddr peerId infoHash (d, l, u) = do
     cid <- connectRequest ch trackerAddr
     case cid of
       Left err -> return $ Left err
@@ -102,9 +103,7 @@ peerRequestUDP ch trackerAddr peerId torrent = do
     announceRequest :: ConnectionId -> IO (Either String PeerResponse)
     announceRequest cid = do
       annReqTid <- randomIO
-      let msg = AnnounceRequest cid annReqTid (infoHash torrent)
-                                peerId (downloaded torrent) (left torrent)
-                                (uploaded torrent) Started
+      let msg = AnnounceRequest cid annReqTid infoHash peerId d l u Started
       annResp <- req ch trackerAddr msg
       case annResp of
         AnnounceResponse _ ps -> return $ Right ps
@@ -135,10 +134,10 @@ connectRequest ch trackerAddr = do
       _ -> return $ Left $ "Wrong response: " ++ show connResp
 
 req :: UDPCommHandler -> SockAddr -> UDPRequest -> IO UDPResponse
-req UDPCommHandler{sock=skt, transactionChans=tChan} addr req = do
+req UDPCommHandler{sock=skt, transactionChans=tChan} addr udpReq = do
     -- TODO: set timeouts
-    let reqTid = Req.tid req
+    let reqTid = Req.tid udpReq
     respVar <- newEmptyMVar
     modifyMVar_ tChan $ return . M.insert reqTid respVar
-    sendAllTo skt (mkTrackerMsg req) addr
+    sendAllTo skt (mkTrackerMsg udpReq) addr
     takeMVar respVar

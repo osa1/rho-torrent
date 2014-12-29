@@ -4,72 +4,149 @@
 -- A new session is created for every torrent.
 module Rho.Session where
 
+import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
-import qualified Data.BEncode                 as BE
-import qualified Data.ByteString              as B
-import qualified Data.ByteString.Lazy         as LB
+import qualified Data.BEncode                  as BE
+import qualified Data.ByteString               as B
+import qualified Data.ByteString.Lazy          as LB
 import           Data.IORef
-import qualified Data.Map                     as M
+import qualified Data.Map                      as M
+import           Data.Monoid
+import qualified Data.Set                      as S
 import           Data.Word
 import           GHC.IO.Exception
-import           Network.Socket               hiding (KeepAlive, recv, recvFrom,
-                                               recvLen, send, sendTo)
+import           Network.Socket                hiding (KeepAlive, recv,
+                                                recvFrom, recvLen, send, sendTo)
 import           Network.Socket.ByteString
 import           System.IO.Error
-import qualified System.Log.Logger            as L
+import qualified System.Log.Logger             as L
 
 import           Rho.InfoHash
-import           Rho.Listener                 (Listener, initListener, recvLen,
-                                               stopListener)
+import           Rho.Listener                  (Listener, initListener, recvLen,
+                                                stopListener)
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
-import           Rho.PeerComms.PeerConnection hiding (errorLog, logger, warning)
+import           Rho.PeerComms.PeerConnection  hiding (errorLog, logger,
+                                                warning)
 import           Rho.PeerComms.PeerConnState
 import           Rho.PieceMgr
 import           Rho.SessionState
+import           Rho.Tracker
+import           Rho.TrackerComms.PeerRequest
+import           Rho.TrackerComms.PeerResponse
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using magnet URI.
-initMagnetSession :: PortNumber -> Magnet -> PeerId -> IO () -> IO () -> IO Session
-initMagnetSession port m pid mic tc = initMagnetSession' port 0 m pid mic tc
+initMagnetSession :: Magnet -> PeerId -> IO Session
+initMagnetSession m pid = initMagnetSession' 0 m pid
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using info dictionary.
-initTorrentSession :: PortNumber -> Info -> PeerId -> IO () -> IO Session
-initTorrentSession port info pid tc = initTorrentSession' port 0 info pid tc
+initTorrentSession :: Info -> PeerId -> IO Session
+initTorrentSession info pid = initTorrentSession' 0 info pid
 
-initMagnetSession' :: PortNumber -> HostAddress -> Magnet -> PeerId -> IO () -> IO () -> IO Session
-initMagnetSession' port host (Magnet ih _ _) pid mic tc = do
-    peers      <- newMVar M.empty
-    pieceMgr   <- newMVar Nothing
-    miPieceMgr <- newMVar Nothing
-    onMIComplete <- newMVar mic
-    onTorrentComplete <- newMVar tc
+initMagnetSession' :: HostAddress -> Magnet -> PeerId -> IO Session
+initMagnetSession' host (Magnet ih _ _) pid = do
     sock <- socket AF_INET Stream defaultProtocol
-    bind sock (SockAddrInet port host)
+    bind sock (SockAddrInet aNY_PORT host)
+    port <- socketPort sock
     listen sock 1
-    let sess    = Session pid ih peers pieceMgr miPieceMgr onMIComplete onTorrentComplete
+    sess <- initSession pid ih port Nothing Nothing
     void $ async $ listenPeerSocket sess sock
     return sess
 
-initTorrentSession' :: PortNumber -> HostAddress -> Info -> PeerId -> IO () -> IO Session
-initTorrentSession' port host info pid tc = do
-    peers      <- newMVar M.empty
-    pieceMgr   <- newMVar . Just =<< newPieceMgr (torrentSize info) (iPieceLength info)
+initTorrentSession' :: HostAddress -> Info -> PeerId -> IO Session
+initTorrentSession' host info pid = do
+    (pieceMgr, _) <- tryReadFiles info ""
     let miData  = LB.toStrict $ BE.encode info
-    miPieceMgr <- newMVar . Just =<< newPieceMgrFromData miData (2 ^ (14 :: Word32))
-    onMIComplete <- newMVar (return ())
-    onTorrentComplete <- newMVar tc
+    miPieceMgr <- Just <$> newPieceMgrFromData miData (2 ^ (14 :: Word32))
     sock       <- socket AF_INET Stream defaultProtocol
-    bind sock (SockAddrInet port host)
+    bind sock (SockAddrInet aNY_PORT host)
+    port       <- socketPort sock
     listen sock 1
-    let sess    = Session pid (iHash info) peers pieceMgr miPieceMgr onMIComplete onTorrentComplete
+    sess <- initSession pid (iHash info) port (Just pieceMgr) miPieceMgr
     void $ async $ listenPeerSocket sess sock
     return sess
+
+runMagnetSession :: Session -> [Tracker] -> IO ()
+runMagnetSession sess@Session{sessInfoHash=hash} trackers = do
+    PeerResponse _ _ _ peers <- mconcat <$> mapM (requestPeers sess) trackers
+    forM_ peers $ \peer -> void $ forkIO $ void $ handshake sess peer hash
+    putStrLn $ "Waiting 5 seconds to establish connections with "
+               ++ show (length peers) ++ " peers."
+    threadDelay (1000000 * 5)
+    putStrLn "Blocking until learning metainfo size from peers..."
+    miPieceMgr <- readMVar (sessMIPieceMgr sess)
+    miDone <- newEmptyMVar
+    modifyMVar_ (sessOnMIComplete sess) (\_ -> return $ putMVar miDone ())
+
+    loopThread   <- async $ loop miPieceMgr
+    miDoneThread <- async $ void $ readMVar miDone
+
+    -- loop thread never terminates, I'm just using `waitAnyCancel` to
+    -- interrupt loop thread when metainfo download is complete.
+    void $ waitAnyCancel [loopThread, miDoneThread]
+
+    putStrLn $ "Downloaded the info. Parsing..."
+    bytes <- getBytes miPieceMgr
+    case parseInfoDict bytes of
+      Left err   -> error $ "Can't parse info dict: " ++ err
+      Right info -> do
+        print info
+        if iHash info == hash
+          then do
+            putStrLn "Hash correct"
+            runTorrentSession sess trackers info
+          else putStrLn "Wrong hash"
+  where
+    loop pieces = do
+      sendMetainfoRequests (sessPeers sess) pieces
+      threadDelay (1000000 * 5)
+      loop pieces
+
+runTorrentSession :: Session -> [Tracker] -> Info -> IO ()
+runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessInfoHash=hash}
+                  trackers info = do
+    PeerResponse _ _ _ peers' <- mconcat <$> mapM (requestPeers sess) trackers
+    connectedPeers <- M.keysSet <$> readMVar peers
+    let newPeers = S.fromList peers' `S.difference` connectedPeers
+    forM_ (S.toList newPeers) $ \peer -> void $ forkIO $ void $ handshake sess peer hash
+
+    -- initialize piece manager
+    pieces' <- takeMVar pieces
+    pmgr <- case pieces' of
+              Nothing   -> do
+                pmgr <- fst <$> tryReadFiles info ""
+                putMVar pieces (Just pmgr)
+                return pmgr
+              Just pmgr -> do
+                putMVar pieces pieces'
+                return pmgr
+
+    -- set the callback
+    torrentDone <- newEmptyMVar
+    torrentDoneThread <- async $ readMVar torrentDone
+
+    -- start the loop
+    loopThread <- async $ loop pmgr
+
+    -- loop until the torrent is complete
+    void $ waitAnyCancel [loopThread, torrentDoneThread]
+
+    putStrLn "Torrent is complete. Checking hashes of pieces."
+    checks <- zipWithM (checkPieces pmgr) [0..] (iPieces info)
+    if and checks
+      then putStrLn "Torrent successfully downloaded."
+      else putStrLn "Some of the hashes don't match."
+  where
+    loop pmgr = do
+      sendPieceRequests peers pmgr
+      threadDelay (1000000 * 5)
+      loop pmgr
 
 -- | Accept incoming connections and spawn a connected socket listener for
 -- every accepted connection.
@@ -146,7 +223,7 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
 
 sendExtendedHs :: Session -> PeerConn -> IO ()
 sendExtendedHs sess pc = do
-    mi <- readMVar $ sessMIPieceMgr sess
+    mi <- tryReadMVar $ sessMIPieceMgr sess
     case mi of
       Nothing -> do
         -- we don't know metainfo size

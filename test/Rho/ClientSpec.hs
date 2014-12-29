@@ -40,6 +40,7 @@ spec = do
       fromHUnitTest $ TestLabel "connecting" connectTest
       fromHUnitTest $ TestLabel "scraping" scrapeTest
       fromHUnitTest $ TestLabel "metadata transfer" metadataTransferTest
+      fromHUnitTest $ TestLabel "torrent transfer" torrentTransferTest
 
 connectTest :: Test
 connectTest = TestCase $ do
@@ -86,21 +87,20 @@ metadataTransferTest = TestCase $ do
         let infoSize = fromIntegral $ LB.length $ BE.encode info
             pid1     = PeerId $ B.pack $ replicate 19 0 ++ [1]
             pid2     = PeerId $ B.pack $ replicate 19 0 ++ [2]
-            port1    = fromIntegral (5445 :: Word16)
-            port2    = fromIntegral (5446 :: Word16)
             hash     = iHash info
             magnet   = Magnet hash [] Nothing
         localhost     <- inet_addr "127.0.0.1"
-        clientWInfo   <- initTorrentSession' port1 localhost info pid1 (return ())
+        clientWInfo   <- initTorrentSession' localhost info pid1
         checkMIPieceMgrInit clientWInfo
         checkMIPieceMgrMissings "clientWInfo" clientWInfo
         magnetComplete <- newEmptyMVar
         let magnetCompleteAction = putMVar magnetComplete ()
         clientWMagnet <-
-          initMagnetSession' port2 localhost magnet pid2 magnetCompleteAction (return ())
+          initMagnetSession' localhost magnet pid2
+        modifyMVar_ (sessOnMIComplete clientWMagnet) (\_ -> return magnetCompleteAction)
         threadDelay 100000
-        hsResult <- handshake clientWMagnet (SockAddrInet port1 localhost) hash
-        -- hsResult <- handshake clientWInfo (SockAddrInet port2 localhost) hash
+        hsResult <- handshake clientWMagnet (SockAddrInet (sessPort clientWInfo) localhost) hash
+        -- hsResult <- handshake clientWInfo (SockAddrInet (sessPort clientWMagnet) localhost) hash
         threadDelay 100000
         case hsResult of
           Left err            -> assertFailure $ "Handshake failed: " ++ err
@@ -117,7 +117,7 @@ metadataTransferTest = TestCase $ do
             -- clientWMagnet's metainfo piece manager should be initialized
             checkMIPieceMgrInit clientWMagnet
 
-            miPieces <- fromJust <$> (readMVar $ sessMIPieceMgr clientWMagnet)
+            miPieces <- fromJust <$> (tryReadMVar $ sessMIPieceMgr clientWMagnet)
             sendMetainfoRequests (sessPeers clientWMagnet) miPieces
             threadDelay 100000
             checkMIPieceMgrMissings "clientWMagnet" clientWMagnet
@@ -149,12 +149,12 @@ metadataTransferTest = TestCase $ do
 
     checkMIPieceMgrInit :: Session -> Assertion
     checkMIPieceMgrInit Session{sessMIPieceMgr=mi} = do
-      mi' <- readMVar mi
-      assertBool "sessMIPieceMgr is not initialized" (isJust mi')
+      miInit <- not <$> isEmptyMVar mi
+      assertBool "sessMIPieceMgr is not initialized" miInit
 
     checkMIPieceMgrMissings :: String -> Session -> Assertion
     checkMIPieceMgrMissings info Session{sessMIPieceMgr=mi} = do
-      mi' <- readMVar mi
+      mi' <- tryReadMVar mi
       case mi' of
         Nothing -> assertFailure $ "session manager is not initialized(" ++ info ++ ")"
         Just mi'' -> do
@@ -165,6 +165,10 @@ metadataTransferTest = TestCase $ do
     checkCallbackCalled var = do
       isEmpty <- isEmptyMVar var
       if isEmpty then assertFailure "Metainfo downloaded callback is not called" else return ()
+
+torrentTransferTest :: Test
+torrentTransferTest = TestCase $ do
+  return ()
 
 spawnTracker :: FilePath -> [String] -> IO ProcessHandle
 spawnTracker pwd args = do

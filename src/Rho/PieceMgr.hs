@@ -167,6 +167,8 @@ checkPieces (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
     bytes <- V.toList <$> V.freeze (MV.slice (fromIntegral start) (fromIntegral end) arr)
     return $ word160ToBS (hash bytes) == pHash
 
+-- | Generate files from given piece manager for the given torrent.
+-- NOTE: This doesn't check hasehes.
 generateFiles :: PieceMgr -> Info -> IO [(FilePath, B.ByteString)]
 generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ _ files) = do
     let (names, sizes) = unzip $ map (\(p, s) -> (BC.unpack name </> p, s)) $ collectFiles files

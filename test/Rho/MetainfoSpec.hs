@@ -66,10 +66,10 @@ regressions = TestList $ map TestCase [regression1]
       ppProp mi
 
 parseMIAssertion :: FilePath -> Assertion' Metainfo
-parseMIAssertion path = do
-    mi <- parseMetainfo <$> B.readFile path
+parseMIAssertion miPath = do
+    mi <- parseMetainfo <$> B.readFile miPath
     case mi of
-      Left err  -> assertFailure' $ "Cant parse " ++ path ++ ": " ++ err
+      Left err  -> assertFailure' $ "Cant parse " ++ miPath ++ ": " ++ err
       Right mi' -> return mi'
 
 -- | Check property: `BE.fromBEncode . BE.toBEncode` should preserve

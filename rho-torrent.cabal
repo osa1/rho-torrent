@@ -32,9 +32,9 @@ library
     Rho.PieceMgr
     Rho.Session
     Rho.SessionState
-    Rho.Torrent
     Rho.Tracker
     Rho.TrackerComms.HTTP
+    Rho.TrackerComms.PeerRequest
     Rho.TrackerComms.PeerResponse
     Rho.TrackerComms.UDP
     Rho.TrackerComms.UDP.Request

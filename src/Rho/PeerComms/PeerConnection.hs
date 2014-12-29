@@ -127,15 +127,15 @@ handleMessage' sess peer (Extended (ExtendedHandshake msgTbl msgData hsData)) = 
     case metadataSize of
       Nothing -> return ()
       Just s  -> do
-        pm <- takeMVar $ sessMIPieceMgr sess
+        pm <- tryReadMVar $ sessMIPieceMgr sess
         case pm of
           Nothing -> do
             pm' <- newPieceMgr s (2 ^ (14 :: Word32))
-            putMVar (sessMIPieceMgr sess) (Just pm')
-          Just _ -> putMVar (sessMIPieceMgr sess) pm
+            void $ tryPutMVar (sessMIPieceMgr sess) pm'
+          Just _ -> return ()
 
 handleMessage' sess peer (Extended (MetadataRequest pIdx)) = do
-    miPieces <- readMVar (sessMIPieceMgr sess)
+    miPieces <- tryReadMVar (sessMIPieceMgr sess)
     pc <- readIORef peer
     case miPieces of
       Nothing ->
@@ -152,7 +152,7 @@ handleMessage' sess peer (Extended (MetadataRequest pIdx)) = do
 
 handleMessage' sess peer (Extended (MetadataData pIdx totalSize pData)) = do
     putStrLn "got metadata piece"
-    miPieces <- readMVar (sessMIPieceMgr sess)
+    miPieces <- tryReadMVar (sessMIPieceMgr sess)
     miPieces' <- case miPieces of
                    Nothing -> newPieceMgr totalSize (2 ^ (14 :: Word32))
                    Just pm -> return pm
@@ -164,7 +164,9 @@ handleMessage' sess peer (Extended (MetadataData pIdx totalSize pData)) = do
       ((newPIdx, _, _) : _) -> do
         pc <- readIORef peer
         void $ sendMessage pc $ Extended $ MetadataRequest newPIdx
+        atomicModifyIORef' peer $ \pc' -> (pc'{pcRequest=Just newPIdx}, ())
       _ -> do
+        atomicModifyIORef' peer $ \pc' -> (pc'{pcRequest=Nothing}, ())
         cb <- modifyMVar (sessOnMIComplete sess) $ \cb -> return (return (), cb)
         cb
 
@@ -179,16 +181,21 @@ sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
 sendMetainfoRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO ()
 sendMetainfoRequests peers pieces = do
     missings <- missingPieces pieces
-    availablePeers <- readMVar peers >>= fmap (filter peerFilter) . mapM readIORef . M.elems
-    let mips  = map (\(pIdx, _, _) -> pIdx) missings
-        asgns = zip availablePeers mips
+    peersMap <- readMVar peers
+    let peerRefs = M.elems peersMap
+    peerVals <- mapM readIORef peerRefs
+    let peerRefsMap    = M.fromList $ zip peerVals peerRefs
+        availablePeers = filter peerFilter peerVals
+        mips           = map (\(pIdx, _, _) -> pIdx) missings
+        asgns          = zip availablePeers mips
     putStrLn $ "assignments: " ++ show asgns
-    forM_ asgns $ \(pc, pIdx) ->
-      sendMessage pc $ Extended $ MetadataRequest pIdx
+    forM_ asgns $ \(pc, pIdx) -> do
+      void $ sendMessage pc $ Extended $ MetadataRequest pIdx
+      atomicModifyIORef' (fromJust $ M.lookup pc peerRefsMap) $ \pc' -> (pc'{pcRequest=Just pIdx}, ())
   where
     peerFilter :: PeerConn -> Bool
-    peerFilter PeerConn{pcMetadataSize=Just _} = True
-    peerFilter _                               = False
+    peerFilter PeerConn{pcMetadataSize=Just _, pcRequest=Nothing} = True
+    peerFilter _                                                  = False
 
 sendPieceRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO ()
 sendPieceRequests peers pieces = do
