@@ -257,11 +257,6 @@ instance Arbitrary PeerId where
     arbitrary = PeerId `fmap` genBytes 20
     shrink _  = []
 
-instance Arbitrary BF.Bitfield where
-    -- let's generate fixed length for now
-    arbitrary = flip BF.Bitfield 40 <$> genBytes 5
-    shrink _ = []
-
 instance Arbitrary PeerMsg where
     arbitrary = oneof
       [ return KeepAlive

@@ -55,10 +55,10 @@ newPieceMgrFromData bs pieceLength = do
 
 -- | Generate a bitfield from piece manager.
 -- TODO: This should be very slow, benchmark and improve.
-makeBitfield :: PieceMgr -> IO BF.Bitfield
+makeBitfield :: PieceMgr -> IO B.ByteString
 makeBitfield (PieceMgr _ _ pieces m) = do
     bits <- snd <$> readMVar m
-    (flip BF.Bitfield (fromIntegral pieces) . B.pack) <$> collectWords bits
+    B.pack <$> collectWords bits
   where
     collectWords :: MV.IOVector Bool -> IO [Word8]
     collectWords = iter 0 7 0

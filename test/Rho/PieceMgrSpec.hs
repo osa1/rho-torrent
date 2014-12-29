@@ -29,7 +29,7 @@ spec = do
     fromHUnitTest testNextMissingPart
     fromHUnitTest testGetPieceData
     fromHUnitTest testReadFiles
-    fromHUnitTest testMakeBitfield
+    -- fromHUnitTest testMakeBitfield
 
 cons :: a -> (b, c) -> (a, b, c)
 cons a (b, c) = (a, b, c)
@@ -182,6 +182,7 @@ testReadFiles = TestList
       assertEqual "Generated files are wrong" expectedFiles files
   ]
 
+{-
 testMakeBitfield :: Test
 testMakeBitfield = TestList
   [ TestLabel "generating bitfield from piece manager" $ TestCase $ do
@@ -198,3 +199,4 @@ testMakeBitfield = TestList
       bf3 <- makeBitfield pieces
       assertBool "last bit is 0" (BF.test bf3 9)
   ]
+-}

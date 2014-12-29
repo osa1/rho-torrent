@@ -15,7 +15,6 @@ import           Data.Monoid
 import           Data.Word
 import           Network.Socket          hiding (KeepAlive)
 
-import qualified Rho.Bitfield            as BF
 import           Rho.Parser
 import           Rho.Utils
 
@@ -26,7 +25,7 @@ data PeerMsg
   | Interested
   | NotInterested
   | Have Word32
-  | Bitfield BF.Bitfield
+  | Bitfield B.ByteString
   | Request Word32 -- piece index
             Word32 -- offset in piece
             Word32 -- length
@@ -107,7 +106,7 @@ mkPeerMsg' _ Unchoke = return [BB.word32BE 1, BB.word8 1]
 mkPeerMsg' _ Interested = return [BB.word32BE 1, BB.word8 2]
 mkPeerMsg' _ NotInterested = return [BB.word32BE 1, BB.word8 3]
 mkPeerMsg' _ (Have piece) = return [BB.word32BE 5, BB.word8 4, BB.word32BE piece]
-mkPeerMsg' _ (Bitfield (BF.Bitfield bf _)) = return
+mkPeerMsg' _ (Bitfield bf) = return
     [ BB.word32BE (fromIntegral $ 1 + B.length bf)
     , BB.word8 5
     , BB.byteString bf ]
@@ -191,10 +190,9 @@ parsePeerMsg bs = fmap fst $ execParser bs $ do
         -- (so `len` is always 5)
         -- TODO: maybe make a sanity check here
         Have <$> readWord32
-      5 -> do
+      5 ->
         -- TODO: check for errors
-        bytes <- replicateM (fromIntegral len - 1) readWord
-        return $ Bitfield $ BF.Bitfield (B.pack bytes) (length bytes * 8)
+        (Bitfield . B.pack) <$> replicateM (fromIntegral len - 1) readWord
       6 -> Request <$> readWord32 <*> readWord32 <*> readWord32
       7 -> Piece <$> readWord32 <*> readWord32 <*> consume
       8 -> Cancel <$> readWord32 <*> readWord32 <*> readWord32

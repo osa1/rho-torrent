@@ -1,8 +1,10 @@
-{-# LANGUAGE LambdaCase, NondecreasingIndentation, OverloadedStrings #-}
+{-# LANGUAGE LambdaCase, NondecreasingIndentation, OverloadedStrings,
+             TupleSections #-}
 
 -- | Handling communications with peers after a successful handshake.
 module Rho.PeerComms.PeerConnection where
 
+import           Control.Applicative
 import           Control.Concurrent
 import           Control.Monad
 import qualified Data.ByteString             as B
@@ -11,6 +13,7 @@ import           Data.List                   (find)
 import qualified Data.Map                    as M
 import           Data.Maybe
 import           Data.Monoid
+import qualified Data.Set                    as S
 import           Data.Word
 import           Network.Socket              hiding (KeepAlive, recv, recvFrom,
                                               recvLen, send, sendTo)
@@ -54,30 +57,32 @@ handleMessage sess peer msg = do
 handleMessage' :: Session -> IORef PeerConn -> PeerMsg -> IO ()
 handleMessage' _ _ KeepAlive = return () -- TODO: should we ignore keep-alives?
 
-handleMessage' sess peer (Bitfield bf@(BF.Bitfield bytes _)) = do
+handleMessage' sess peer (Bitfield bytes) = do
     pm <- takeMVar $ sessPieceMgr sess
     case pm of
-      Nothing ->
+      Nothing -> do
         -- we don't know how many pieces we have yet, just set it using
         -- parsed bitfield
+        bf <- BF.fromBS bytes (B.length bytes * 8)
         atomicModifyIORef' peer $ \pc -> (pc{pcPieces = Just bf}, ())
-      Just pm' ->
+      Just pm' -> do
         -- TODO: Check spare bits and close the connection if they're
         -- not 0
-        atomicModifyIORef' peer $ \pc ->
-          (pc{pcPieces = Just (BF.Bitfield bytes $ fromIntegral $ pmPieces pm')}, ())
+        bf <- BF.fromBS bytes (fromIntegral $ pmPieces pm')
+        atomicModifyIORef' peer $ \pc -> (pc{pcPieces = Just bf}, ())
     putMVar (sessPieceMgr sess) pm
 
-handleMessage' _ peer (Have piece) =
-    atomicModifyIORef' peer $ \pc ->
-      case pcPieces pc of
-        Nothing ->
-          -- we need to initialize bitfield with big-enough size for `piece`
-          let bf = BF.set (BF.empty (fromIntegral piece + 1)) (fromIntegral piece) in
-          (pc{pcPieces=Just bf}, ())
-        Just bf ->
-          -- just update the bitfield
-          (pc{pcPieces=Just (BF.set bf (fromIntegral piece))}, ())
+handleMessage' _ peer (Have piece) = do
+    pc <- readIORef peer
+    case pcPieces pc of
+      Nothing -> do
+        -- we need to initialize bitfield with big-enough size for `piece`
+        bf <- BF.empty (fromIntegral piece + 1)
+        BF.set bf (fromIntegral piece)
+        atomicModifyIORef' peer $ \pc' -> (pc'{pcPieces=Just bf}, ())
+      Just bf ->
+        -- just update the bitfield
+        BF.set bf (fromIntegral piece)
 
 handleMessage' _ peer Choke =
     atomicModifyIORef' peer $ \pc -> (pc{pcChoking = True}, ())
@@ -266,11 +271,11 @@ sendPieceRequests peers pieces = do
     peerVals <- mapM readIORef peerRefs
     let availablePeers      = filter peerFilter peerVals
         peerRefsMap         = M.fromList $ zip peerVals peerRefs
-        availablePeerPieces =
-          M.fromList $ mapMaybe (\p -> case pcPieces p of
-                                         Nothing -> Nothing
-                                         Just ps -> Just (p, BF.availableBits ps)) availablePeers
-        asgns               = assignPieces missings availablePeerPieces
+    availablePeerPieces <- (M.fromList . catMaybes) <$>
+      mapM (\p -> case pcPieces p of
+                    Nothing -> return Nothing
+                    Just ps -> Just . (p,) . S.map fromIntegral <$> BF.availableBits ps) availablePeers
+    let asgns               = assignPieces missings availablePeerPieces
     putStrLn $ "assignments: " ++ show asgns
     forM_ asgns $ \(pc, (pIdx, pOffset, pSize)) -> do
       -- FIXME: this part is ugly.
