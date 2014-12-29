@@ -110,7 +110,7 @@ handleMessage' sess peer Unchoke = do
                        -- TODO: maybe use MVar for peer references too
                        pcRequest pc'}, ())
               Just (pOffset, pLen) ->
-                sendPieceRequest peer pIdx pOffset pLen
+                sendPieceRequest peer pIdx pOffset (min pLen $ pcMaxPieceSize pc)
 
 handleMessage' _ peer Interested = do
     atomicModifyIORef' peer $ \pc -> (pc{pcPeerInterested = True}, ())
