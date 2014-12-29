@@ -6,7 +6,7 @@ before_install:
  - sudo add-apt-repository ppa:mystic-mirage/opentracker -y
  - sudo apt-get update -q
  - sudo apt-get install opentracker opentracker-ipv6
- - cabal install --only-dependencies --enable-tests
+ - cabal install --only-dependencies --enable-tests --enable-library-coverage
 
 install:
  - cabal configure --enable-tests
