@@ -6,14 +6,14 @@ before_install:
  - sudo add-apt-repository ppa:mystic-mirage/opentracker -y
  - sudo apt-get update -q
  - sudo apt-get install opentracker opentracker-ipv6
- - cabal install --only-dependencies --enable-tests --enable-library-coverage
+ - cabal install --only-dependencies --enable-tests
 
 install:
- - cabal configure --enable-tests
+ - cabal configure --enable-tests --enable-library-coverage
  - cabal build
 
 script:
- - ./dist/build/test/test && ./dist/build/doctests/doctests
+ - cabal test
 
 after_script:
  - cabal install hpc-coveralls
