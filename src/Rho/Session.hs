@@ -246,6 +246,7 @@ handleHandshake sess@Session{sessInfoHash=ih, sessPeers=peers} sock addr listene
           void $ async $ do
             listenConnectedSock sess peerConn listener
             modifyMVar_ peers $ return . M.delete addr
+          sendBitfield sess pc
           sendExtendedHs sess pc
           putMVar peers $ M.insert addr peerConn peers'
         Just _ -> do
@@ -255,6 +256,13 @@ handleHandshake sess@Session{sessInfoHash=ih, sessPeers=peers} sock addr listene
           putMVar peers $ M.insert addr peerConn peers'
     | otherwise = do
         warning $ "Got handshake for a different torrent: " ++ show (hInfoHash hs)
+
+sendBitfield :: Session -> PeerConn -> IO ()
+sendBitfield Session{sessPieceMgr=pieces} pc = do
+    pmgr <- readMVar pieces
+    case pmgr of
+      Nothing    -> return () -- we don't have any pieces
+      Just pmgr' -> void . sendMessage pc . Bitfield =<< makeBitfield pmgr'
 
 -- | Try to recv a message of length 68.
 recvHandshake :: Listener -> IO RecvMsg

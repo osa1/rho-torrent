@@ -9,6 +9,7 @@ import           Test.Hspec
 import           Test.Hspec.Contrib.HUnit
 import           Test.HUnit
 
+import qualified Rho.Bitfield             as BF
 import           Rho.Metainfo
 import           Rho.MetainfoSpec         (parseMIAssertion)
 import           Rho.PeerComms.Message
@@ -28,6 +29,7 @@ spec = do
     fromHUnitTest testNextMissingPart
     fromHUnitTest testGetPieceData
     fromHUnitTest testReadFiles
+    fromHUnitTest testMakeBitfield
 
 cons :: a -> (b, c) -> (a, b, c)
 cons a (b, c) = (a, b, c)
@@ -178,4 +180,21 @@ testReadFiles = TestList
             , ("seed_files/file2.txt", "file2\n")
             ]
       assertEqual "Generated files are wrong" expectedFiles files
+  ]
+
+testMakeBitfield :: Test
+testMakeBitfield = TestList
+  [ TestLabel "generating bitfield from piece manager" $ TestCase $ do
+      pieces <- newPieceMgr 110 12
+      bf1 <- makeBitfield pieces
+      let ret1 = and $ map (not . BF.test bf1) [0..9]
+      assertBool "some bits are 1" ret1
+
+      writePiece pieces 0 0 (B.replicate 12 0)
+      bf2 <- makeBitfield pieces
+      assertBool "first bit is 0" (BF.test bf2 0)
+
+      writePiece pieces 9 0 (B.replicate 2 0)
+      bf3 <- makeBitfield pieces
+      assertBool "last bit is 0" (BF.test bf3 9)
   ]

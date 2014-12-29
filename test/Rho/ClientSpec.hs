@@ -22,7 +22,6 @@ import           Test.Hspec
 import           Test.Hspec.Contrib.HUnit
 import           Test.HUnit
 
-import qualified Rho.Bitfield                 as BF
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.MetainfoSpec             (parseMIAssertion)
@@ -210,11 +209,6 @@ torrentTransferTest = TestCase $ do
       Left err            -> assertFailure $ "Handshake failed: " ++ err
       Right DoesntSupport -> assertFailure "Wrong extended message support"
       Right Supports      -> return ()
-
-    -- FIXME: Manually setting the bitfield because we don't send bitfield
-    -- messages yet.
-    seederConn <- (head . M.elems) <$> readMVar (sessPeers leecher)
-    atomicModifyIORef' seederConn $ \pc -> (pc{pcPieces=Just $ BF.set (BF.empty 1) 0}, ())
 
     timeoutThread <- async $ threadDelay (10 * 1000000)
     void $ waitAnyCancel [seederThread, leecherThread, torrentDoneThread, timeoutThread]

@@ -5,6 +5,7 @@ module Rho.PieceMgr where
 import           Control.Applicative
 import           Control.Concurrent.MVar
 import           Control.Monad
+import           Data.Bits                   (setBit)
 import qualified Data.ByteString             as B
 import qualified Data.ByteString.Char8       as BC
 import           Data.Digest.SHA1            (hash)
@@ -16,6 +17,7 @@ import           Data.Word
 import           System.Directory            (doesFileExist)
 import           System.FilePath             ((</>))
 
+import qualified Rho.Bitfield                as BF
 import           Rho.Metainfo
 import           Rho.Utils
 
@@ -50,6 +52,26 @@ newPieceMgrFromData bs pieceLength = do
           let (d, m) = totalSize `divMod` fromIntegral pieceLength
           in if m == 0 then d else d + 1
     return $ PieceMgr pieceLength (fromIntegral totalSize) (fromIntegral pieces) var
+
+-- | Generate a bitfield from piece manager.
+-- TODO: This should be very slow, benchmark and improve.
+makeBitfield :: PieceMgr -> IO BF.Bitfield
+makeBitfield (PieceMgr _ _ pieces m) = do
+    bits <- snd <$> readMVar m
+    (flip BF.Bitfield (fromIntegral pieces) . B.pack) <$> collectWords bits
+  where
+    collectWords :: MV.IOVector Bool -> IO [Word8]
+    collectWords = iter 0 7 0
+
+    iter :: Int -> Int -> Word8 -> MV.IOVector Bool -> IO [Word8]
+    iter i bitIdx acc v
+      | i >= MV.length v = return []
+      | bitIdx == -1     = (acc :) <$> iter i 7 0 v
+      | otherwise        = do
+          b <- MV.unsafeRead v i
+          if b
+            then iter (i + 1) (bitIdx - 1) (setBit acc bitIdx) v
+            else iter (i + 1) (bitIdx - 1) acc v
 
 writePiece :: PieceMgr -> Word32 -> Word32 -> B.ByteString -> IO ()
 writePiece (PieceMgr ps _ _ m) pieceIdx pieceOffset pieceData = do
