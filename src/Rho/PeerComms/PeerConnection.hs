@@ -1,5 +1,4 @@
-{-# LANGUAGE LambdaCase, MultiWayIf, NondecreasingIndentation, OverloadedStrings
-             #-}
+{-# LANGUAGE LambdaCase, NondecreasingIndentation, OverloadedStrings #-}
 
 -- | Handling communications with peers after a successful handshake.
 module Rho.PeerComms.PeerConnection where
@@ -192,8 +191,7 @@ handleMessage' _ _ msg = putStrLn $ "Unhandled peer msg: " ++ show msg
 
 unchokePeer :: IORef PeerConn -> IO ()
 unchokePeer peer = do
-    atomicModifyIORef' peer $ \pc -> (pc{pcPeerChoking=False}, ())
-    pc <- readIORef peer
+    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcPeerChoking=False} in (pc', pc')
     void $ sendMessage pc Unchoke
 
 sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)
