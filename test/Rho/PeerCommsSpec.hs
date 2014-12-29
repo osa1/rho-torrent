@@ -263,7 +263,7 @@ instance Arbitrary PeerMsg where
       , return Interested
       , return NotInterested
       , Have <$> arbitrary
-      , Bitfield <$> arbitrary
+      , Bitfield <$> (genBytes =<< choose (0, 50))
       , Request <$> arbitrary <*> arbitrary <*> arbitrary
       , Piece <$> arbitrary <*> arbitrary <*> genBytes 20
       , Cancel <$> arbitrary <*> arbitrary <*> arbitrary
