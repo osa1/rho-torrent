@@ -75,7 +75,7 @@ sockListener skt dataChan = do
 
 responseHandler :: DataChan -> TransactionChan -> IO ()
 responseHandler dataChan tChan = do
-    (resp, src) <- readChan dataChan
+    (resp, _) <- readChan dataChan
     case parseUDPResponse resp of
       Right msg ->
         modifyMVar_ tChan $ \chans -> do
