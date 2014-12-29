@@ -17,13 +17,9 @@ import           Rho.TrackerComms.UDP          (initUDPCommHandler,
                                                 peerRequestUDP)
 
 requestPeers :: Session -> Tracker -> IO PeerResponse
-requestPeers s@Session{sessPeerId=pid, sessInfoHash=hash, sessPort=port} (HTTPTracker uri) = do
-    putStrLn $ "HTTP: " ++ show uri
+requestPeers s@Session{sessPeerId=pid, sessInfoHash=hash, sessPort=port} (HTTPTracker uri) =
     peerRequestHTTP pid port uri (stats s) hash >>= either error return
 requestPeers s@Session{sessPeerId=pid, sessInfoHash=hash} udp@(UDPTracker host port) = do
-    putStrLn $ "UDP: " ++ show udp
-    print $ B.unpack host
-    print port
     addrInfo <-
       (Just <$> getAddrInfo (Just defaultHints) (Just $ BC.unpack host) (Just $ show port))
         `catch` \(_ :: IOException) -> return Nothing

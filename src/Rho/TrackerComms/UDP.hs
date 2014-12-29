@@ -65,7 +65,6 @@ initUDPCommHandler = do
 sockListener :: Socket -> DataChan -> IO ()
 sockListener skt dataChan = do
     (contents, src) <- recvFrom skt msg_size
-    putStrLn $ "Got " ++ show (B.length contents) ++ " bytes from: " ++ show src
     writeChan dataChan (contents, src)
     sockListener skt dataChan
   where
@@ -77,7 +76,6 @@ sockListener skt dataChan = do
 responseHandler :: DataChan -> TransactionChan -> IO ()
 responseHandler dataChan tChan = do
     (resp, src) <- readChan dataChan
-    putStrLn $ "Got response from " ++ show src
     case parseUDPResponse resp of
       Right msg ->
         modifyMVar_ tChan $ \chans -> do
