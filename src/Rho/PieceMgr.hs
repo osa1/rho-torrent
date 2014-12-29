@@ -1,23 +1,22 @@
-{-# LANGUAGE NondecreasingIndentation #-}
+{-# LANGUAGE MultiWayIf #-}
 
 module Rho.PieceMgr where
 
 import           Control.Applicative
 import           Control.Concurrent.MVar
 import           Control.Monad
-import           Data.Bits                   (setBit)
-import qualified Data.ByteString             as B
-import qualified Data.ByteString.Char8       as BC
-import           Data.Digest.SHA1            (hash)
-import           Data.List                   (foldl')
+import qualified Data.ByteString              as B
+import qualified Data.ByteString.Char8        as BC
+import           Data.Digest.SHA1             (hash)
+import           Data.List                    (foldl')
 import           Data.Monoid
-import qualified Data.Vector.Unboxed         as V
-import qualified Data.Vector.Unboxed.Mutable as MV
+import qualified Data.Vector.Storable         as SV
+import qualified Data.Vector.Storable.Mutable as MV
 import           Data.Word
-import           System.Directory            (doesFileExist)
-import           System.FilePath             ((</>))
+import           System.Directory             (doesFileExist)
+import           System.FilePath              ((</>))
 
-import qualified Rho.Bitfield                as BF
+import qualified Rho.Bitfield                 as BF
 import           Rho.Metainfo
 import           Rho.Utils
 
@@ -25,162 +24,131 @@ data PieceMgr = PieceMgr
   { pmPieceSize :: Word32
   , pmTotalSize :: Word64
   , pmPieces    :: Word32
-  , pmData      :: MVar ( MV.IOVector Word8
-                        , MV.IOVector Bool )
+  , pmData      :: MVar (MV.IOVector Word8, BF.Bitfield, BF.Bitfield)
   }
-
--- | (piece index, offset in piece, length until next piece) triple.
-type PieceData = (Word32, Word32, Word32)
 
 newPieceMgr :: Word64 -> Word32 -> IO PieceMgr
 newPieceMgr totalSize pieceLength = do
     arr  <- MV.new (fromIntegral totalSize)
-    bits <- MV.replicate (fromIntegral totalSize) False
-    var  <- newMVar (arr, bits)
+    bits <- BF.empty (fromIntegral totalSize)
     let pieces =
           let (d, m) = totalSize `divMod` fromIntegral pieceLength
           in if m == 0 then d else d + 1
+    pieceBits <- BF.empty (fromIntegral pieces)
+    var  <- newMVar (arr, bits, pieceBits)
     return $ PieceMgr pieceLength totalSize (fromIntegral pieces) var
 
 newPieceMgrFromData :: B.ByteString -> Word32 -> IO PieceMgr
 newPieceMgrFromData bs pieceLength = do
     let totalSize = B.length bs
-    arr  <- V.unsafeThaw $ V.fromList $ B.unpack bs
-    bits <- MV.replicate totalSize True
-    var  <- newMVar (arr, bits)
+    arr  <- SV.unsafeThaw $ bsToByteVector $ B.copy bs
+    bits <- BF.full totalSize
     let pieces =
           let (d, m) = totalSize `divMod` fromIntegral pieceLength
           in if m == 0 then d else d + 1
+    pieceBits <- BF.full (fromIntegral pieces)
+    var  <- newMVar (arr, bits, pieceBits)
     return $ PieceMgr pieceLength (fromIntegral totalSize) (fromIntegral pieces) var
 
--- | Generate a bitfield from piece manager.
--- TODO: This should be very slow, benchmark and improve.
-makeBitfield :: PieceMgr -> IO B.ByteString
-makeBitfield (PieceMgr _ _ pieces m) = do
-    bits <- snd <$> readMVar m
-    B.pack <$> collectWords bits
-  where
-    collectWords :: MV.IOVector Bool -> IO [Word8]
-    collectWords = iter 0 7 0
+pRange :: PieceMgr -> Word32 -> (Int, Int)
+pRange (PieceMgr pSize pTotalSize pieces _) pIdx
+  | pIdx >= pieces = error "requested range for a piece out of range"
+  | otherwise      = let start = pSize * pIdx
+                         end   = min (fromIntegral $ start + pSize) (fromIntegral pTotalSize)
+                     in (fromIntegral $ start, end)
 
-    iter :: Int -> Int -> Word8 -> MV.IOVector Bool -> IO [Word8]
-    iter i bitIdx acc v
-      | i >= MV.length v = return []
-      | bitIdx == -1     = (acc :) <$> iter i 7 0 v
-      | otherwise        = do
-          b <- MV.unsafeRead v i
-          if b
-            then iter (i + 1) (bitIdx - 1) (setBit acc bitIdx) v
-            else iter (i + 1) (bitIdx - 1) acc v
+-- | Generate a ByteString from piece manager.
+makeByteString :: PieceMgr -> IO B.ByteString
+makeByteString (PieceMgr _ _ _ m) = BF.toBS . (\(_, _, bs) -> bs) =<< readMVar m
 
 writePiece :: PieceMgr -> Word32 -> Word32 -> B.ByteString -> IO ()
-writePiece (PieceMgr ps _ _ m) pieceIdx pieceOffset pieceData = do
-    (arr, bits) <- takeMVar m
-    zipWithM_ (\byteIdx byte -> do
-      let arrIdx = fromIntegral ps * fromIntegral pieceIdx + fromIntegral pieceOffset
-      MV.write arr  (arrIdx + byteIdx) byte
-      MV.write bits (arrIdx + byteIdx) True)
-      [0..] (B.unpack pieceData)
-    putMVar m (arr, bits)
+writePiece pmgr@(PieceMgr pSize _ pieces m) pIdx pOffset pData = do
+    let
+      startIdx :: Int
+      startIdx = fromIntegral pSize * fromIntegral pIdx + fromIntegral pOffset
+      lastP :: Word32
+      lastP    = fromIntegral ((startIdx + B.length pData) `div` fromIntegral pSize)
+
+    withMVar m $ \(arr, bits, pBits) -> do
+      zipWithM_ (\byteIdx byte -> do
+        MV.write arr  (startIdx + byteIdx) byte
+        BF.set   bits (startIdx + byteIdx)) [0..] (B.unpack pData)
+
+      completedPieces <-
+        filterM ((uncurry $ BF.checkRange bits) . pRange pmgr) [pIdx..(min lastP (pieces - 1))]
+
+      forM_ completedPieces $ \ci -> BF.set pBits (fromIntegral ci)
 
 -- | Return piece data for given piece index, offest and length.
 -- Length may be smaller then the given length for last piece.
 -- Returns `Nothing` if either missing some part of the piece or given
 -- piece is not in range.
 getPieceData :: PieceMgr -> Word32 -> Word32 -> Word32 -> IO (Maybe B.ByteString)
-getPieceData (PieceMgr pSize pTotal _ pData) pIdx pOffset pLen = do
+getPieceData (PieceMgr pSize pTotal ps pData) pIdx pOffset pLen = do
     let
       start, end :: Int
       start = fromIntegral $ pIdx * pSize + pOffset
-      end   = min (start + fromIntegral pLen) (fromIntegral pTotal) - 1
-    if start > end
-      then return Nothing
-      else do
-    d@(pd, bits) <- takeMVar pData
-    -- TODO: Why no folds for mutable vectors in vector lib?
-    rets <- forM [start..end] $ \idx -> MV.read bits idx
-    ret <- if and rets
-             then Just . B.pack <$> (forM [start..end] $ \idx -> MV.read pd idx)
-             else return Nothing
-    putMVar pData d
-    return ret
+      end   = min (start + fromIntegral pLen) (fromIntegral pTotal)
+    withMVar pData $ \(pd, bits, _) ->
+      if | start >= end            -> return Nothing
+         | fromIntegral pIdx >= ps -> return Nothing
+         | otherwise -> do
+             hasBytes <- BF.checkRange bits start end
+             if hasBytes
+               then Just . B.pack <$> (forM [start..end - 1] $ \idx -> MV.read pd idx)
+               else return Nothing
 
 getBytes :: PieceMgr -> IO B.ByteString
 getBytes (PieceMgr _ _ _ pData) = do
-    (d, _) <- readMVar pData
-    d' <- V.freeze d
-    return $ B.pack $ V.toList d'
+    (d, _, _) <- readMVar pData
+    bsFromByteVector <$> SV.freeze d
 
 -- | Returns `Just (offset, length)` if we're missing some parts of the
 -- given piece.
 nextMissingPart :: PieceMgr -> Word32 -> IO (Maybe (Word32, Word32))
-nextMissingPart (PieceMgr pSize pTotalSize pieces m) pIdx = do
-    (_, arr) <- readMVar m
-    let isLastPiece = pIdx == pieces - 1
-        lastPieceSize = case pTotalSize `mod` fromIntegral pSize of
-                          0 -> fromIntegral pSize
-                          l -> l
-        bs = MV.slice (fromIntegral $ pSize * pIdx) (if isLastPiece then fromIntegral lastPieceSize
-                                                                    else fromIntegral pSize) arr
-    findFirstMissing bs 0
+nextMissingPart pmgr@(PieceMgr _ _ _ m) pIdx = do
+    (_, bits, pBits) <- readMVar m
+    pieceComplete <- BF.test pBits (fromIntegral pIdx)
+    if pieceComplete
+      then return Nothing
+      else do
+        let (pStart, pEnd) = pRange pmgr pIdx
+        ret <- findFirstMissing bits (fromIntegral pStart) (fromIntegral pEnd)
+        case ret of
+          Nothing           -> error "nextMissingPart returned nothing in wrong place"
+          Just (start, end) -> do
+            let offset = fromIntegral $ start - pStart
+                len    = fromIntegral $ end - start
+            return $ Just (offset, len)
   where
-    findFirstMissing :: MV.IOVector Bool -> Int -> IO (Maybe (Word32, Word32))
-    findFirstMissing v i
-      | MV.length v == i = return Nothing
-      | otherwise = do
-          b <- MV.read v i
-          if b then findFirstMissing v (i + 1)
+    findFirstMissing :: BF.Bitfield -> Int -> Int -> IO (Maybe (Int, Int))
+    findFirstMissing v start end
+      | start == end = return Nothing
+      | otherwise    = do
+          b <- BF.test v start
+          if b then findFirstMissing v (start + 1) end
                else do
-                 end <- findFirstAvail v (i + 1)
-                 return $ Just (fromIntegral i, end - fromIntegral i)
+                 availIdx <- findFirstAvail v (start + 1) end
+                 return $ Just (start, availIdx)
 
-    findFirstAvail :: MV.IOVector Bool -> Int -> IO Word32
-    findFirstAvail v i
-      | MV.length v == i = return $ fromIntegral i
-      | otherwise = do
-          b <- MV.read v i
-          if b then return $ fromIntegral i
-               else findFirstAvail v (i + 1)
+    findFirstAvail :: BF.Bitfield -> Int -> Int -> IO Int
+    findFirstAvail v start end
+      | start == end = return end
+      | otherwise    = do
+          b <- BF.test v start
+          if not b then findFirstAvail v (start + 1) end
+                   else return start
 
--- | Generate list of (piece index, piece offset, length until next piece)
--- triples.
---
--- TODO: Benchmark this. Use caching if it turns out to be too slow.
--- (Cache the result. Invalidate the cache when a new piece is written)
-missingPieces :: PieceMgr -> IO [PieceData]
-missingPieces (PieceMgr ps ts totalPieces m) = do
-    (arr, bits) <- takeMVar m
-    ret <- collectMissingPieces arr bits (ts - 1) 0
-    putMVar m (arr, bits)
-    return ret
-  where
-    collectMissingPieces
-      :: MV.IOVector Word8 -> MV.IOVector Bool -> Word64 -> Word64
-      -> IO [(Word32, Word32, Word32)]
-    collectMissingPieces arr bits end idx
-      | idx > end = return []
-      | otherwise = do
-          bit <- MV.read bits (fromIntegral idx)
-          if bit
-            then collectMissingPieces arr bits end (idx + 1)
-            else do
-              let offsetToNextPiece, currentPiece, pieceOffset :: Word32
-                  offsetToNextPiece = fromIntegral $ fromIntegral ps - (idx `mod` fromIntegral ps)
-                  currentPiece      = fromIntegral $ idx `div` fromIntegral ps
-                  pieceOffset       = fromIntegral $ ps - offsetToNextPiece
-              if currentPiece == totalPieces - 1
-                then do
-                  -- last piece
-                  let md = ts `mod` fromIntegral ps
-                  return [(currentPiece, 0, if md == 0 then ps else fromIntegral md)]
-                else do
-                  rest <- collectMissingPieces arr bits end (idx + fromIntegral offsetToNextPiece)
-                  return $ (currentPiece, pieceOffset, offsetToNextPiece) : rest
+-- | Generate list of missing piece indexes.
+missingPieces :: PieceMgr -> IO [Word32]
+missingPieces (PieceMgr _ _ ps m) = do
+    withMVar m $ \(_, _, pBits) ->
+      filterM (\pIdx -> not <$> BF.test pBits (fromIntegral pIdx)) [0..ps-1]
 
 -- | Check if piece data has correct hash.
 checkPieces :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
 checkPieces (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
-    (arr, _) <- readMVar pData
+    (arr, _, _) <- readMVar pData
     let
       isLastPiece = pIdx == pieces - 1
       start :: Word64
@@ -191,7 +159,7 @@ checkPieces (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
                               then fromIntegral pSize
                               else totalSize `mod` fromIntegral pSize)
               else start + fromIntegral pSize
-    bytes <- V.toList <$> V.freeze (MV.slice (fromIntegral start) (fromIntegral end) arr)
+    bytes <- SV.toList <$> SV.freeze (MV.slice (fromIntegral start) (fromIntegral end) arr)
     return $ word160ToBS (hash bytes) == pHash
 
 -- | Generate files from given piece manager for the given torrent.
@@ -199,19 +167,19 @@ checkPieces (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
 generateFiles :: PieceMgr -> Info -> IO [(FilePath, B.ByteString)]
 generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ _ files) = do
     let (names, sizes) = unzip $ map (\(p, s) -> (BC.unpack name </> p, s)) $ collectFiles files
-    bytes <- fst <$> readMVar pData
+    (bytes, _, _) <- readMVar pData
     unless (fromIntegral (sum sizes) == MV.length bytes) . error . concat $
       [ "sum sizes /= length bytes ("
       , show (sum sizes), " /= ", show (MV.length bytes), ")" ]
     bs <- splitBytes bytes sizes
-    return $ zip names $ map B.pack bs
+    return $ zip names bs
   where
-    splitBytes :: MV.IOVector Word8 -> [Word64] -> IO [[Word8]]
+    splitBytes :: MV.IOVector Word8 -> [Word64] -> IO [B.ByteString]
     splitBytes _  []       = return []
     splitBytes ws (i : is) = do
       let (h, t) = MV.splitAt (fromIntegral i {- TODO: is this conversion safe? -}) ws
       rest <- splitBytes t is
-      hl <- V.toList <$> V.freeze h
+      hl <- bsFromByteVector <$> SV.freeze h
       return (hl : rest)
 
     collectFiles :: Either File [File] -> [(FilePath, Word64)]

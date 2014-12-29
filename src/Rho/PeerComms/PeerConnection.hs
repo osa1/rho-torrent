@@ -210,7 +210,7 @@ handleMessage' sess peer (Extended (MetadataData pIdx totalSize pData)) = do
     -- request another piece
     missings <- missingPieces miPieces'
     case reverse missings of
-      ((newPIdx, _, _) : _) -> do
+      (newPIdx : _) -> do
         pc <- readIORef peer
         void $ sendMessage pc $ Extended $ MetadataRequest newPIdx
         atomicModifyIORef' peer $ \pc' -> (pc'{pcRequest=Just newPIdx}, ())
@@ -251,8 +251,7 @@ sendMetainfoRequests peers pieces = do
     peerVals <- mapM readIORef peerRefs
     let peerRefsMap    = M.fromList $ zip peerVals peerRefs
         availablePeers = filter peerFilter peerVals
-        mips           = map (\(pIdx, _, _) -> pIdx) missings
-        asgns          = zip availablePeers mips
+        asgns          = zip availablePeers missings
     putStrLn $ "assignments: " ++ show asgns
     forM_ asgns $ \(pc, pIdx) -> do
       void $ sendMessage pc $ Extended $ MetadataRequest pIdx
@@ -277,12 +276,16 @@ sendPieceRequests peers pieces = do
                     Just ps -> Just . (p,) . S.map fromIntegral <$> BF.availableBits ps) availablePeers
     let asgns               = assignPieces missings availablePeerPieces
     putStrLn $ "assignments: " ++ show asgns
-    forM_ asgns $ \(pc, (pIdx, pOffset, pSize)) -> do
-      -- FIXME: this part is ugly.
-      let pcRef = fromJust $ M.lookup pc peerRefsMap
-      if pcInterested pc
-        then sendPieceRequest pcRef pIdx pOffset (min pSize $ pcMaxPieceSize pc)
-        else sendInterested pcRef pIdx
+    forM_ asgns $ \(pc, pIdx) -> do
+      missingP <- nextMissingPart pieces pIdx
+      case missingP of
+        Nothing -> return () -- TODO: how can this be?
+        Just (pOffset, pSize) -> do
+          -- FIXME: this part is ugly.
+          let pcRef = fromJust $ M.lookup pc peerRefsMap
+          if pcInterested pc
+            then sendPieceRequest pcRef pIdx pOffset (min pSize $ pcMaxPieceSize pc)
+            else sendInterested pcRef pIdx
   where
     peerFilter :: PeerConn -> Bool
     peerFilter PeerConn{pcInterested=False, pcRequest=Nothing} = True

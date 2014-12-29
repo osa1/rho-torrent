@@ -135,7 +135,7 @@ spec = do
         receivedMsgs <- readBuffer listener_
         return $ ll receivedMsgs == msgsLen
 
-    modifyMaxSuccess (const 1000) $ prop "recvLen should be able to receive all messages" $ do
+    modifyMaxSuccess (const 100) $ prop "recvLen should be able to receive all messages" $ do
       msgs <- genMsgs 100 20
       let msgsLen = ll msgs
       recvLens <- generateRecvLens msgsLen

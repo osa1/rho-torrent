@@ -26,7 +26,6 @@ import           Test.Hspec.QuickCheck
 import           Test.HUnit
 import           Test.QuickCheck              hiding (Result)
 
-import qualified Rho.Bitfield                 as BF
 import           Rho.InfoHash
 import           Rho.Listener                 hiding (listener)
 import           Rho.PeerComms.Handshake

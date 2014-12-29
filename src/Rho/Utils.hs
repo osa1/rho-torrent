@@ -20,10 +20,8 @@ import           Data.Time.Clock                  (getCurrentTime, utctDayTime)
 import           Data.Vector.Storable             (Vector, unsafeFromForeignPtr,
                                                    unsafeToForeignPtr)
 import           Data.Word
-import           Data.Word                        (Word8)
 import           Network.Socket                   (PortNumber (..),
                                                    SockAddr (..))
-
 
 import           Rho.Parser
 
@@ -192,12 +190,12 @@ word160ToBS (Word160 w1 w2 w3 w4 w5) = LB.toStrict . BB.toLazyByteString . mconc
     map BB.word32BE [w1, w2, w3, w4, w5]
 
 -- | Convert a ByteString into a storable Vector.
-toByteVector :: ByteString -> Vector Word8
-toByteVector (PS fptr offset idx) = unsafeFromForeignPtr fptr offset idx
+bsToByteVector :: ByteString -> Vector Word8
+bsToByteVector (PS fptr offset idx) = unsafeFromForeignPtr fptr offset idx
 
 -- | Convert a storable Vector to a ByteString.
-fromByteVector :: Vector Word8 -> ByteString
-fromByteVector v =
+bsFromByteVector :: Vector Word8 -> ByteString
+bsFromByteVector v =
     PS fptr offset idx
   where
     (fptr, offset, idx) = unsafeToForeignPtr v

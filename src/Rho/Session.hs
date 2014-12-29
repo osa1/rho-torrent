@@ -262,7 +262,7 @@ sendBitfield Session{sessPieceMgr=pieces} pc = do
     pmgr <- readMVar pieces
     case pmgr of
       Nothing    -> return () -- we don't have any pieces
-      Just pmgr' -> void . sendMessage pc . Bitfield =<< makeBitfield pmgr'
+      Just pmgr' -> void . sendMessage pc . Bitfield =<< makeByteString pmgr'
 
 -- | Try to recv a message of length 68.
 recvHandshake :: Listener -> IO RecvMsg

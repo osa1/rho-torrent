@@ -8,7 +8,6 @@ import qualified Data.Set                    as S
 import           Data.Word
 
 import           Rho.PeerComms.PeerConnState
-import           Rho.PieceMgr
 
 -- | Generate assignments of pieces to peers. Resulting list will have
 -- these properties:
@@ -17,12 +16,12 @@ import           Rho.PieceMgr
 -- - If a piece has exactly one provider, that piece will be assigned to
 --   that peer.
 assignPieces
-  :: [PieceData] -- ^ missing (pieceIdx, pieceOffset, pieceLength) triples
+  :: [Word32] -- ^ missing piece indexes
   -> M.Map PeerConn (S.Set Word32) -- ^ (peer -> available pieces) map
-  -> [(PeerConn, PieceData)] -- ^ assignments of pieces to peers
+  -> [(PeerConn, Word32)] -- ^ assignments of pieces to peers
 assignPieces missings peers = loop piecePeers
   where
-    loop :: [(PieceData, S.Set PeerConn)] -> [(PeerConn, PieceData)]
+    loop :: [(Word32, S.Set PeerConn)] -> [(PeerConn, Word32)]
     loop pps =
       let
         -- we first assign a piece to a peer when the peer is only provider
@@ -35,11 +34,11 @@ assignPieces missings peers = loop piecePeers
           (((pd, pcs) : _), others) ->
             let
               -- generate assignments
-              asgn :: (PeerConn, PieceData)
+              asgn :: (PeerConn, Word32)
               asgn = (S.elemAt 0 pcs, pd)
 
               -- remove assigned peer from sets of providers
-              updatedPps :: [(PieceData, S.Set PeerConn)]
+              updatedPps :: [(Word32, S.Set PeerConn)]
               updatedPps =
                 filter (not . S.null . snd) $
                   map (fmap (S.delete $ fst asgn)) others
@@ -58,20 +57,20 @@ assignPieces missings peers = loop piecePeers
 
               -- (no need to filter empties here, because we know all sets
               -- had at least 2 elements)
-              updatedPps :: [(PieceData, S.Set PeerConn)]
+              updatedPps :: [(Word32, S.Set PeerConn)]
               updatedPps = map (fmap (S.delete usedPeer)) ps
 
               rest = loop updatedPps
             in
               asgn : rest
 
-    piecePeers :: [(PieceData, S.Set PeerConn)]
+    piecePeers :: [(Word32, S.Set PeerConn)]
     piecePeers =
       filter (not . S.null . snd) $
         flip map missings $ \missing -> (missing, collectPiecePeers missing)
 
-    collectPiecePeers :: PieceData -> S.Set PeerConn
-    collectPiecePeers (pIdx, _, _) =
+    collectPiecePeers :: Word32 -> S.Set PeerConn
+    collectPiecePeers pIdx =
       let
         ps = flip mapMaybe (M.toList peers) $ \(peer, peerPieces) ->
                if S.member pIdx peerPieces

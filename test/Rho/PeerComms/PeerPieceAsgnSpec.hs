@@ -21,7 +21,6 @@ import           Test.QuickCheck
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerId
 import           Rho.PeerComms.PeerPieceAsgn
-import           Rho.PieceMgr
 
 -- import           Debug.Trace
 
@@ -35,17 +34,17 @@ spec = do
       peerGen <- newPeerGen
       peer1 <- newPeer peerGen
       peer2 <- newPeer peerGen
-      let missings      = [(0, 0, 1), (1, 0, 1)]
+      let missings      = [0, 1]
           peerMap       = M.fromList [ (peer1, S.singleton 0), (peer2, S.fromList [0, 1]) ]
           asgns         = M.fromList $ assignPieces missings peerMap
-          expectedAsgns = M.fromList [ (peer1, (0, 0, 1)), (peer2, (1, 0, 1)) ]
+          expectedAsgns = M.fromList [ (peer1, 0), (peer2, 1) ]
       assertEqual "assignments are wrong" expectedAsgns asgns
 
     fromHUnitTest $ TestLabel "should be able to assign randomly" $ TestCase $ do
       peerGen <- newPeerGen
       peer1 <- newPeer peerGen
       peer2 <- newPeer peerGen
-      let missings = [(0, 0, 1), (1, 0, 1)]
+      let missings = [0, 1]
           peerMap  = M.fromList [ (peer1, S.fromList [0, 1]), (peer2, S.fromList [0, 1]) ]
           asgns    = assignPieces missings peerMap
       assertEqual "some pieces are not assigned" 2 (length asgns)
@@ -54,7 +53,7 @@ spec = do
 
     fromHUnitTest $ TestLabel "regression 1" $ TestCase $ do
       let peer     = mkPeerConn 0
-          missings = [ (0, 0, 1), (1, 0, 1) ]
+          missings = [0, 1]
           peerMap  = M.singleton peer $ S.fromList [0, 1]
           asgns    = assignPieces missings peerMap
       assertEqual "peer is assigned more than once(or not assigned at all)" 1 (length asgns)
@@ -80,7 +79,7 @@ spec = do
 
         return $ counterexample ex (prop1 .&&. prop2)
 
-showCounterExample :: [PieceData] -> M.Map PeerConn (S.Set Word32) -> String
+showCounterExample :: [Word32] -> M.Map PeerConn (S.Set Word32) -> String
 showCounterExample pd s = concat
     [ "assignPieces "
     , show pd, " ("
@@ -105,20 +104,19 @@ genPeers = do
     len <- arbitrary `suchThat` (< 100)
     return $ map mkPeerConn [0..len]
 
-genPieceData :: Int -> Gen [PieceData]
+genPieceData :: Int -> Gen [Word32]
 genPieceData end = do
-    ps <- listOf $ choose (0, end)
+    ps <- listOf $ choose (0, fromIntegral end)
     -- this one takes forever to finish:
     -- ps <- listOf $ arbitrary `suchThat` (<= fromIntegral max)
     return
-      . map (\p -> (fromIntegral p, 0, 1)) -- make piece data
       . S.toList . S.fromList -- remove duplicates
       $ ps
 
-genPeerPieces :: [PeerConn] -> [PieceData] -> Gen (M.Map PeerConn (S.Set Word32))
+genPeerPieces :: [PeerConn] -> [Word32] -> Gen (M.Map PeerConn (S.Set Word32))
 genPeerPieces []       _      = return M.empty
 genPeerPieces (p : ps) pieces = do
-    sublist <- S.fromList . map (\(pIdx, _, _) -> pIdx) <$> genSublist pieces
+    sublist <- S.fromList <$> genSublist pieces
     rest <- genPeerPieces ps pieces
     return $ M.insert p sublist rest
 

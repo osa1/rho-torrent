@@ -53,11 +53,11 @@ length (Bitfield _ len) = len
 --
 fromBS :: B.ByteString -> Int -> IO Bitfield
 fromBS bs len = do
-    v <- SV.unsafeThaw (toByteVector (B.copy bs))
+    v <- SV.unsafeThaw (bsToByteVector (B.copy bs))
     return $ Bitfield v len
 
 toBS :: Bitfield -> IO B.ByteString
-toBS bf@(Bitfield v _) = fromByteVector `fmap` SV.freeze v
+toBS (Bitfield v _) = bsFromByteVector `fmap` SV.freeze v
 
 -- | Create a bitfield from given bit indexes and length.
 --
@@ -128,6 +128,17 @@ missingBits = collectBits not
 --
 availableBits :: Bitfield -> IO (S.Set Int)
 availableBits = collectBits id
+
+-- | Check all bits in range.
+--
+-- TODO: Write tests. Check for errors.
+checkRange :: Bitfield -> Int -> Int -> IO Bool
+checkRange bits start end
+  | start == end = return True
+  | otherwise    = do
+      b <- test bits start
+      if b then checkRange bits (start + 1) end
+           else return False
 
 collectBits :: (Bool -> Bool) -> Bitfield -> IO (S.Set Int)
 collectBits p bf@(Bitfield _ len) =
