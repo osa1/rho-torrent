@@ -211,11 +211,6 @@ torrentTransferTest = TestCase $ do
       Right DoesntSupport -> assertFailure "Wrong extended message support"
       Right Supports      -> return ()
 
-    -- FIXME: Manually unchoking the seeder because we don't send unchoke
-    -- and interested messages yet.
-    leecherConn <- (head . M.elems) <$> readMVar (sessPeers seeder)
-    unchokePeer leecherConn
-
     -- FIXME: Manually setting the bitfield because we don't send bitfield
     -- messages yet.
     seederConn <- (head . M.elems) <$> readMVar (sessPeers leecher)

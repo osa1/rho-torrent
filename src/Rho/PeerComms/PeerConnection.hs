@@ -81,10 +81,37 @@ handleMessage' _ peer (Have piece) =
 
 handleMessage' _ peer Choke =
     atomicModifyIORef' peer $ \pc -> (pc{pcChoking = True}, ())
-handleMessage' _ peer Unchoke =
-    atomicModifyIORef' peer $ \pc -> (pc{pcChoking = False}, ())
-handleMessage' _ peer Interested =
+
+handleMessage' sess peer Unchoke = do
+    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcChoking = False} in (pc', pc')
+    case pcRequest pc of
+      Nothing   -> return ()
+      Just pIdx -> do
+        pmgr <- readMVar $ sessPieceMgr sess
+        case pmgr of
+          Nothing ->
+            warning "Requested a piece and got unchoked without intializing the piece manager."
+          Just pmgr' -> do
+            missing <- nextMissingPart pmgr' pIdx
+            case missing of
+              Nothing -> do
+                -- somehow this piece is completed, reset the request field
+                atomicModifyIORef' peer $ \pc' ->
+                  (pc'{pcRequest=if pcRequest pc' == Just pIdx
+                     then Nothing
+                     else
+                       -- peer is updated since the first read, don't
+                       -- change it
+                       -- TODO: maybe use MVar for peer references too
+                       pcRequest pc'}, ())
+              Just (pOffset, pLen) ->
+                sendPieceRequest peer pIdx pOffset pLen
+
+handleMessage' _ peer Interested = do
     atomicModifyIORef' peer $ \pc -> (pc{pcPeerInterested = True}, ())
+    -- FIXME: we're just unchoking every peer for now
+    unchokePeer peer
+
 handleMessage' _ peer NotInterested =
     atomicModifyIORef' peer $ \pc -> (pc{pcPeerInterested = False}, ())
 
@@ -194,6 +221,17 @@ unchokePeer peer = do
     pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcPeerChoking=False} in (pc', pc')
     void $ sendMessage pc Unchoke
 
+sendInterested :: IORef PeerConn -> Word32 -> IO ()
+sendInterested peer pIdx = do
+    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcInterested=True, pcRequest=Just pIdx}
+                                           in (pc', pc')
+    void $ sendMessage pc Interested
+
+sendPieceRequest :: IORef PeerConn -> Word32 -> Word32 -> Word32 -> IO ()
+sendPieceRequest peer pIdx pOffset pLen = do
+    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcRequest=Just pIdx} in (pc', pc')
+    void $ sendMessage pc (Request pIdx pOffset pLen)
+
 sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)
 sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
     case mkPeerMsg tbl msg of
@@ -235,13 +273,16 @@ sendPieceRequests peers pieces = do
         asgns               = assignPieces missings availablePeerPieces
     putStrLn $ "assignments: " ++ show asgns
     forM_ asgns $ \(pc, (pIdx, pOffset, pSize)) -> do
-      void $ sendMessage pc $ Request pIdx pOffset (min pSize $ pcMaxPieceSize pc)
       -- FIXME: this part is ugly.
-      atomicModifyIORef' (fromJust $ M.lookup pc peerRefsMap) $ \pc' -> (pc'{pcRequest=Just pIdx}, ())
+      let pcRef = fromJust $ M.lookup pc peerRefsMap
+      if pcInterested pc
+        then sendPieceRequest pcRef pIdx pOffset (min pSize $ pcMaxPieceSize pc)
+        else sendInterested pcRef pIdx
   where
     peerFilter :: PeerConn -> Bool
-    peerFilter PeerConn{pcChoking=False, pcRequest=Nothing} = True
-    peerFilter _                                            = False
+    peerFilter PeerConn{pcInterested=False, pcRequest=Nothing} = True
+    peerFilter PeerConn{pcChoking=False, pcRequest=Nothing}    = True
+    peerFilter _                                               = False
 
 -- * Receive helpers
 
