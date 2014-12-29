@@ -14,3 +14,7 @@ install:
 
 script:
  - ./dist/build/test/test && ./dist/build/doctests/doctests
+
+after_script:
+ - cabal install hpc-coveralls
+ - hpc-coveralls test doctests
