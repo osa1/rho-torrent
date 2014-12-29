@@ -132,6 +132,9 @@ testNextMissingPart = TestList
       mgr <- newPieceMgr 12 16384
       missing1 <- nextMissingPart mgr 0
       assertEqual "next missing part is wrong" (Just (0, 12)) missing1
+      writePiece mgr 0 0 (B.replicate 12 0)
+      missing2 <- nextMissingPart mgr 0
+      assertEqual "next missing part is wrong" Nothing missing2
   ]
 
 testGetPieceData :: Test

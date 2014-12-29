@@ -92,9 +92,14 @@ getBytes (PieceMgr _ _ _ pData) = do
 -- | Returns `Just (offset, length)` if we're missing some parts of the
 -- given piece.
 nextMissingPart :: PieceMgr -> Word32 -> IO (Maybe (Word32, Word32))
-nextMissingPart (PieceMgr pSize _ _ m) pIdx = do
+nextMissingPart (PieceMgr pSize pTotalSize pieces m) pIdx = do
     (_, arr) <- readMVar m
-    let bs = MV.slice (fromIntegral $ pSize * pIdx) (fromIntegral pSize) arr
+    let isLastPiece = pIdx == pieces - 1
+        lastPieceSize = case pTotalSize `mod` fromIntegral pSize of
+                          0 -> fromIntegral pSize
+                          l -> l
+        bs = MV.slice (fromIntegral $ pSize * pIdx) (if isLastPiece then fromIntegral lastPieceSize
+                                                                    else fromIntegral pSize) arr
     findFirstMissing bs 0
   where
     findFirstMissing :: MV.IOVector Bool -> Int -> IO (Maybe (Word32, Word32))
