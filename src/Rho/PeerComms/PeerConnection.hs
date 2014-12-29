@@ -190,6 +190,12 @@ handleMessage' sess peer (Extended (MetadataData pIdx totalSize pData)) = do
 
 handleMessage' _ _ msg = putStrLn $ "Unhandled peer msg: " ++ show msg
 
+unchokePeer :: IORef PeerConn -> IO ()
+unchokePeer peer = do
+    atomicModifyIORef' peer $ \pc -> (pc{pcPeerChoking=False}, ())
+    pc <- readIORef peer
+    void $ sendMessage pc Unchoke
+
 sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)
 sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
     case mkPeerMsg tbl msg of

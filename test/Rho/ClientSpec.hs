@@ -2,6 +2,8 @@ module Rho.ClientSpec where
 
 import           Control.Applicative
 import           Control.Concurrent
+import           Control.Concurrent.Async
+import           Control.Monad
 import qualified Data.BEncode                 as BE
 import qualified Data.ByteString              as B
 import qualified Data.ByteString.Char8        as BC
@@ -20,6 +22,7 @@ import           Test.Hspec
 import           Test.Hspec.Contrib.HUnit
 import           Test.HUnit
 
+import qualified Rho.Bitfield                 as BF
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.MetainfoSpec             (parseMIAssertion)
@@ -169,7 +172,78 @@ metadataTransferTest = TestCase $ do
 
 torrentTransferTest :: Test
 torrentTransferTest = TestCase $ do
-  return ()
+    pwd <- getCurrentDirectory
+    Metainfo{mInfo=info, mAnnounce=ann} <- parseMIAssertion (pwd </> "test/test.torrent")
+    let pid1 = mkPeerId 1
+        pid2 = mkPeerId 2
+
+    -- setup tracker
+    tracker <- spawnTracker pwd []
+
+    -- setup seeder
+    seeder <- initTorrentSession info pid1
+    modifyMVar_ (sessPieceMgr seeder) $ \_ -> (Just . fst) <$> tryReadFiles info "test"
+    checkPiecesComplete (sessPieceMgr seeder)
+    seederThread <- async $ runTorrentSession seeder [ann] info
+
+    -- make sure the seeder established a connection with the tracker
+    threadDelay 500000
+
+    -- setup leecher
+    leecher <- initTorrentSession info pid2
+    modifyMVar_ (sessPieceMgr leecher) $ \_ ->
+      Just <$> newPieceMgr (torrentSize info) (iPieceLength info)
+    checkPiecesMissing (sessPieceMgr leecher)
+    torrentDone <- newEmptyMVar
+    torrentDoneThread <- async $ readMVar torrentDone
+    modifyMVar_ (sessOnTorrentComplete leecher) $ \_ -> return $ putMVar torrentDone ()
+    leecherThread <- async $ runTorrentSession leecher [ann] info
+
+    -- for some reason, opentracker returning weird port address(0) to the
+    -- peers and they can't establish a connection because of that. so we
+    -- manually introduce the peers.
+    let seederPort = sessPort seeder
+    localhost <- inet_addr "127.0.0.1"
+    hsResult <- handshake leecher (SockAddrInet seederPort localhost) (iHash info)
+    case hsResult of
+      Left err            -> assertFailure $ "Handshake failed: " ++ err
+      Right DoesntSupport -> assertFailure "Wrong extended message support"
+      Right Supports      -> return ()
+
+    -- FIXME: Manually unchoking the seeder because we don't send unchoke
+    -- and interested messages yet.
+    leecherConn <- (head . M.elems) <$> readMVar (sessPeers seeder)
+    unchokePeer leecherConn
+
+    -- FIXME: Manually setting the bitfield because we don't send bitfield
+    -- messages yet.
+    seederConn <- (head . M.elems) <$> readMVar (sessPeers leecher)
+    atomicModifyIORef' seederConn $ \pc -> (pc{pcPieces=Just $ BF.set (BF.empty 1) 0}, ())
+
+    timeoutThread <- async $ threadDelay (10 * 1000000)
+    void $ waitAnyCancel [seederThread, leecherThread, torrentDoneThread, timeoutThread]
+    terminateProcess tracker
+
+    notDone <- isEmptyMVar torrentDone
+    assertBool "Failed to download the torrent in time" (not notDone)
+  where
+    checkPiecesComplete :: MVar (Maybe PieceMgr) -> Assertion
+    checkPiecesComplete var = do
+      pmgr <- readMVar var
+      case pmgr of
+        Nothing -> assertFailure "Piece manager is not initialized"
+        Just ps -> do
+          missings <- missingPieces ps
+          assertEqual "Piece manager has missing pieces" [] missings
+
+    checkPiecesMissing :: MVar (Maybe PieceMgr) -> Assertion
+    checkPiecesMissing var = do
+      pmgr <- readMVar var
+      case pmgr of
+        Nothing -> assertFailure "Piece manager is not initialized"
+        Just ps -> do
+          missings <- missingPieces ps
+          assertBool "Piece manager doesn't have missing pieces" (not $ null missings)
 
 spawnTracker :: FilePath -> [String] -> IO ProcessHandle
 spawnTracker pwd args = do
