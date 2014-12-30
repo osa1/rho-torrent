@@ -56,6 +56,8 @@ fromBS bs len = do
     v <- SV.unsafeThaw (bsToByteVector (B.copy bs))
     return $ Bitfield v len
 
+-- | Create a ByteString from given Bitfield. Extra bits in the generated
+-- ByteString will be 0.
 toBS :: Bitfield -> IO B.ByteString
 toBS (Bitfield v _) = bsFromByteVector `fmap` SV.freeze v
 
@@ -129,13 +131,16 @@ missingBits = collectBits not
 availableBits :: Bitfield -> IO (S.Set Int)
 availableBits = collectBits id
 
--- | Check all bits in range.
+-- | Check all bits in range. Out-of-range bits are considered set. Return
+-- True if `start` >= `end`.
 --
--- TODO: Write tests. Check for errors.
+-- >>> (\bf -> checkRange bf 5 10) =<< fromBitIdxs [5..9] 10
+-- True
+--
 checkRange :: Bitfield -> Int -> Int -> IO Bool
-checkRange bits start end
-  | start == end = return True
-  | otherwise    = do
+checkRange bits@(Bitfield _ len) start end
+  | start >= min len end = return True
+  | otherwise            = do
       b <- test bits start
       if b then checkRange bits (start + 1) end
            else return False
