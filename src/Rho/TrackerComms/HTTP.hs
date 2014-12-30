@@ -9,9 +9,9 @@ import qualified Data.ByteString.Char8         as BC
 import           Data.List                     (intercalate)
 import           Data.Maybe                    (fromMaybe)
 import           Data.Word
-import           Network.Browser               (browse, request,
-                                                setAllowRedirects)
-import           Network.HTTP                  (defaultGETRequest, rspBody)
+import           Network.Browser
+import           Network.HTTP                  (defaultGETRequest, getRequest,
+                                                rspBody)
 import           Network.Socket                (PortNumber)
 import           Network.URI                   (URI, uriQuery)
 
@@ -26,8 +26,9 @@ peerRequestHTTP
   -> InfoHash -> IO (Either String PeerResponse)
 peerRequestHTTP (PeerId peerId) port uri (downloaded, left, uploaded) hash = do
     (_, resp) <- browse $ do
+      setOutHandler (const $ return ())
       setAllowRedirects True -- handle HTTP redirects
-      request $ defaultGETRequest updatedURI
+      request $ getRequest (show updatedURI)
     return $ parseResp (BC.pack $ rspBody resp)
   where
     updatedURI =
