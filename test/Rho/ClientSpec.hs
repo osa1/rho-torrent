@@ -185,11 +185,8 @@ torrentTransferTest = TestCase $ do
     threadDelay 500000
 
     -- setup leecher
-    leecher <- initTorrentSession info pid2
-    modifyMVar_ (sessPieceMgr leecher) $ \_ ->
-      Just <$> newPieceMgr (torrentSize info) (iPieceLength info)
-    checkPiecesMissing (sessPieceMgr leecher)
-    leecherThread <- async $ runTorrentSession leecher [ann] info
+    leecher <- initMagnetSession (Magnet (iHash info) [ann] Nothing) pid2
+    leecherThread <- async $ runMagnetSession leecher [ann]
 
     -- for some reason, opentracker returning weird port address(0) to the
     -- peers and they can't establish a connection because of that. so we
@@ -202,7 +199,7 @@ torrentTransferTest = TestCase $ do
       Right DoesntSupport -> assertFailure "Wrong extended message support"
       Right Supports      -> return ()
 
-    timeoutThread <- async $ threadDelay (10 * 1000000) >> return False
+    timeoutThread <- async $ threadDelay (10 * 2000000) >> return False
     (_, torrentDone) <- waitAnyCancel [leecherThread, timeoutThread]
     cancel seederThread
     terminateProcess tracker
@@ -225,15 +222,6 @@ torrentTransferTest = TestCase $ do
         Just ps -> do
           missings <- missingPieces ps
           assertEqual "Piece manager has missing pieces" [] missings
-
-    checkPiecesMissing :: MVar (Maybe PieceMgr) -> Assertion
-    checkPiecesMissing var = do
-      pmgr <- readMVar var
-      case pmgr of
-        Nothing -> assertFailure "Piece manager is not initialized"
-        Just ps -> do
-          missings <- missingPieces ps
-          assertBool "Piece manager doesn't have missing pieces" (not $ null missings)
 
 spawnTracker :: FilePath -> [String] -> IO ProcessHandle
 spawnTracker pwd args = do
