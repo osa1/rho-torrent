@@ -20,6 +20,8 @@ import           GHC.IO.Exception
 import           Network.Socket                hiding (KeepAlive, recv,
                                                 recvFrom, recvLen, send, sendTo)
 import           Network.Socket.ByteString
+import           System.Directory              (createDirectoryIfMissing)
+import           System.FilePath               (takeDirectory)
 import           System.IO.Error
 import qualified System.Log.Logger             as L
 
@@ -141,14 +143,24 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessInfoHas
 
     putStrLn "Torrent is complete. Checking hashes of pieces."
     checks <- zipWithM (checkPieces pmgr) [0..] (iPieces info)
-    if and checks
-      then putStrLn "Torrent successfully downloaded."
-      else putStrLn "Some of the hashes don't match."
+    if not (and checks)
+      then putStrLn "Some of the hashes don't match."
+      else do
+        putStrLn "Torrent successfully downloaded. Generating files."
+        writeFiles =<< generateFiles pmgr info
   where
     loop pmgr = do
       sendPieceRequests peers pmgr
       threadDelay (1000000 * 5)
       loop pmgr
+
+    writeFiles :: [(FilePath, B.ByteString)] -> IO ()
+    writeFiles [] = return ()
+    writeFiles ((f, c) : rest) = do
+      putStrLn $ "Writing file: " ++ f
+      createDirectoryIfMissing True (takeDirectory f)
+      B.writeFile f c
+      writeFiles rest
 
 -- | Accept incoming connections and spawn a connected socket listener for
 -- every accepted connection.
