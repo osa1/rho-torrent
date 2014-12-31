@@ -5,7 +5,6 @@ import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
 import qualified Data.BEncode                 as BE
-import qualified Data.ByteString              as B
 import qualified Data.ByteString.Char8        as BC
 import qualified Data.ByteString.Lazy         as LB
 import           Data.Either
@@ -83,49 +82,46 @@ scrapeTest = TestCase $ do
 
 metadataTransferTest :: Test
 metadataTransferTest = TestCase $ do
-    -- mi <- parseMetainfo <$> B.readFile "test/test.torrent"
-    mi <- parseMetainfo <$> B.readFile "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
-    case mi of
-      Left err -> assertFailure $ "Can't parse test.torrent: " ++ err
-      Right Metainfo{mInfo=info} -> do
-        let infoSize = fromIntegral $ LB.length $ BE.encode info
-            pid1     = mkPeerId 1
-            pid2     = mkPeerId 2
-            hash     = iHash info
-            magnet   = Magnet hash [] Nothing
-        localhost     <- inet_addr "127.0.0.1"
-        clientWInfo   <- initTorrentSession' localhost info pid1
-        checkMIPieceMgrInit clientWInfo
-        checkMIPieceMgrMissings "clientWInfo" clientWInfo
-        magnetComplete <- newEmptyMVar
-        let magnetCompleteAction = putMVar magnetComplete ()
-        clientWMagnet <-
-          initMagnetSession' localhost magnet pid2
-        modifyMVar_ (sessOnMIComplete clientWMagnet) (\_ -> return magnetCompleteAction)
-        threadDelay 100000
-        hsResult <- handshake clientWMagnet (SockAddrInet (sessPort clientWInfo) localhost) hash
-        -- hsResult <- handshake clientWInfo (SockAddrInet (sessPort clientWMagnet) localhost) hash
-        threadDelay 100000
-        case hsResult of
-          Left err            -> assertFailure $ "Handshake failed: " ++ err
-          Right DoesntSupport -> assertFailure "Wrong extended message support"
-          Right Supports      -> do
-            checkConnectedPeer "clientWInfo" clientWInfo
-            checkConnectedPeer "clientWMagnet" clientWMagnet
+    Metainfo{mInfo=info} <- parseMIAssertion "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
+    let infoSize = fromIntegral $ LB.length $ BE.encode info
+        pid1     = mkPeerId 1
+        pid2     = mkPeerId 2
+        hash     = iHash info
+        magnet   = Magnet hash [] Nothing
+    localhost     <- inet_addr "127.0.0.1"
+    clientWInfo   <- initTorrentSession' localhost info pid1
+    checkMIPieceMgrInit clientWInfo
+    checkMIPieceMgrMissings "clientWInfo" clientWInfo
+    magnetComplete <- newEmptyMVar
+    let magnetCompleteAction = putMVar magnetComplete ()
+    clientWMagnet <-
+      initMagnetSession' localhost magnet pid2
+    modifyMVar_ (sessOnMIComplete clientWMagnet) (\_ -> return magnetCompleteAction)
+    threadDelay 100000
+    hsResult <- handshake clientWMagnet (SockAddrInet (sessPort clientWInfo) localhost) hash
+    -- hsResult <- handshake clientWInfo (SockAddrInet (sessPort clientWMagnet) localhost) hash
+    threadDelay 100000
+    case hsResult of
+      Left err            -> assertFailure $ "Handshake failed: " ++ err
+      Right DoesntSupport -> assertFailure "Wrong extended message support"
+      Right Supports      -> return ()
 
-            checkExtendedMsgTbl "clientWInfo" clientWInfo
-            checkExtendedMsgTbl "clientWMagnet" clientWMagnet
-            -- clientWMagnet should have connected with clientWInfo and
-            -- clientWInfo's `pcMetadataSize` should be set
-            checkPeerForMI infoSize clientWMagnet
-            -- clientWMagnet's metainfo piece manager should be initialized
-            checkMIPieceMgrInit clientWMagnet
+    checkConnectedPeer "clientWInfo" clientWInfo
+    checkConnectedPeer "clientWMagnet" clientWMagnet
 
-            miPieces <- fromJust <$> (tryReadMVar $ sessMIPieceMgr clientWMagnet)
-            sendMetainfoRequests (sessPeers clientWMagnet) miPieces
-            threadDelay 100000
-            checkMIPieceMgrMissings "clientWMagnet" clientWMagnet
-            checkCallbackCalled magnetComplete
+    checkExtendedMsgTbl "clientWInfo" clientWInfo
+    checkExtendedMsgTbl "clientWMagnet" clientWMagnet
+    -- clientWMagnet should have connected with clientWInfo and
+    -- clientWInfo's `pcMetadataSize` should be set
+    checkPeerForMI infoSize clientWMagnet
+    -- clientWMagnet's metainfo piece manager should be initialized
+    checkMIPieceMgrInit clientWMagnet
+
+    miPieces <- fromJust <$> (tryReadMVar $ sessMIPieceMgr clientWMagnet)
+    sendMetainfoRequests (sessPeers clientWMagnet) miPieces
+    threadDelay 100000
+    checkMIPieceMgrMissings "clientWMagnet" clientWMagnet
+    checkCallbackCalled magnetComplete
   where
     checkConnectedPeer :: String -> Session -> Assertion
     checkConnectedPeer info Session{sessPeers=peers} = do

@@ -10,8 +10,7 @@ import           Data.List                     (intercalate)
 import           Data.Maybe                    (fromMaybe)
 import           Data.Word
 import           Network.Browser
-import           Network.HTTP                  (defaultGETRequest, getRequest,
-                                                rspBody)
+import           Network.HTTP                  (getRequest, rspBody)
 import           Network.Socket                (PortNumber)
 import           Network.URI                   (URI, uriQuery)
 
