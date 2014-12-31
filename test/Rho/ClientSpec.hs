@@ -3,7 +3,6 @@ module Rho.ClientSpec where
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
-import           Control.Monad
 import qualified Data.BEncode                 as BE
 import qualified Data.ByteString.Char8        as BC
 import qualified Data.ByteString.Lazy         as LB
@@ -190,9 +189,6 @@ torrentTransferTest = TestCase $ do
     modifyMVar_ (sessPieceMgr leecher) $ \_ ->
       Just <$> newPieceMgr (torrentSize info) (iPieceLength info)
     checkPiecesMissing (sessPieceMgr leecher)
-    torrentDone <- newEmptyMVar
-    torrentDoneThread <- async $ readMVar torrentDone
-    modifyMVar_ (sessOnTorrentComplete leecher) $ \_ -> return $ putMVar torrentDone ()
     leecherThread <- async $ runTorrentSession leecher [ann] info
 
     -- for some reason, opentracker returning weird port address(0) to the
@@ -206,12 +202,20 @@ torrentTransferTest = TestCase $ do
       Right DoesntSupport -> assertFailure "Wrong extended message support"
       Right Supports      -> return ()
 
-    timeoutThread <- async $ threadDelay (10 * 1000000)
-    void $ waitAnyCancel [seederThread, leecherThread, torrentDoneThread, timeoutThread]
+    timeoutThread <- async $ threadDelay (10 * 1000000) >> return False
+    (_, torrentDone) <- waitAnyCancel [leecherThread, timeoutThread]
+    cancel seederThread
     terminateProcess tracker
 
-    notDone <- isEmptyMVar torrentDone
-    assertBool "Failed to download the torrent in time" (not notDone)
+    assertBool "Failed to download the torrent in time" torrentDone
+
+    -- at this point the torrent files should have been generated and we
+    -- should be able to load those files to a piece manager for seeding
+    (_, b) <- tryReadFiles info pwd
+    assertBool "Can't load downloaded files to piece manager" b
+
+    -- remove downloaded files
+    removeDirectoryRecursive (pwd </> "seed_files")
   where
     checkPiecesComplete :: MVar (Maybe PieceMgr) -> Assertion
     checkPiecesComplete var = do

@@ -30,7 +30,8 @@ runMagnet magnetStr = do
       Right m@(Magnet _ trackers _) -> do
         pid  <- generatePeerId
         sess <- initMagnetSession m pid
-        runMagnetSession sess trackers
+        _ <- runMagnetSession sess trackers
+        return ()
 
 runTorrent :: FilePath -> IO ()
 runTorrent filePath = do
@@ -40,7 +41,9 @@ runTorrent filePath = do
       Right mi -> do
         pid <- generatePeerId
         sess <- initTorrentSession (mInfo mi) pid
-        runTorrentSession sess (mAnnounce mi : concat (fromMaybe [] (mAnnounceList mi))) (mInfo mi)
+        _ <- runTorrentSession sess (mAnnounce mi : concat (fromMaybe [] (mAnnounceList mi)))
+                                    (mInfo mi)
+        return ()
 
 installLogger :: IO ()
 installLogger = do

@@ -75,7 +75,7 @@ initTorrentSession' host info pid = do
     void $ async $ listenPeerSocket sess sock
     return sess
 
-runMagnetSession :: Session -> [Tracker] -> IO ()
+runMagnetSession :: Session -> [Tracker] -> IO Bool
 runMagnetSession sess@Session{sessInfoHash=hash} trackers = do
     PeerResponse _ _ _ peers <- mconcat <$> mapM (requestPeers sess) trackers
     forM_ peers $ \peer -> void $ forkIO $ void $ handshake sess peer hash
@@ -104,14 +104,16 @@ runMagnetSession sess@Session{sessInfoHash=hash} trackers = do
           then do
             putStrLn "Hash correct"
             runTorrentSession sess trackers info
-          else putStrLn "Wrong hash"
+          else do
+            putStrLn "Wrong hash"
+            return False
   where
     loop pieces = do
       sendMetainfoRequests (sessPeers sess) pieces
       threadDelay (1000000 * 5)
       loop pieces
 
-runTorrentSession :: Session -> [Tracker] -> Info -> IO ()
+runTorrentSession :: Session -> [Tracker] -> Info -> IO Bool
 runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessInfoHash=hash}
                   trackers info = do
     PeerResponse _ _ _ peers' <- mconcat <$> mapM (requestPeers sess) trackers
@@ -144,10 +146,13 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessInfoHas
     putStrLn "Torrent is complete. Checking hashes of pieces."
     checks <- zipWithM (checkPieces pmgr) [0..] (iPieces info)
     if not (and checks)
-      then putStrLn "Some of the hashes don't match."
+      then do
+        putStrLn "Some of the hashes don't match."
+        return False
       else do
         putStrLn "Torrent successfully downloaded. Generating files."
         writeFiles =<< generateFiles pmgr info
+        return True
   where
     loop pmgr = do
       sendPieceRequests peers pmgr
