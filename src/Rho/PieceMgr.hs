@@ -168,9 +168,6 @@ generateFiles :: PieceMgr -> Info -> IO [(FilePath, B.ByteString)]
 generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ _ files) = do
     let (names, sizes) = unzip $ map (\(p, s) -> (BC.unpack name </> p, s)) $ collectFiles files
     (bytes, _, _) <- readMVar pData
-    unless (fromIntegral (sum sizes) == MV.length bytes) . error . concat $
-      [ "sum sizes /= length bytes ("
-      , show (sum sizes), " /= ", show (MV.length bytes), ")" ]
     bs <- splitBytes bytes sizes
     return $ zip names bs
   where
