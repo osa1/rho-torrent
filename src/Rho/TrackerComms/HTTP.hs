@@ -48,27 +48,25 @@ peerRequestHTTP (PeerId peerId) port uri (downloaded, left, uploaded) hash = do
       ]
 
     parseResp :: B.ByteString -> Either String PeerResponse
-    parseResp rsp =
-      case BE.decode rsp of
-        Left err -> Left err
-        Right bv ->
-          case getField bv "failure reason" of
-            Right reason -> Left (BC.unpack reason)
-            Left _ -> do
-              interval <- getField bv "interval"
-              let minInterval = opt $ getField bv "min interval"
-                  _trackerId = opt $ getField bv "tracker id" :: Maybe B.ByteString
-                  complete = opt $ getField bv "complete"
-                  incomplete = opt $ getField bv "incomplete"
-              -- TOOD: peers_bs is either a dictionary or a byte string
-              -- (in case of compact form). currently only compact form
-              -- is handled.
-              peers_bs <- getField bv "peers"
-              peers <- fst `fmap` execParser peers_bs readAddrs
-              return $ PeerResponse (fromMaybe interval minInterval)
-                                    incomplete
-                                    complete
-                                    peers
+    parseResp rsp = do
+      bv <- BE.decode rsp
+      case getField bv "failure reason" of
+        Right reason -> Left (BC.unpack reason)
+        Left _ -> do
+          interval <- getField bv "interval"
+          let minInterval = opt $ getField bv "min interval"
+              _trackerId = opt $ getField bv "tracker id" :: Maybe B.ByteString
+              complete = opt $ getField bv "complete"
+              incomplete = opt $ getField bv "incomplete"
+          -- TOOD: peers_bs is either a dictionary or a byte string
+          -- (in case of compact form). currently only compact form
+          -- is handled.
+          peers_bs <- getField bv "peers"
+          peers <- fst `fmap` execParser peers_bs readAddrs
+          return $ PeerResponse (fromMaybe interval minInterval)
+                                incomplete
+                                complete
+                                peers
 
     opt :: Either a b -> Maybe b
     opt (Right ret) = Just ret
