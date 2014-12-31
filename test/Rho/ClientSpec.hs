@@ -88,7 +88,7 @@ metadataTransferTest = TestCase $ do
         hash     = iHash info
         magnet   = Magnet hash [] Nothing
     localhost     <- inet_addr "127.0.0.1"
-    clientWInfo   <- initTorrentSession' localhost info pid1
+    clientWInfo   <- initTorrentSession' localhost info [] pid1
     checkMIPieceMgrInit clientWInfo
     checkMIPieceMgrMissings "clientWInfo" clientWInfo
     magnetComplete <- newEmptyMVar
@@ -168,25 +168,22 @@ metadataTransferTest = TestCase $ do
 torrentTransferTest :: Test
 torrentTransferTest = TestCase $ do
     pwd <- getCurrentDirectory
-    Metainfo{mInfo=info, mAnnounce=ann} <- parseMIAssertion (pwd </> "test/test.torrent")
+    Metainfo{mInfo=info} <- parseMIAssertion (pwd </> "test/test.torrent")
     let pid1 = mkPeerId 1
         pid2 = mkPeerId 2
 
-    -- setup tracker
-    tracker <- spawnTracker pwd []
-
     -- setup seeder
-    seeder <- initTorrentSession info pid1
+    seeder <- initTorrentSession info [] pid1
     modifyMVar_ (sessPieceMgr seeder) $ \_ -> (Just . fst) <$> tryReadFiles info "test"
     checkPiecesComplete (sessPieceMgr seeder)
-    seederThread <- async $ runTorrentSession seeder [ann] info
+    seederThread <- async $ runTorrentSession seeder info
 
     -- make sure the seeder established a connection with the tracker
     threadDelay 500000
 
     -- setup leecher
-    leecher <- initMagnetSession (Magnet (iHash info) [ann] Nothing) pid2
-    leecherThread <- async $ runMagnetSession leecher [ann]
+    leecher <- initMagnetSession (Magnet (iHash info) [] Nothing) pid2
+    leecherThread <- async $ runMagnetSession leecher
 
     -- for some reason, opentracker returning weird port address(0) to the
     -- peers and they can't establish a connection because of that. so we
@@ -202,7 +199,6 @@ torrentTransferTest = TestCase $ do
     timeoutThread <- async $ threadDelay (10 * 2000000) >> return False
     (_, torrentDone) <- waitAnyCancel [leecherThread, timeoutThread]
     cancel seederThread
-    terminateProcess tracker
 
     assertBool "Failed to download the torrent in time" torrentDone
 

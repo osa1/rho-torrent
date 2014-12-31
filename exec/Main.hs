@@ -2,7 +2,6 @@ module Main where
 
 import qualified Data.ByteString           as B
 import qualified Data.ByteString.Char8     as BC
-import           Data.Maybe
 import           System.Environment        (getArgs)
 import           System.Log.Formatter
 import           System.Log.Handler
@@ -27,10 +26,10 @@ runMagnet :: String -> IO ()
 runMagnet magnetStr = do
     case parseMagnet (BC.pack magnetStr) of
       Left err -> error $ "Can't parse magnet string: " ++ err
-      Right m@(Magnet _ trackers _) -> do
+      Right m -> do
         pid  <- generatePeerId
         sess <- initMagnetSession m pid
-        _ <- runMagnetSession sess trackers
+        _ <- runMagnetSession sess
         return ()
 
 runTorrent :: FilePath -> IO ()
@@ -40,9 +39,8 @@ runTorrent filePath = do
       Left err -> putStrLn $ "Can't parse metainfo: " ++ err
       Right mi -> do
         pid <- generatePeerId
-        sess <- initTorrentSession (mInfo mi) pid
-        _ <- runTorrentSession sess (mAnnounce mi : concat (fromMaybe [] (mAnnounceList mi)))
-                                    (mInfo mi)
+        sess <- initTorrentSession (mInfo mi) (trackers mi) pid
+        _ <- runTorrentSession sess (mInfo mi)
         return ()
 
 installLogger :: IO ()

@@ -49,21 +49,21 @@ initMagnetSession m pid = initMagnetSession' 0 m pid
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using info dictionary.
-initTorrentSession :: Info -> PeerId -> IO Session
-initTorrentSession info pid = initTorrentSession' 0 info pid
+initTorrentSession :: Info -> [Tracker] -> PeerId -> IO Session
+initTorrentSession info ts pid = initTorrentSession' 0 info ts pid
 
 initMagnetSession' :: HostAddress -> Magnet -> PeerId -> IO Session
-initMagnetSession' host (Magnet ih _ _) pid = do
+initMagnetSession' host (Magnet ih ts _) pid = do
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet aNY_PORT host)
     port <- socketPort sock
     listen sock 1
-    sess <- initSession pid ih port Nothing Nothing
+    sess <- initSession pid ih port ts Nothing Nothing
     void $ async $ listenPeerSocket sess sock
     return sess
 
-initTorrentSession' :: HostAddress -> Info -> PeerId -> IO Session
-initTorrentSession' host info pid = do
+initTorrentSession' :: HostAddress -> Info -> [Tracker] -> PeerId -> IO Session
+initTorrentSession' host info ts pid = do
     (pieceMgr, _) <- tryReadFiles info ""
     let miData  = LB.toStrict $ BE.encode info
     miPieceMgr <- Just <$> newPieceMgrFromData miData (2 ^ (14 :: Word32))
@@ -71,13 +71,14 @@ initTorrentSession' host info pid = do
     bind sock (SockAddrInet aNY_PORT host)
     port       <- socketPort sock
     listen sock 1
-    sess <- initSession pid (iHash info) port (Just pieceMgr) miPieceMgr
+    sess <- initSession pid (iHash info) port ts (Just pieceMgr) miPieceMgr
     void $ async $ listenPeerSocket sess sock
     return sess
 
-runMagnetSession :: Session -> [Tracker] -> IO Bool
-runMagnetSession sess@Session{sessInfoHash=hash} trackers = do
-    PeerResponse _ _ _ peers <- mconcat <$> mapM (requestPeers sess) trackers
+runMagnetSession :: Session -> IO Bool
+runMagnetSession sess@Session{sessInfoHash=hash, sessTrackers=ts} = do
+    ts' <- readMVar ts
+    PeerResponse _ _ _ peers <- mconcat <$> mapM (requestPeers sess) ts'
     forM_ peers $ \peer -> void $ forkIO $ void $ handshake sess peer hash
     putStrLn $ "Waiting 5 seconds to establish connections with "
                ++ show (length peers) ++ " peers."
@@ -103,7 +104,7 @@ runMagnetSession sess@Session{sessInfoHash=hash} trackers = do
         if iHash info == hash
           then do
             putStrLn "Hash correct"
-            runTorrentSession sess trackers info
+            runTorrentSession sess info
           else do
             putStrLn "Wrong hash"
             return False
@@ -113,10 +114,11 @@ runMagnetSession sess@Session{sessInfoHash=hash} trackers = do
       threadDelay (1000000 * 5)
       loop pieces
 
-runTorrentSession :: Session -> [Tracker] -> Info -> IO Bool
-runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessInfoHash=hash}
-                  trackers info = do
-    PeerResponse _ _ _ peers' <- mconcat <$> mapM (requestPeers sess) trackers
+runTorrentSession :: Session -> Info -> IO Bool
+runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
+                               sessInfoHash=hash, sessTrackers=ts} info = do
+    ts' <- readMVar ts
+    PeerResponse _ _ _ peers' <- mconcat <$> mapM (requestPeers sess) ts'
     connectedPeers <- M.keysSet <$> readMVar peers
     let newPeers = S.fromList peers' `S.difference` connectedPeers
     forM_ (S.toList newPeers) $ \peer -> void $ forkIO $ void $ handshake sess peer hash

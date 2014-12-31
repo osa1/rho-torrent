@@ -44,6 +44,9 @@ torrentSize :: Info -> Word64
 torrentSize Info{iFiles=Left (File len _ _)} = len
 torrentSize Info{iFiles=Right files} = sum $ map fLength files
 
+trackers :: Metainfo -> [Tracker]
+trackers Metainfo{mAnnounce=t, mAnnounceList=ts} = (t:) . concat . fromMaybe [] $ ts
+
 data File = File
   { fLength :: Word64
   , fMd5Sum :: Maybe B.ByteString
