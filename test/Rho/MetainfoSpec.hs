@@ -34,6 +34,7 @@ spec = do
     fromHUnitTest $ TestLabel "should parse" shouldParse
     fromHUnitTest $ TestLabel "should not parse" shouldNotParse
     fromHUnitTest $ TestLabel "regressions" regressions
+    fromHUnitTest $ TestLabel "InfoHash show instance" infoHashShow
 
   describe "parsing-printing" $ do
     modifyMaxSuccess (const 100) $ prop "forall d, fromBEncode . toBEncode $ d = Right d" $ \d ->
@@ -64,6 +65,12 @@ regressions = TestList $ map TestCase [regression1]
               0x69, 0xC2, 0xFF, 0xAB, 0xE3, 0xDB, 0xFE, 0x53, 0xD0, 0x95 ]
       assertEqual "info_hash is wrong" (iHash $ mInfo mi) info_hash
       ppProp mi
+
+infoHashShow :: Test
+infoHashShow = TestCase $ do
+  mi <- parseMIAssertion "test/test.torrent"
+  assertEqual "InfoHash show instance is broken" "f89e0dfd9cfca852d97ad6afa44d8f73ce70b636"
+                                                 (show $ iHash $ mInfo mi)
 
 parseMIAssertion :: FilePath -> Assertion' Metainfo
 parseMIAssertion miPath = do
