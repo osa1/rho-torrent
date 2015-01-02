@@ -7,6 +7,7 @@ import           Network.Socket          (SockAddr, Socket)
 
 import qualified Rho.Bitfield            as BF
 import           Rho.InfoHash
+import           Rho.Listener
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerId
@@ -34,6 +35,8 @@ data PeerConn = PeerConn
     -- ^ socket connected to the peer
   , pcSockAddr       :: SockAddr
     -- ^ address of the peer
+  , pcListener       :: Listener
+    -- ^ Listener that listens the peer's socket
   , pcExtended       :: ExtendedMsgSupport
     -- ^ Supports BEP10
   , pcExtendedMsgTbl :: ExtendedPeerMsgTable
@@ -66,10 +69,10 @@ instance Eq PeerConn where
 instance Show PeerConn where
   show PeerConn{pcPeerId=PeerId pid} = "<Peer with id: " ++ show (B.dropWhile (== 0) pid) ++ ">"
 
-newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> SockAddr -> PeerConn
-newPeerConn peerId infoHash extension sock sockAddr =
+newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> SockAddr -> Listener -> PeerConn
+newPeerConn peerId infoHash extension sock sockAddr l =
   PeerConn True False True False peerId infoHash Nothing
-           Nothing sock sockAddr extension M.empty Nothing
+           Nothing sock sockAddr l extension M.empty Nothing
            (2 ^ (14 :: Word32)) -- 16Kb for now, we may need to dynamically adjust the value
            250 -- default value of libtorrent
            Nothing
