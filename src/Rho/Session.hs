@@ -260,7 +260,7 @@ handleHandshake sess@Session{sessInfoHash=ih, sessPeers=peers} sock addr listene
       peers' <- takeMVar peers
       case M.lookup addr peers' of
         Nothing -> do
-          let pc    = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr
+          let pc    = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr listener
           peerConn <- newIORef pc
           void $ async $ do
             listenConnectedSock sess peerConn listener
@@ -269,10 +269,8 @@ handleHandshake sess@Session{sessInfoHash=ih, sessPeers=peers} sock addr listene
           sendExtendedHs sess pc
           putMVar peers $ M.insert addr peerConn peers'
         Just _ -> do
-          -- TODO: I don't know how can this happen. We already established
-          -- a connection. Just reset the peer info.
-          peerConn <- newIORef $ newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr
-          putMVar peers $ M.insert addr peerConn peers'
+          -- TODO: I don't know how can this happen.
+          warning $ "Got a handshake from a peer we've already connected: " ++ show addr
     | otherwise = do
         warning $ "Got handshake for a different torrent: " ++ show (hInfoHash hs)
 
