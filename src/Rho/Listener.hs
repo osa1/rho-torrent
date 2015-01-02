@@ -116,9 +116,9 @@ listen :: IO B.ByteString -> IORef Deque -> MVar () -> MVar () -> MVar () -> IO 
 listen recv deq updated lock stopped = catchIOError loop errHandler
   where
     loop = do
+      bytes <- recv
       stopped' <- not `fmap` isEmptyMVar stopped
       unless stopped' $ do
-        bytes <- recv
         if | B.null bytes -> stop'
            | otherwise    -> do
                takeMVar lock
