@@ -177,6 +177,7 @@ torrentTransferTest = TestCase $ do
     seeder <- initTorrentSession info [] pid1
     modifyMVar_ (sessPieceMgr seeder) $ \_ -> (Just . fst) <$> tryReadFiles info "test"
     checkPiecesComplete (sessPieceMgr seeder)
+    checkDownloadedZero seeder
     seederThread <- async $ runTorrentSession seeder info
 
     -- make sure the seeder established a connection with the tracker
@@ -203,6 +204,8 @@ torrentTransferTest = TestCase $ do
 
     assertBool "Failed to download the torrent in time" torrentDone
 
+    checkDownloaded leecher
+
     -- at this point the torrent files should have been generated and we
     -- should be able to load those files to a piece manager for seeding
     (_, b) <- tryReadFiles info pwd
@@ -219,6 +222,20 @@ torrentTransferTest = TestCase $ do
         Just ps -> do
           missings <- missingPieces ps
           assertEqual "Piece manager has missing pieces" [] missings
+
+    checkDownloadedZero :: Session -> Assertion
+    checkDownloadedZero sess = do
+      (d, l, _) <- stats sess
+      assertEqual ("downloaded is wrong") 0 d
+      pm <- fromJust <$> readMVar (sessPieceMgr sess)
+      assertEqual ("left is wrong") (pmTotalSize pm) l
+
+    checkDownloaded :: Session -> Assertion
+    checkDownloaded sess = do
+      (d, l, _) <- stats sess
+      pm <- fromJust <$> readMVar (sessPieceMgr sess)
+      assertEqual "downloaded is wrong" (pmTotalSize pm) d
+      assertEqual "left is wrong" 0 l
 
 spawnTracker :: FilePath -> [String] -> IO ProcessHandle
 spawnTracker pwd args = do
