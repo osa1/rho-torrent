@@ -205,6 +205,7 @@ torrentTransferTest = TestCase $ do
     assertBool "Failed to download the torrent in time" torrentDone
 
     checkDownloaded leecher
+    checkUploaded seeder
 
     -- at this point the torrent files should have been generated and we
     -- should be able to load those files to a piece manager for seeding
@@ -236,6 +237,12 @@ torrentTransferTest = TestCase $ do
       pm <- fromJust <$> readMVar (sessPieceMgr sess)
       assertEqual "downloaded is wrong" (pmTotalSize pm) d
       assertEqual "left is wrong" 0 l
+
+    checkUploaded :: Session -> Assertion
+    checkUploaded sess = do
+      (_, _, u) <- stats sess
+      pm <- fromJust <$> readMVar (sessPieceMgr sess)
+      assertEqual "uploaded is wrong" (pmTotalSize pm) u
 
 spawnTracker :: FilePath -> [String] -> IO ProcessHandle
 spawnTracker pwd args = do

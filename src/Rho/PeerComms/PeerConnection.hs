@@ -159,7 +159,9 @@ handleMessage' sess peer (Request pIdx pOffset pLen) = do
               -- TODO: should I send a cancel message or close the
               -- connection?
               return ()
-            Just bytes -> void $ sendMessage pc (Piece pIdx pOffset bytes)
+            Just bytes -> do
+              void $ sendMessage pc (Piece pIdx pOffset bytes)
+              atomicModifyIORef' (sessUploaded sess) $ \u -> (u + fromIntegral (B.length bytes), ())
         Nothing ->
           -- TODO: should I close the connection?
           return ()
