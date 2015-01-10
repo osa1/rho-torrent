@@ -64,12 +64,12 @@ handleMessage' sess peer (Bitfield bytes) = do
         -- we don't know how many pieces we have yet, just set it using
         -- parsed bitfield
         bf <- BF.fromBS bytes (B.length bytes * 8)
-        atomicModifyIORef' peer $ \pc -> (pc{pcPieces = Just bf}, ())
+        atomicModifyIORef_ peer $ \pc -> pc{pcPieces = Just bf}
       Just pm' -> do
         -- TODO: Check spare bits and close the connection if they're
         -- not 0
         bf <- BF.fromBS bytes (fromIntegral $ pmPieces pm')
-        atomicModifyIORef' peer $ \pc -> (pc{pcPieces = Just bf}, ())
+        atomicModifyIORef_ peer $ \pc -> pc{pcPieces = Just bf}
     putMVar (sessPieceMgr sess) pm
 
 handleMessage' _ peer (Have piece) = do
@@ -79,13 +79,13 @@ handleMessage' _ peer (Have piece) = do
         -- we need to initialize bitfield with big-enough size for `piece`
         bf <- BF.empty (fromIntegral piece + 1)
         BF.set bf (fromIntegral piece)
-        atomicModifyIORef' peer $ \pc' -> (pc'{pcPieces=Just bf}, ())
+        atomicModifyIORef_ peer $ \pc' -> pc'{pcPieces=Just bf}
       Just bf ->
         -- just update the bitfield
         BF.set bf (fromIntegral piece)
 
 handleMessage' _ peer Choke =
-    atomicModifyIORef' peer $ \pc -> (pc{pcChoking = True}, ())
+    atomicModifyIORef_ peer $ \pc -> pc{pcChoking = True}
 
 handleMessage' sess peer Unchoke = do
     pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcChoking = False} in (pc', pc')
@@ -101,24 +101,24 @@ handleMessage' sess peer Unchoke = do
             case missing of
               Nothing -> do
                 -- somehow this piece is completed, reset the request field
-                atomicModifyIORef' peer $ \pc' ->
-                  (pc'{pcRequest=if pcRequest pc' == Just pIdx
+                atomicModifyIORef_ peer $ \pc' ->
+                  pc'{pcRequest=if pcRequest pc' == Just pIdx
                      then Nothing
                      else
                        -- peer is updated since the first read, don't
                        -- change it
                        -- TODO: maybe use MVar for peer references too
-                       pcRequest pc'}, ())
+                       pcRequest pc'}
               Just (pOffset, pLen) ->
                 sendPieceRequest peer pIdx pOffset (min pLen $ pcMaxPieceSize pc)
 
 handleMessage' _ peer Interested = do
-    atomicModifyIORef' peer $ \pc -> (pc{pcPeerInterested = True}, ())
+    atomicModifyIORef_ peer $ \pc -> pc{pcPeerInterested = True}
     -- FIXME: we're just unchoking every peer for now
     unchokePeer peer
 
 handleMessage' _ peer NotInterested =
-    atomicModifyIORef' peer $ \pc -> (pc{pcPeerInterested = False}, ())
+    atomicModifyIORef_ peer $ \pc -> pc{pcPeerInterested = False}
 
 handleMessage' sess peer (Piece pIdx offset pData) = do
     putStrLn "Got piece response"
@@ -127,7 +127,7 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
       Nothing     -> warning "Got a piece message before initializing piece manager."
       Just pieces -> do
         newBytes <- writePiece pieces pIdx offset pData
-        atomicModifyIORef' (sessDownloaded sess) $ \d -> (d + fromIntegral newBytes, ())
+        atomicModifyIORef_ (sessDownloaded sess) $ \d -> d + fromIntegral newBytes
         -- request next missing part of the piece
         missing <- nextMissingPart pieces pIdx
         case missing of
@@ -135,7 +135,7 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
             -- piece is complete.
             -- TODO: maybe check the hash here?
             putStrLn "downloaded a piece"
-            atomicModifyIORef' peer $ \pc -> (pc{pcRequest=Nothing}, ())
+            atomicModifyIORef_ peer $ \pc -> pc{pcRequest=Nothing}
             missings <- missingPieces pieces
             if null missings
               then do
@@ -161,7 +161,7 @@ handleMessage' sess peer (Request pIdx pOffset pLen) = do
               return ()
             Just bytes -> do
               void $ sendMessage pc (Piece pIdx pOffset bytes)
-              atomicModifyIORef' (sessUploaded sess) $ \u -> (u + fromIntegral (B.length bytes), ())
+              atomicModifyIORef_ (sessUploaded sess) $ \u -> u + fromIntegral (B.length bytes)
         Nothing ->
           -- TODO: should I close the connection?
           return ()
@@ -217,9 +217,9 @@ handleMessage' sess peer (Extended (MetadataData pIdx totalSize pData)) = do
       (newPIdx : _) -> do
         pc <- readIORef peer
         void $ sendMessage pc $ Extended $ MetadataRequest newPIdx
-        atomicModifyIORef' peer $ \pc' -> (pc'{pcRequest=Just newPIdx}, ())
+        atomicModifyIORef_ peer $ \pc' -> pc'{pcRequest=Just newPIdx}
       _ -> do
-        atomicModifyIORef' peer $ \pc' -> (pc'{pcRequest=Nothing}, ())
+        atomicModifyIORef_ peer $ \pc' -> pc'{pcRequest=Nothing}
         cb <- modifyMVar (sessOnMIComplete sess) $ \cb -> return (return (), cb)
         cb
 
@@ -258,7 +258,7 @@ sendMetainfoRequests peersMap pieces = do
     putStrLn $ "assignments: " ++ show asgns
     forM_ asgns $ \(pc, pIdx) -> do
       void $ sendMessage pc $ Extended $ MetadataRequest pIdx
-      atomicModifyIORef' (fromJust $ M.lookup pc peerRefsMap) $ \pc' -> (pc'{pcRequest=Just pIdx}, ())
+      atomicModifyIORef_ (fromJust $ M.lookup pc peerRefsMap) $ \pc' -> pc'{pcRequest=Just pIdx}
   where
     peerFilter :: PeerConn -> Bool
     peerFilter PeerConn{pcMetadataSize=Just _, pcRequest=Nothing} = True

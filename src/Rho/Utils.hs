@@ -15,6 +15,7 @@ import           Data.ByteString.Internal         (ByteString (PS))
 import qualified Data.ByteString.Lazy             as LB
 import           Data.Char
 import           Data.Digest.SHA1                 (Word160 (..))
+import           Data.IORef                       (IORef, atomicModifyIORef')
 import           Data.Monoid
 import           Data.Time.Clock                  (getCurrentTime, utctDayTime)
 import           Data.Vector.Storable             (Vector, unsafeFromForeignPtr,
@@ -188,6 +189,11 @@ currentTimeMillis = do
 word160ToBS :: Word160 -> B.ByteString
 word160ToBS (Word160 w1 w2 w3 w4 w5) = LB.toStrict . BB.toLazyByteString . mconcat $
     map BB.word32BE [w1, w2, w3, w4, w5]
+
+-- | Like `atomicModifyIORef'`, but returns ().
+atomicModifyIORef_ :: IORef a -> (a -> a) -> IO ()
+atomicModifyIORef_ ref f = atomicModifyIORef' ref $ \v -> (f v, ())
+{-# INLINE atomicModifyIORef_ #-}
 
 -- | Convert a ByteString into a storable Vector.
 bsToByteVector :: ByteString -> Vector Word8

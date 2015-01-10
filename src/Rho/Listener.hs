@@ -144,13 +144,13 @@ listen recv deq dt recvs dld updated lock stopped = catchIOError loop errHandler
       bytes <- recv
       stopped' <- not `fmap` isEmptyMVar stopped
       unless stopped' $ do
-        atomicModifyIORef' dld $ \d -> (d + B.length bytes, ())
+        atomicModifyIORef_ dld $ \d -> d + B.length bytes
         if | B.null bytes -> stop'
            | otherwise    -> do
                takeMVar lock
                ct <- currentTimeMillis
-               atomicModifyIORef' recvs $ \rs ->
-                 ((B.length bytes, ct) : filter (\(_, t) -> ct - t < dt) rs, ())
+               atomicModifyIORef_ recvs $ \rs ->
+                 (B.length bytes, ct) : filter (\(_, t) -> ct - t < dt) rs
                modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
                _ <- tryPutMVar updated ()
                putMVar lock ()
