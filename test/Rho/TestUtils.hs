@@ -2,6 +2,7 @@ module Rho.TestUtils where
 
 import           Control.Applicative
 import           Control.Concurrent.Async
+import           Control.Concurrent.Chan
 import           Control.DeepSeq
 import qualified Control.Exception        as E
 import qualified Data.ByteString          as B
@@ -71,15 +72,5 @@ mkByteEmitter msg = do
 -- read pushed messages.
 mkMessagePusher :: IO (B.ByteString -> IO (), IO B.ByteString)
 mkMessagePusher = do
-    ref <- newIORef []
-    return (push ref, read_ ref)
-  where
-    push :: IORef [B.ByteString] -> B.ByteString -> IO ()
-    push ref bs = atomicModifyIORef' ref $ \bss -> (bss ++ [bs], ())
-
-    read_ :: IORef [B.ByteString] -> IO B.ByteString
-    read_ ref =
-      atomicModifyIORef' ref $ \bss ->
-        case bss of
-          []        -> ([], B.empty)
-          (b : bs') -> (bs', b)
+    chan <- newChan
+    return (writeChan chan, readChan chan)
