@@ -126,7 +126,8 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
     case pm of
       Nothing     -> warning "Got a piece message before initializing piece manager."
       Just pieces -> do
-        writePiece pieces pIdx offset pData
+        newBytes <- writePiece pieces pIdx offset pData
+        modifyIORef (sessDownloaded sess) (+ fromIntegral newBytes)
         -- request next missing part of the piece
         missing <- nextMissingPart pieces pIdx
         case missing of
@@ -205,8 +206,9 @@ handleMessage' sess peer (Extended (MetadataData pIdx totalSize pData)) = do
     miPieces' <- case miPieces of
                    Nothing -> newPieceMgr totalSize (2 ^ (14 :: Word32))
                    Just pm -> return pm
-    -- TODO: what happens if we already have the piece?
-    writePiece miPieces' pIdx 0 pData
+    -- ignoring the return value since we don't keep track of downloaded
+    -- bytes of info dictionaries
+    _ <- writePiece miPieces' pIdx 0 pData
     -- request another piece
     missings <- missingPieces miPieces'
     case reverse missings of

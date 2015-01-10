@@ -8,6 +8,7 @@ import           Control.Monad
 import qualified Data.ByteString              as B
 import qualified Data.ByteString.Char8        as BC
 import           Data.Digest.SHA1             (hash)
+import           Data.IORef
 import           Data.List                    (foldl')
 import           Data.Monoid
 import qualified Data.Vector.Storable         as SV
@@ -61,7 +62,8 @@ pRange (PieceMgr pSize pTotalSize pieces _) pIdx
 makeByteString :: PieceMgr -> IO B.ByteString
 makeByteString (PieceMgr _ _ _ m) = BF.toBS . (\(_, _, bs) -> bs) =<< readMVar m
 
-writePiece :: PieceMgr -> Word32 -> Word32 -> B.ByteString -> IO ()
+-- | Write piece data, return number of new(non-overwritten) bytes.
+writePiece :: PieceMgr -> Word32 -> Word32 -> B.ByteString -> IO Int
 writePiece pmgr@(PieceMgr pSize _ pieces m) pIdx pOffset pData = do
     let
       startIdx :: Int
@@ -69,15 +71,21 @@ writePiece pmgr@(PieceMgr pSize _ pieces m) pIdx pOffset pData = do
       lastP :: Word32
       lastP    = fromIntegral ((startIdx + B.length pData) `div` fromIntegral pSize)
 
+    news <- newIORef 0
+
     withMVar m $ \(arr, bits, pBits) -> do
       zipWithM_ (\byteIdx byte -> do
         MV.write arr  (startIdx + byteIdx) byte
+        alreadySet <- BF.test bits (startIdx + byteIdx)
+        unless alreadySet $ modifyIORef news (+ 1)
         BF.set   bits (startIdx + byteIdx)) [0..] (B.unpack pData)
 
       completedPieces <-
         filterM ((uncurry $ BF.checkRange bits) . pRange pmgr) [pIdx..(min lastP (pieces - 1))]
 
       forM_ completedPieces $ \ci -> BF.set pBits (fromIntegral ci)
+
+    readIORef news
 
 -- | Return piece data for given piece index, offest and length.
 -- Length may be smaller then the given length for last piece.

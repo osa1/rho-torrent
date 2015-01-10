@@ -2,6 +2,7 @@
 
 module Rho.PieceMgrSpec where
 
+import           Control.Monad
 import qualified Data.ByteString          as B
 import           Data.List
 
@@ -37,22 +38,26 @@ pieceMgrTest = TestLabel "basic piece manager ops" $ TestCase $ do
     let expected1 = [0..9]
     assertEqual "missing pieces are wrong" expected1 missings1
 
-    writePiece mgr 3 5 (B.pack [1, 1, 1, 1, 1])
+    newBytes1 <- writePiece mgr 3 5 (B.pack [1, 1, 1, 1, 1])
+    assertEqual "writePiece ret is wrong" 5 newBytes1
     missings2 <- missingPieces mgr
     let expected2 = expected1
     assertEqual "missing pieces are wrong" expected2 missings2
 
-    writePiece mgr 3 0 (B.pack [1, 1, 1, 1, 1])
+    newBytes2 <- writePiece mgr 3 0 (B.pack [1, 1, 1, 1, 1])
+    assertEqual "writePiece ret is wrong" 5 newBytes2
     missings3 <- missingPieces mgr
     let expected3 = expected2 \\ [3]
     assertEqual "missing pieces are wrong" expected3 missings3
 
-    writePiece mgr 4 0 (B.pack [1, 1, 1])
+    newBytes3 <- writePiece mgr 4 0 (B.pack [1, 1, 1])
+    assertEqual "writePiece ret is wrong" 3 newBytes3
     missings4 <- missingPieces mgr
     let expected4 = expected3
     assertEqual "missing pieces are wrong" expected4 missings4
 
-    writePiece mgr 0 0 (B.pack . take 100 . repeat $ 1)
+    newBytes4 <- writePiece mgr 0 0 (B.pack . take 100 . repeat $ 1)
+    assertEqual "writePiece ret is wrong" 87 newBytes4
     missings5 <- missingPieces mgr
     let expected5 = []
     assertEqual "missing pieces are wrong" expected5 missings5
@@ -60,14 +65,16 @@ pieceMgrTest = TestLabel "basic piece manager ops" $ TestCase $ do
 lastPieceNonZeroTest :: Test
 lastPieceNonZeroTest = TestLabel "size of last piece (non-zero)" $ TestCase $ do
     mgr <- newPieceMgr 15 7
-    writePiece mgr 0 0 (B.pack . take 14 . repeat $ 1)
+    newBytes <- writePiece mgr 0 0 (B.pack . take 14 . repeat $ 1)
+    assertEqual "writePiece ret is wrong" 14 newBytes
     missings <- missingPieces mgr
     assertEqual "missing pieces are wrong" [2] missings
 
 lastPieceZeroTest :: Test
 lastPieceZeroTest = TestLabel "size of last piece" $ TestCase $ do
     mgr <- newPieceMgr 14 7
-    writePiece mgr 0 0 (B.pack . take 7 . repeat $ 1)
+    newBytes <- writePiece mgr 0 0 (B.pack . take 7 . repeat $ 1)
+    assertEqual "writePiece ret is wrong" 7 newBytes
     missings <- missingPieces mgr
     assertEqual "missing pieces are wrong" [1] missings
 
@@ -88,7 +95,7 @@ testTorrentPieceTest = TestLabel "test.torrent pieces" $ TestCase $ do
     case parsePeerMsg pieceMsg of
       Left err -> assertFailure $ "Can't parse piece message: " ++ err
       Right (Piece pIdx pOffset pData) -> do
-        writePiece pieceMgr pIdx pOffset pData
+        void $ writePiece pieceMgr pIdx pOffset pData
         missings1 <- missingPieces pieceMgr
         assertEqual "missing pieces are wrong" [] missings1
         check <- checkPieces pieceMgr 0 (head $ iPieces $ mInfo mi)
@@ -109,20 +116,20 @@ testNextMissingPart = TestList
       mgr <- newPieceMgr 50 10
       missing1 <- nextMissingPart mgr 1
       assertEqual "next missing part is wrong" (Just (0, 10)) missing1
-      writePiece mgr 1 3 (B.pack [0, 0, 0])
+      void $ writePiece mgr 1 3 (B.pack [0, 0, 0])
       missing2 <- nextMissingPart mgr 1
       assertEqual "next missing part is wrong" (Just (0, 3)) missing2
-      writePiece mgr 1 0 (B.pack [0, 0, 0])
+      void $ writePiece mgr 1 0 (B.pack [0, 0, 0])
       missing3 <- nextMissingPart mgr 1
       assertEqual "next missing part is wrong" (Just (6, 4)) missing3
-      writePiece mgr 1 6 (B.pack [0, 0, 0, 0])
+      void $ writePiece mgr 1 6 (B.pack [0, 0, 0, 0])
       missing4 <- nextMissingPart mgr 1
       assertEqual "next missing part is wrong" Nothing missing4
   , TestLabel "nextMissingPart - regression" $ TestCase $ do
       mgr <- newPieceMgr 12 16384
       missing1 <- nextMissingPart mgr 0
       assertEqual "next missing part is wrong" (Just (0, 12)) missing1
-      writePiece mgr 0 0 (B.replicate 12 0)
+      void $ writePiece mgr 0 0 (B.replicate 12 0)
       missing2 <- nextMissingPart mgr 0
       assertEqual "next missing part is wrong" Nothing missing2
   ]
@@ -133,23 +140,23 @@ testGetPieceData = TestList
       pieceMgr <- newPieceMgr 100 10
       pd1 <- getPieceData pieceMgr 3 5 5
       assertEqual "returned piece data is wrong" Nothing pd1
-      writePiece pieceMgr 3 5 (B.pack [1])
+      void $ writePiece pieceMgr 3 5 (B.pack [1])
       pd2 <- getPieceData pieceMgr 3 5 5
       assertEqual "returned piece data is wrong" Nothing pd2
-      writePiece pieceMgr 3 6 (B.pack [1, 1, 1])
+      void $ writePiece pieceMgr 3 6 (B.pack [1, 1, 1])
       pd3 <- getPieceData pieceMgr 3 5 5
       assertEqual "returned piece data is wrong" Nothing pd3
-      writePiece pieceMgr 3 9 (B.pack [1])
+      void $ writePiece pieceMgr 3 9 (B.pack [1])
       pd4 <- getPieceData pieceMgr 3 5 5
       assertEqual "returned piece data is wrong" (Just $ B.pack [1,1,1,1,1]) pd4
   , TestLabel "getPieceData - smallar response than requested" $ TestCase $ do
       pieceMgr <- newPieceMgr 10 10
-      writePiece pieceMgr 0 0 (B.pack $ replicate 10 1)
+      void $ writePiece pieceMgr 0 0 (B.pack $ replicate 10 1)
       pd <- getPieceData pieceMgr 0 5 10
       assertEqual "returned piece data is wrong" (Just $ B.pack $ replicate 5 1) pd
   , TestLabel "getPieceData - wrong range" $ TestCase $ do
       pieceMgr <- newPieceMgr 10 10
-      writePiece pieceMgr 0 0 (B.pack $ replicate 10 1)
+      void $ writePiece pieceMgr 0 0 (B.pack $ replicate 10 1)
       pd <- getPieceData pieceMgr 0 10 10
       assertEqual "returned piece data is wrong" Nothing pd
   ]
