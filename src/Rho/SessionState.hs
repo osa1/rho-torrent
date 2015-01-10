@@ -1,6 +1,5 @@
 module Rho.SessionState where
 
-import           Control.Applicative
 import           Control.Concurrent
 import           Data.IORef
 import qualified Data.Map                    as M
@@ -31,7 +30,6 @@ data Session = Session
   , sessOnTorrentComplete :: MVar (IO ())
     -- ^ callback to call when torrent download completed
   , sessDownloaded        :: IORef Word64
-  , sessLeft              :: IORef Word64
   , sessUploaded          :: IORef Word64
   }
 
@@ -46,12 +44,17 @@ initSession peerId infoHash port trackers pieces miPieces = do
     miCb   <- newMVar (return ())
     tCb    <- newMVar (return ())
     dr     <- newIORef 0
-    lr     <- newIORef 0
     ur     <- newIORef 0
-    return $ Session peerId infoHash ts peers pmgr miPMgr port miCb tCb dr lr ur
+    return $ Session peerId infoHash ts peers pmgr miPMgr port miCb tCb dr ur
 
 type SessStats = (Word64, Word64, Word64)
 
 stats :: Session -> IO (Word64, Word64, Word64)
-stats Session{sessDownloaded=d, sessLeft=l, sessUploaded=u} =
-    (,,) <$> readIORef d <*> readIORef l <*> readIORef u
+stats Session{sessDownloaded=d, sessUploaded=u, sessPieceMgr=pm} = do
+    d'  <- readIORef d
+    u'  <- readIORef u
+    pm' <- readMVar pm
+    let l = case pm' of
+              Nothing -> 0
+              Just PieceMgr{pmTotalSize=ts} -> ts - d'
+    return (d', l, u')
