@@ -243,10 +243,9 @@ sendMessage PeerConn{pcSock=sock, pcExtendedMsgTbl=tbl} msg =
       Left err    -> return $ Just err
       Right bytes -> sendAll sock bytes >> return Nothing
 
-sendMetainfoRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO ()
-sendMetainfoRequests peers pieces = do
+sendMetainfoRequests :: M.Map SockAddr (IORef PeerConn) -> PieceMgr -> IO ()
+sendMetainfoRequests peersMap pieces = do
     missings <- missingPieces pieces
-    peersMap <- readMVar peers
     let peerRefs = M.elems peersMap
     peerVals <- mapM readIORef peerRefs
     let peerRefsMap    = M.fromList $ zip peerVals peerRefs
@@ -261,11 +260,10 @@ sendMetainfoRequests peers pieces = do
     peerFilter PeerConn{pcMetadataSize=Just _, pcRequest=Nothing} = True
     peerFilter _                                                  = False
 
-sendPieceRequests :: MVar (M.Map SockAddr (IORef PeerConn)) -> PieceMgr -> IO ()
-sendPieceRequests peers pieces = do
+sendPieceRequests :: M.Map SockAddr (IORef PeerConn) -> PieceMgr -> IO ()
+sendPieceRequests peersMap pieces = do
     missings <- missingPieces pieces
     putStrLn $ "Missing pieces: " ++ show missings
-    peersMap <- readMVar peers
     let peerRefs = M.elems peersMap
     peerVals <- mapM readIORef peerRefs
     let availablePeers      = filter peerFilter peerVals

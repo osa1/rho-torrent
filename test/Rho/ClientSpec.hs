@@ -117,7 +117,8 @@ metadataTransferTest = TestCase $ do
     checkMIPieceMgrInit clientWMagnet
 
     miPieces <- fromJust <$> (tryReadMVar $ sessMIPieceMgr clientWMagnet)
-    sendMetainfoRequests (sessPeers clientWMagnet) miPieces
+    peersMap <- readMVar $ sessPeers clientWMagnet
+    sendMetainfoRequests peersMap miPieces
     threadDelay 100000
     checkMIPieceMgrMissings "clientWMagnet" clientWMagnet
     checkCallbackCalled magnetComplete

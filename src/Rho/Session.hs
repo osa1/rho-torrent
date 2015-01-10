@@ -110,7 +110,8 @@ runMagnetSession sess@Session{sessInfoHash=hash, sessTrackers=ts} = do
             return False
   where
     loop pieces = do
-      sendMetainfoRequests (sessPeers sess) pieces
+      peersMap <- readMVar $ sessPeers sess
+      sendMetainfoRequests peersMap pieces
       threadDelay (1000000 * 5)
       loop pieces
 
@@ -157,7 +158,8 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
         return True
   where
     loop pmgr = do
-      sendPieceRequests peers pmgr
+      peersMap <- readMVar peers
+      sendPieceRequests peersMap pmgr
       threadDelay (1000000 * 5)
       loop pmgr
 
