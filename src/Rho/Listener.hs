@@ -42,30 +42,53 @@ import           Data.IORef
 import           Data.Monoid
 import           System.IO.Error
 
+import           Rho.Utils
+
 type Deque = (D.BankersDequeue B.ByteString, Int)
 
 data Listener = Listener
-  { deque    :: IORef Deque
+  { deque              :: IORef Deque
     -- ^ buffer
-  , updated  :: MVar ()
+  , updated            :: MVar ()
     -- ^ to be able to block until deque is updated
-  , lock     :: MVar ()
+  , lock               :: MVar ()
     -- ^ we need to update `updated` and `deque` without any intervention
-  , listener :: Async ()
+  , listener           :: Async ()
     -- ^ listener thread
-  , stopped  :: MVar ()
+  , stopped            :: MVar ()
     -- ^ to be able to block until listener is stopped
+  , recvHistoryTimeout :: Int
+  , recvHistory        :: IORef [(Int, Int)]
+    -- ^ (message size, receive time in ms) pairs. we only keep last
+    -- `recvHistoryTimeout` seconds.
+  , totalDownloaded    :: IORef Int
   }
 
--- | Spawn a listener thread.
+-- | Spawn a listener thread. Timeout value is set to 5000 (5 seconds).
 initListener :: IO B.ByteString -> IO Listener
-initListener recv = do
+initListener recv = initListener' recv 5000
+
+-- | Spawn a listener thread. Download speed is calculated using the
+-- timeout value.
+initListener' :: IO B.ByteString -> Int -> IO Listener
+initListener' recv dt = do
     deque <- newIORef (D.empty, 0)
     updated <- newEmptyMVar
     lock <- newMVar ()
     stopped <- newEmptyMVar
-    listener <- async $ listen recv deque updated lock stopped
-    return $ Listener deque updated lock listener stopped
+    recvH <- newIORef []
+    dld <- newIORef 0
+    listener <- async $ listen recv deque dt recvH dld updated lock stopped
+    return $ Listener deque updated lock listener stopped dt recvH dld
+
+-- | Download speed in kbps, generated using bytes received in last
+-- 5 seconds.
+downloadSpeed :: Listener -> IO Float
+downloadSpeed Listener{recvHistoryTimeout=dt, recvHistory=recvH} = do
+    ct <- currentTimeMillis
+    recvs <- atomicModifyIORef' recvH $ \rs -> let rs' = filter (\(_, t) -> ct - t < dt) rs
+                                                in (rs', rs')
+    return $ fromIntegral (sum (map fst recvs)) / fromIntegral dt
 
 -- | Try to receive message of given length. A smaller message is returned
 -- when no new messages will arrive. (e.g. when listener is stopped for
@@ -112,16 +135,22 @@ dequeue d len =
        (D.pushFront d' t, h)
 
 -- TODO: Test for exceptions and errors.
-listen :: IO B.ByteString -> IORef Deque -> MVar () -> MVar () -> MVar () -> IO ()
-listen recv deq updated lock stopped = catchIOError loop errHandler
+listen
+  :: IO B.ByteString -> IORef Deque -> Int -> IORef [(Int, Int)] -> IORef Int
+  -> MVar () -> MVar () -> MVar () -> IO ()
+listen recv deq dt recvs dld updated lock stopped = catchIOError loop errHandler
   where
     loop = do
       bytes <- recv
       stopped' <- not `fmap` isEmptyMVar stopped
       unless stopped' $ do
+        atomicModifyIORef' dld $ \d -> (d + B.length bytes, ())
         if | B.null bytes -> stop'
            | otherwise    -> do
                takeMVar lock
+               ct <- currentTimeMillis
+               atomicModifyIORef' recvs $ \rs ->
+                 ((B.length bytes, ct) : filter (\(_, t) -> ct - t < dt) rs, ())
                modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
                _ <- tryPutMVar updated ()
                putMVar lock ()
@@ -134,5 +163,5 @@ listen recv deq updated lock stopped = catchIOError loop errHandler
     stop' = tryPutMVar updated () >> putMVar stopped ()
 
 stopListener :: Listener -> IO ()
-stopListener (Listener _ u lock l s) =
-    cancel l >> tryPutMVar u () >> tryPutMVar s () >> tryPutMVar lock () >> return ()
+stopListener Listener{updated=u, lock=lk, listener=l, stopped=s} =
+    cancel l >> tryPutMVar u () >> tryPutMVar s () >> tryPutMVar lk () >> return ()

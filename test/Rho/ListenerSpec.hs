@@ -60,6 +60,8 @@ spec = do
           assertEqual "recvLen did not return empty after buffer is cleared" 0 (B.length msg')
           (buffer, _) <- readIORef (deque listener_)
           assertEqual "buffer not empty" 0 (D.length buffer)
+          dld <- readIORef $ totalDownloaded listener_
+          assertEqual "totalDownloaded is wrong" (ll msgs) dld
 
     fromHUnitTest $ TestLabel "recvLen should keep returning empty after listener is stopped" $
       TestCase $ do
@@ -70,6 +72,8 @@ spec = do
         assertEqual "recvLen returned something wrong" msgs [B.empty, B.empty, B.empty]
         (buffer, _) <- readIORef (deque listener_)
         assertEqual "buffer not empty" 0 (D.length buffer)
+        dld <- readIORef $ totalDownloaded listener_
+        assertEqual "totalDownloaded is wrong" 0 dld
 
     fromHUnitTest $ TestLabel "recvLen should not receive after listener is manually stopped" $
       TestCase $ do
@@ -87,6 +91,8 @@ spec = do
         push msg2
         msg2'' <- recvLen listener_ 9
         assertEqual "received message is wrong" B.empty msg2''
+        dld <- readIORef $ totalDownloaded listener_
+        assertEqual "totalDownloaded is wrong" (B.length msg1) dld
 
     fromHUnitTest $ TestLabel "sending bytes one-by-one" $
       TestCase $ do
@@ -97,6 +103,8 @@ spec = do
         assertEqual "recvLen returned something wrong" msg (mconcat bytes)
         (buffer, _) <- readIORef (deque listener_)
         assertEqual "buffer not empty" 0 (D.length buffer)
+        dld <- readIORef $ totalDownloaded listener_
+        assertEqual "totalDownloaded is wrong" (ll bytes) dld
 
     fromHUnitTest $ TestLabel "recvLen bug" $ TestCase $ do
       let msgs = map B.pack [[0,0,0,1,1], [0,0,0,0]]
@@ -144,6 +152,34 @@ spec = do
         listener_ <- initListener emitter
         rcvdMsgs <- mapM (recvLen listener_) recvLens
         return $ all (\(rcvdLen, msg) -> rcvdLen == B.length msg) (zip recvLens rcvdMsgs)
+
+    fromHUnitTest $ TestLabel "download speed should init with 0" $ TestCase $ do
+      emitter <- mkMessageEmitter []
+      listener_ <- initListener emitter
+      s <- downloadSpeed listener_
+      assertEqual "download speed is not 0" 0 s
+
+    fromHUnitTest $ TestLabel "download speed should reset after 0.1 seconds" $ TestCase $ do
+      let msg = "message"
+      emitter <- mkMessageEmitter [msg]
+      let dt = 100
+      listener_ <- initListener' emitter dt
+      threadDelay 1000
+      s1 <- downloadSpeed listener_
+      assertEqual "download speed is wrong" (fromIntegral (B.length msg) / fromIntegral dt) s1
+      threadDelay 100000
+      s2 <- downloadSpeed listener_
+      assertEqual "download speed is wrong" 0 s2
+
+    modifyMaxSuccess (const 10) $ prop "random download speed tests" $ do
+      msgs <- genMsgs 10 10
+      let msgsLen = ll msgs
+      return $ ioProperty $ do
+        emitter <- mkMessageEmitter msgs
+        listener_ <- initListener emitter
+        threadDelay 1000
+        s <- downloadSpeed listener_
+        return $ s == fromIntegral msgsLen / (5 * 1000)
 
 genMsgs :: Int -> Int -> Gen [B.ByteString]
 genMsgs maxMsgs maxMsgSize = do
