@@ -226,9 +226,9 @@ torrentTransferTest = TestCase $ do
     checkDownloadedZero :: Session -> Assertion
     checkDownloadedZero sess = do
       (d, l, _) <- stats sess
-      assertEqual ("downloaded is wrong") 0 d
+      assertEqual "downloaded is wrong" 0 d
       pm <- fromJust <$> readMVar (sessPieceMgr sess)
-      assertEqual ("left is wrong") (pmTotalSize pm) l
+      assertEqual "left is wrong" (pmTotalSize pm) l
 
     checkDownloaded :: Session -> Assertion
     checkDownloaded sess = do

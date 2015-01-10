@@ -127,7 +127,7 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
       Nothing     -> warning "Got a piece message before initializing piece manager."
       Just pieces -> do
         newBytes <- writePiece pieces pIdx offset pData
-        modifyIORef (sessDownloaded sess) (+ fromIntegral newBytes)
+        atomicModifyIORef' (sessDownloaded sess) $ \d -> (d + fromIntegral newBytes, ())
         -- request next missing part of the piece
         missing <- nextMissingPart pieces pIdx
         case missing of
