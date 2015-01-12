@@ -82,7 +82,7 @@ initListener' recv dt = do
     return $ Listener deque updated lock listener stopped dt recvH dld
 
 -- | Download speed in kbps, generated using bytes received in last
--- 5 seconds.
+-- `recvHistoryTimeout` milliseconds.
 downloadSpeed :: Listener -> IO Float
 downloadSpeed Listener{recvHistoryTimeout=dt, recvHistory=recvH} = do
     ct <- currentTimeMillis
