@@ -25,7 +25,10 @@ data PieceMgr = PieceMgr
   { pmPieceSize :: Word32
   , pmTotalSize :: Word64
   , pmPieces    :: Word32
-  , pmData      :: MVar (MV.IOVector Word8, BF.Bitfield, BF.Bitfield)
+  , pmData      :: MVar ( MV.IOVector Word8
+                        , BF.Bitfield -- bitfield for bytes
+                        , BF.Bitfield -- bitfield for pieces
+                        )
   }
 
 newPieceMgr :: Word64 -> Word32 -> IO PieceMgr
