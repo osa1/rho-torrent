@@ -156,9 +156,9 @@ missingPieces (PieceMgr _ _ ps m) = do
     withMVar m $ \(_, _, pBits) ->
       filterM (\pIdx -> not <$> BF.test pBits (fromIntegral pIdx)) [0..ps-1]
 
--- | Check if piece data has correct hash.
-checkPieceHash :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
-checkPieceHash (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
+-- | Generate hash of a downloaded piece.
+generatePieceHash :: PieceMgr -> Word32 -> IO B.ByteString
+generatePieceHash (PieceMgr pSize totalSize pieces pData) pIdx = do
     (arr, _, _) <- readMVar pData
     let
       isLastPiece = pIdx == pieces - 1
@@ -171,7 +171,11 @@ checkPieceHash (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
                               else totalSize `mod` fromIntegral pSize)
               else start + fromIntegral pSize
     bytes <- SV.toList <$> SV.freeze (MV.slice (fromIntegral start) (fromIntegral end) arr)
-    return $ word160ToBS (hash bytes) == pHash
+    return $ word160ToBS $ hash bytes
+
+-- | Check if piece data has correct hash.
+checkPieceHash :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
+checkPieceHash pMgr pIdx pHash = (pHash ==) <$> generatePieceHash pMgr pIdx
 
 -- | Generate files from given piece manager for the given torrent.
 -- NOTE: This doesn't check hasehes.
