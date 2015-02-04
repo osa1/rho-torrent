@@ -171,7 +171,7 @@ generatePieceHash (PieceMgr pSize totalSize pieces pData) pIdx = do
                               else totalSize `mod` fromIntegral pSize)
               else start + fromIntegral pSize
     bytes <- SV.toList <$> SV.freeze (MV.slice (fromIntegral start) (fromIntegral end) arr)
-    return $ word160ToBS $ hash bytes
+    return $! word160ToBS $ hash bytes
 
 -- | Check if piece data has correct hash.
 checkPieceHash :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
