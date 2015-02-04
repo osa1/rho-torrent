@@ -8,6 +8,8 @@ import           Control.Concurrent
 import           Control.DeepSeq
 import           Criterion.Main
 import qualified Data.ByteString              as B
+import           Data.Digest.SHA1             (hash)
+import           Data.Monoid
 import qualified Data.Vector.Storable.Mutable as MV
 import           Data.Word
 import           System.Directory
@@ -17,12 +19,20 @@ import qualified Rho.Bitfield                 as BF
 import           Rho.Metainfo
 import           Rho.PieceMgr
 import           Rho.Tracker
+import           Rho.Utils
 
 main :: IO ()
 main = defaultMain
   [ env loadFiles $ \files -> bgroup ("decoding files using `bencoding` library")
     [ bench "decode" $ nf (map parseMetainfo) files
     ]
+
+  , env (genBytes (1000 * 1000)) $ \bytes ->
+      bench "SHA1 hashing" $ nf (word160ToBS . hash) bytes
+
+  , env (B.pack <$> genBytes (1000 * 1000)) $ \bytes ->
+      bench "SHA1 hashing + BS conversion" $ nf (word160ToBS . hash . B.unpack) bytes
+
   , env (generatePieceMgr (1000 * 1000) 1024) $ \pMgr ->
       bench "generating piece hashes" $ nfIO (mapM (generatePieceHash pMgr) [0..99])
   ]
@@ -42,6 +52,13 @@ loadFiles = do
       else do
         putStrLn "Test files are missing. Won't run benchmarks."
         return []
+
+genBytes :: Int -> IO [Word8]
+genBytes = return . loop
+  where
+    loop :: Int -> [Word8]
+    loop 0 = []
+    loop i = fromIntegral i : loop (i - 1)
 
 generatePieceMgr :: Word64 -> Word32 -> IO PieceMgr
 generatePieceMgr totalSize pieceSize = PieceMgr pieceSize totalSize pieces <$> pmDataGen

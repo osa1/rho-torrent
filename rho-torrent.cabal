@@ -151,6 +151,7 @@ benchmark bench
     , bencoding
     , bytestring
     , criterion
+    , Crypto
     , deepseq
     , directory
     , filepath
