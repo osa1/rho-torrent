@@ -15,7 +15,7 @@ import           Rho.Tracker
 main :: IO ()
 main = defaultMain
   [ env loadFiles $ \files -> bgroup ("decoding files using `bencoding` library")
-    [ bench "decode" $ nf (\() -> force $ map parseMetainfo files) ()
+    [ bench "decode" $ nf (map parseMetainfo) files
     ]
   ]
 
