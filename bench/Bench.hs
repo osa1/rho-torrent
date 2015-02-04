@@ -10,7 +10,6 @@ import           Rho.Metainfo
 import           System.Directory
 import           System.FilePath
 
-import           Rho.InfoHash
 import           Rho.Tracker
 
 main :: IO ()
@@ -35,20 +34,6 @@ loadFiles = do
       else do
         putStrLn "Test files are missing. Won't run benchmarks."
         return []
-
-instance NFData Metainfo where
-    rnf Metainfo{..} = rnf mAnnounce `seq` rnf mAnnounceList `seq` rnf mCreationDate `seq`
-                       rnf mComment `seq` rnf mCreatedBy `seq` rnf mEncoding `seq` rnf mInfo
-
-instance NFData Info where
-    rnf Info{..} = rnf iName `seq` rnf iPieceLength `seq` rnf iPieces `seq` rnf iPrivate `seq`
-                   rnf iFiles `seq` rnf iHash
-
-instance NFData File where
-    rnf File{..} = rnf fLength `seq` rnf fMd5Sum `seq` rnf fPath
-
-instance NFData InfoHash where
-    rnf (InfoHash hash) = rnf hash
 
 instance NFData Tracker where
     rnf (HTTPTracker _) = ()

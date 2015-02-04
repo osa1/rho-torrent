@@ -49,6 +49,7 @@ library
     , bytestring
     , containers
     , Crypto
+    , deepseq
     , dequeue
     , directory
     , filepath

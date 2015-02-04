@@ -1,11 +1,13 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Rho.InfoHash where
 
+import           Control.DeepSeq (NFData)
 import           Data.Bits
 import qualified Data.ByteString as B
 
 -- | 20-byte info_hash of torrent
 -- TODO: Move this type to somewhere nice and remove this module.
-newtype InfoHash = InfoHash { unwrapInfoHash :: B.ByteString } deriving (Eq, Ord)
+newtype InfoHash = InfoHash { unwrapInfoHash :: B.ByteString } deriving (Eq, Ord, NFData)
 
 instance Show InfoHash where
     show (InfoHash hash) = concat $ map toHexDigit $ B.unpack hash

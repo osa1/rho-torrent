@@ -4,12 +4,13 @@
 module Rho.Metainfo where
 
 import           Control.Applicative
-import           Data.BEncode            as BE
-import qualified Data.BEncode.BDict      as BE
-import qualified Data.ByteString         as B
-import qualified Data.ByteString.Lazy    as LB
+import           Control.DeepSeq      (NFData)
+import           Data.BEncode         as BE
+import qualified Data.BEncode.BDict   as BE
+import qualified Data.ByteString      as B
+import qualified Data.ByteString.Lazy as LB
 import           Data.Digest.SHA1
-import           Data.Maybe              (fromMaybe)
+import           Data.Maybe           (fromMaybe)
 import           Data.Typeable
 import           Data.Word
 import           GHC.Generics
@@ -29,6 +30,7 @@ data Metainfo = Metainfo
   , mEncoding     :: Maybe B.ByteString
   , mInfo         :: Info
   } deriving (Show, Eq, Typeable, Generic)
+instance NFData Metainfo
 
 data Info = Info
   { iName        :: B.ByteString
@@ -39,6 +41,7 @@ data Info = Info
   , iFiles       :: Either File [File]
     -- ^ Left: single-file mode, Right: multi-file mode
   } deriving (Show, Eq, Typeable, Generic)
+instance NFData Info
 
 torrentSize :: Info -> Word64
 torrentSize Info{iFiles=Left (File len _ _)} = len
@@ -53,6 +56,7 @@ data File = File
   , fPath   :: [B.ByteString]
     -- ^ empty in single-file mode
   } deriving (Show, Eq, Typeable, Generic)
+instance NFData File
 
 -- | Parse contents of a .torrent file.
 parseMetainfo :: B.ByteString -> Either String Metainfo
