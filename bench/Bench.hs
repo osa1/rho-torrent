@@ -11,18 +11,16 @@ import           System.Directory
 import           System.FilePath
 
 import           Rho.InfoHash
-import           Rho.Metainfo
 import           Rho.Tracker
 
 main :: IO ()
-main = do
-    files <- loadFiles
-    defaultMain
-      [ bgroup ("decoding " ++ show (length files) ++ " files using `bencoding` library")
-        [ bench "decode" $ nf (\() -> force $ map parseMetainfo files) ()
-        ]
-      ]
+main = defaultMain
+  [ env loadFiles $ \files -> bgroup ("decoding files using `bencoding` library")
+    [ bench "decode" $ nf (\() -> force $ map parseMetainfo files) ()
+    ]
+  ]
 
+root :: FilePath
 root = "tests/should_parse/ubuntu/torrent.ubuntu.com:6969"
 
 loadFiles :: IO [B.ByteString]
@@ -53,5 +51,5 @@ instance NFData InfoHash where
     rnf (InfoHash hash) = rnf hash
 
 instance NFData Tracker where
-    rnf (HTTPTracker uri) = ()
-    rnf (UDPTracker bs p) = rnf bs
+    rnf (HTTPTracker _) = ()
+    rnf (UDPTracker bs _) = rnf bs
