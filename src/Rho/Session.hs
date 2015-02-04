@@ -147,7 +147,7 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
     void $ waitAnyCancel [loopThread, torrentDoneThread]
 
     putStrLn "Torrent is complete. Checking hashes of pieces."
-    checks <- zipWithM (checkPieces pmgr) [0..] (iPieces info)
+    checks <- zipWithM (checkPieceHash pmgr) [0..] (iPieces info)
     if not (and checks)
       then do
         putStrLn "Some of the hashes don't match."

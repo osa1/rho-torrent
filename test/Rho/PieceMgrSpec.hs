@@ -98,7 +98,7 @@ testTorrentPieceTest = TestLabel "test.torrent pieces" $ TestCase $ do
         void $ writePiece pieceMgr pIdx pOffset pData
         missings1 <- missingPieces pieceMgr
         assertEqual "missing pieces are wrong" [] missings1
-        check <- checkPieces pieceMgr 0 (head $ iPieces $ mInfo mi)
+        check <- checkPieceHash pieceMgr 0 (head $ iPieces $ mInfo mi)
         assertBool "piece hash check failed" check
         files <- generateFiles pieceMgr (mInfo mi)
         let expectedFiles =

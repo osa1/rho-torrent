@@ -157,8 +157,8 @@ missingPieces (PieceMgr _ _ ps m) = do
       filterM (\pIdx -> not <$> BF.test pBits (fromIntegral pIdx)) [0..ps-1]
 
 -- | Check if piece data has correct hash.
-checkPieces :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
-checkPieces (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
+checkPieceHash :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
+checkPieceHash (PieceMgr pSize totalSize pieces pData) pIdx pHash = do
     (arr, _, _) <- readMVar pData
     let
       isLastPiece = pIdx == pieces - 1
@@ -219,7 +219,7 @@ tryReadFiles info root = do
         putStrLn "Files exist, checking hashes"
         bytes <- mconcat <$> mapM B.readFile files
         pieces <- newPieceMgrFromData bytes (iPieceLength info)
-        hashesMatch <- and <$> zipWithM (checkPieces pieces) [0..] (iPieces info)
+        hashesMatch <- and <$> zipWithM (checkPieceHash pieces) [0..] (iPieces info)
         if hashesMatch
           then do
             putStrLn "Hashes match, returning filled piece manager."
