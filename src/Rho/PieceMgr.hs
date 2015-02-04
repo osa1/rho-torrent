@@ -5,9 +5,9 @@ module Rho.PieceMgr where
 import           Control.Applicative
 import           Control.Concurrent.MVar
 import           Control.Monad
+import           Crypto.Hash.SHA1             (hash)
 import qualified Data.ByteString              as B
 import qualified Data.ByteString.Char8        as BC
-import           Data.Digest.SHA1             (hash)
 import           Data.IORef
 import           Data.List                    (foldl')
 import           Data.Monoid
@@ -170,8 +170,8 @@ generatePieceHash (PieceMgr pSize totalSize pieces pData) pIdx = do
                               then fromIntegral pSize
                               else totalSize `mod` fromIntegral pSize)
               else start + fromIntegral pSize
-    bytes <- SV.toList <$> SV.freeze (MV.slice (fromIntegral start) (fromIntegral end) arr)
-    return $! word160ToBS $ hash bytes
+    bytes <- bsFromByteVector <$> SV.freeze (MV.slice (fromIntegral start) (fromIntegral end) arr)
+    return $! hash bytes
 
 -- | Check if piece data has correct hash.
 checkPieceHash :: PieceMgr -> Word32 -> B.ByteString -> IO Bool

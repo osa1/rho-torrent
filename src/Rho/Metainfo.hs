@@ -5,11 +5,11 @@ module Rho.Metainfo where
 
 import           Control.Applicative
 import           Control.DeepSeq      (NFData)
+import           Crypto.Hash.SHA1     (hash)
 import           Data.BEncode         as BE
 import qualified Data.BEncode.BDict   as BE
 import qualified Data.ByteString      as B
 import qualified Data.ByteString.Lazy as LB
-import           Data.Digest.SHA1
 import           Data.Maybe           (fromMaybe)
 import           Data.Typeable
 import           Data.Word
@@ -17,7 +17,6 @@ import           GHC.Generics
 
 import           Rho.InfoHash
 import           Rho.Tracker
-import           Rho.Utils
 
 -- | Metainfo file as specified in
 -- https://wiki.theory.org/BitTorrentSpecification#Metainfo_File_Structure
@@ -92,7 +91,7 @@ instance BEncode Metainfo where
 
 -- | (20-byte) SHA1 hash of info field.
 mkInfoHash :: BValue -> InfoHash
-mkInfoHash bv = InfoHash . word160ToBS . hash . LB.unpack . encode $ bv
+mkInfoHash bv = InfoHash . hash . LB.toStrict . encode $ bv
 
 instance BEncode Info where
   toBEncode (Info name _ pl ps priv (Right files)) = toDict $

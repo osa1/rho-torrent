@@ -9,14 +9,10 @@ import qualified Data.BEncode.Internal            as BEI
 import qualified Data.BEncode.Types               as BE
 import           Data.Bits                        (shiftL)
 import qualified Data.ByteString                  as B
-import qualified Data.ByteString.Builder          as BB
 import qualified Data.ByteString.Char8            as BC
 import           Data.ByteString.Internal         (ByteString (PS))
-import qualified Data.ByteString.Lazy             as LB
 import           Data.Char
-import           Data.Digest.SHA1                 (Word160 (..))
 import           Data.IORef                       (IORef, atomicModifyIORef')
-import           Data.Monoid
 import           Data.Time.Clock                  (getCurrentTime, utctDayTime)
 import           Data.Vector.Storable             (Vector, unsafeFromForeignPtr,
                                                    unsafeToForeignPtr)
@@ -180,15 +176,6 @@ currentTimeMillis :: IO Int
 currentTimeMillis = do
     time <- getCurrentTime
     return $ floor $ toRational (utctDayTime time) * 1000
-
--- | Convert 20-byte word to big-endian bytestring.
---
--- >>> B.unpack $ word160ToBS $ Word160 1 2 3 4 5
--- [0,0,0,1,0,0,0,2,0,0,0,3,0,0,0,4,0,0,0,5]
---
-word160ToBS :: Word160 -> B.ByteString
-word160ToBS (Word160 w1 w2 w3 w4 w5) = LB.toStrict . BB.toLazyByteString . mconcat $
-    map BB.word32BE [w1, w2, w3, w4, w5]
 
 -- | Like `atomicModifyIORef'`, but returns ().
 atomicModifyIORef_ :: IORef a -> (a -> a) -> IO ()
