@@ -156,3 +156,4 @@ benchmark bench
     , filepath
     , random
     , RhoTorrent
+    , vector
