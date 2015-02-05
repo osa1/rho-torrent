@@ -2,7 +2,6 @@
 
 module Rho.Tracker
   ( Tracker (..)
-  -- , uriShow
   , parseTrackerBS
   ) where
 
