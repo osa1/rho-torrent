@@ -2,16 +2,20 @@
 
 module Rho.PieceMgrSpec where
 
+import           Control.Concurrent
 import           Control.Monad
-import qualified Data.ByteString          as B
+import qualified Data.ByteString              as B
 import           Data.List
+import qualified Data.Vector.Storable.Mutable as MV
+import           Data.Word
 
 import           Test.Hspec
 import           Test.Hspec.Contrib.HUnit
 import           Test.HUnit
 
+import qualified Rho.Bitfield                 as BF
 import           Rho.Metainfo
-import           Rho.MetainfoSpec         (parseMIAssertion)
+import           Rho.MetainfoSpec             (parseMIAssertion)
 import           Rho.PeerComms.Message
 import           Rho.PieceMgr
 
@@ -29,6 +33,7 @@ spec = do
     fromHUnitTest testNextMissingPart
     fromHUnitTest testGetPieceData
     fromHUnitTest testReadFiles
+    fromHUnitTest pieceHashRegression
 
 pieceMgrTest :: Test
 pieceMgrTest = TestLabel "basic piece manager ops" $ TestCase $ do
@@ -176,3 +181,44 @@ testReadFiles = TestList
             ]
       assertEqual "Generated files are wrong" expectedFiles files
   ]
+
+-- Regression test for the bug that was caused because of a misuse of
+-- Vector API. Vector.slice takes (start, length) instead of (start, end)
+-- (which I always find more intuitive for some reason).
+pieceHashRegression :: Test
+pieceHashRegression = TestLabel "generating hashes of pieces" $ TestList
+  [ TestCase $ do
+      pMgr <- pmGen 1 10
+      _ <- mapM (generatePieceHash pMgr) [0..9]
+      return ()
+  , TestCase $ do
+      pMgr <- pmGen 10 1
+      _ <- generatePieceHash pMgr 0
+      return ()
+  ]
+
+pmGen :: Word32 -> Word64 -> IO PieceMgr
+pmGen pieceSize totalSize = do
+    let pieces :: Word32
+        pieces =
+          let (d, m) = totalSize `divMod` fromIntegral pieceSize
+          in  fromIntegral $ if m == 0 then d else d + 1
+    vec <- MV.new (fromIntegral totalSize)
+    fillVec (fromIntegral totalSize) vec
+    bf1 <- BF.full (fromIntegral totalSize)
+    bf2 <- BF.full (fromIntegral pieces)
+    mv <- newMVar (vec, bf1, bf2)
+    return $ PieceMgr pieceSize totalSize pieces mv
+  where
+    fillVec :: Int -> MV.IOVector Word8 -> IO ()
+    fillVec size vec = loop 0 fileContent
+      where
+        loop vIdx [] = loop vIdx fileContent
+        loop vIdx (c : cs)
+          | vIdx == size = return ()
+          | otherwise    = do
+              MV.unsafeWrite vec vIdx c
+              loop (vIdx + 1) cs
+
+    fileContent :: [Word8]
+    fileContent = B.unpack "dummy data "

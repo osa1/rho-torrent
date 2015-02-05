@@ -164,13 +164,13 @@ generatePieceHash (PieceMgr pSize totalSize pieces pData) pIdx = do
       isLastPiece = pIdx == pieces - 1
       start :: Word64
       start = fromIntegral pIdx * fromIntegral pSize
-      end :: Word64
-      end = if isLastPiece
-              then start + (if totalSize `mod` fromIntegral pSize == 0
-                              then fromIntegral pSize
-                              else totalSize `mod` fromIntegral pSize)
-              else start + fromIntegral pSize
-    bytes <- bsFromByteVector <$> SV.freeze (MV.slice (fromIntegral start) (fromIntegral end) arr)
+      len :: Word64
+      len = if isLastPiece
+              then if totalSize `mod` fromIntegral pSize == 0
+                     then fromIntegral pSize
+                     else totalSize `mod` fromIntegral pSize
+              else fromIntegral pSize
+    bytes <- bsFromByteVector <$> SV.freeze (MV.slice (fromIntegral start) (fromIntegral len) arr)
     return $! hash bytes
 
 -- | Check if piece data has correct hash.

@@ -123,6 +123,7 @@ test-suite test
     , quickcheck-instances
     , RhoTorrent
     , text
+    , vector
 
     -- for scraping magnets/torrents
     , HTTP
