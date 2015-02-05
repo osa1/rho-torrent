@@ -82,7 +82,7 @@ spec = do
         (sock1, sock2) <- initConnectedSocks
         listener <- initListener (recv sock2 4096)
 
-        action1 <- async $ forM_ msgs (\msg -> send sock1 msg)
+        action1 <- async $ forM_ msgs (send sock1)
         action2 <- async $ replicateM (length msgs) (recvMessage listener)
 
         wait action1

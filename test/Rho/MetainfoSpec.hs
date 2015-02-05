@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiWayIf, StandaloneDeriving, TupleSections #-}
+{-# LANGUAGE MultiWayIf, TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Rho.MetainfoSpec where

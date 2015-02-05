@@ -61,7 +61,7 @@ pieceMgrTest = TestLabel "basic piece manager ops" $ TestCase $ do
     let expected4 = expected3
     assertEqual "missing pieces are wrong" expected4 missings4
 
-    newBytes4 <- writePiece mgr 0 0 (B.pack . take 100 . repeat $ 1)
+    newBytes4 <- writePiece mgr 0 0 (B.pack $ replicate 100 1)
     assertEqual "writePiece ret is wrong" 87 newBytes4
     missings5 <- missingPieces mgr
     let expected5 = []
@@ -70,7 +70,7 @@ pieceMgrTest = TestLabel "basic piece manager ops" $ TestCase $ do
 lastPieceNonZeroTest :: Test
 lastPieceNonZeroTest = TestLabel "size of last piece (non-zero)" $ TestCase $ do
     mgr <- newPieceMgr 15 7
-    newBytes <- writePiece mgr 0 0 (B.pack . take 14 . repeat $ 1)
+    newBytes <- writePiece mgr 0 0 (B.pack $ replicate 14 1)
     assertEqual "writePiece ret is wrong" 14 newBytes
     missings <- missingPieces mgr
     assertEqual "missing pieces are wrong" [2] missings
@@ -78,7 +78,7 @@ lastPieceNonZeroTest = TestLabel "size of last piece (non-zero)" $ TestCase $ do
 lastPieceZeroTest :: Test
 lastPieceZeroTest = TestLabel "size of last piece" $ TestCase $ do
     mgr <- newPieceMgr 14 7
-    newBytes <- writePiece mgr 0 0 (B.pack . take 7 . repeat $ 1)
+    newBytes <- writePiece mgr 0 0 (B.pack $ replicate 7 1)
     assertEqual "writePiece ret is wrong" 7 newBytes
     missings <- missingPieces mgr
     assertEqual "missing pieces are wrong" [1] missings

@@ -120,7 +120,7 @@ spec = do
     fromHUnitTest $ TestLabel "dequeue test" $ TestCase $ do
       let first = [0,0,0,1,1]
           second = [0,0,0,0]
-          d = D.pushBack (D.pushBack (D.empty) (B.pack first)) (B.pack second)
+          d = D.pushBack (D.pushBack D.empty (B.pack first)) (B.pack second)
       assertEqual "" [first, second] (map B.unpack $ D.takeFront 2 d)
       let (d', firstMsg) = dequeue d 4
           (d'', firstMsg') = dequeue d' 1
