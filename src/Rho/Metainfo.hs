@@ -128,7 +128,7 @@ instance BEncode Info where
         pieceLength <- field $ req "piece length"
         pieces <- splitPieces <$> field (req "pieces")
         private <- readPrivate
-        return $ Info name (mkInfoHash bv) pieceLength pieces private (Right $ files)
+        return $ Info name (mkInfoHash bv) pieceLength pieces private (Right files)
     where
       readPrivate :: Get Bool
       readPrivate = fromMaybe False <$> optional (field $ req "private")

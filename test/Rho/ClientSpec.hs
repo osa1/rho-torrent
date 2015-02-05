@@ -3,6 +3,7 @@ module Rho.ClientSpec where
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
+import           Control.Monad
 import qualified Data.BEncode                 as BE
 import qualified Data.ByteString.Char8        as BC
 import qualified Data.ByteString.Lazy         as LB
@@ -116,7 +117,7 @@ metadataTransferTest = TestCase $ do
     -- clientWMagnet's metainfo piece manager should be initialized
     checkMIPieceMgrInit clientWMagnet
 
-    miPieces <- fromJust <$> (tryReadMVar $ sessMIPieceMgr clientWMagnet)
+    miPieces <- fromJust <$> tryReadMVar (sessMIPieceMgr clientWMagnet)
     peersMap <- readMVar $ sessPeers clientWMagnet
     sendMetainfoRequests peersMap miPieces
     threadDelay 100000
@@ -164,7 +165,7 @@ metadataTransferTest = TestCase $ do
     checkCallbackCalled :: MVar () -> Assertion
     checkCallbackCalled var = do
       isEmpty <- isEmptyMVar var
-      if isEmpty then assertFailure "Metainfo downloaded callback is not called" else return ()
+      when isEmpty $ assertFailure "Metainfo downloaded callback is not called"
 
 torrentTransferTest :: Test
 torrentTransferTest = TestCase $ do

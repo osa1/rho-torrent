@@ -121,8 +121,8 @@ parseExtendedHsAndBF = TestLabel "parsing extended handshake followed by bitfiel
       case M.lookup UtMetadata msgTbl of
         Nothing -> assertFailure "can't find UtMetadata in message table"
         Just i -> assertEqual "ut_metadata id is wrong" 3 i
-      case (find (\case { UtMetadataSize _ -> True; _ -> False }) msgData
-              >>= \(UtMetadataSize i) -> return i) of
+      case find (\case { UtMetadataSize _ -> True; _ -> False }) msgData
+             >>= \(UtMetadataSize i) -> return i of
         Just size -> assertEqual "metadata size is wrong" 7778 size
         Nothing -> assertFailure "can't find metadata size"
     notHs -> assertFailure $ "message is not extended handshake: " ++ show notHs
@@ -233,7 +233,7 @@ recvMsg (Msg bs) = Right bs
 newtype PFXd = PFXd [B.ByteString] deriving (Eq)
 
 instance Arbitrary PFXd where
-    arbitrary = PFXd <$> (listOf $ do
+    arbitrary = PFXd <$> listOf (do
       -- longest message will probably be the metadata data message:
       -- 16kb piece data + meta info. we generate 32kb messages here.
       len <- choose (0, 2 ^ (15 :: Word16))

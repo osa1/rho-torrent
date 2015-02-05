@@ -3,6 +3,7 @@
 module Rho.PieceMgr where
 
 import           Control.Applicative
+import           Control.Arrow                (first)
 import           Control.Concurrent.MVar
 import           Control.Monad
 import           Crypto.Hash.SHA1             (hash)
@@ -59,7 +60,7 @@ pRange (PieceMgr pSize pTotalSize pieces _) pIdx
   | pIdx >= pieces = error "requested range for a piece out of range"
   | otherwise      = let start = pSize * pIdx
                          end   = min (fromIntegral $ start + pSize) (fromIntegral pTotalSize)
-                     in (fromIntegral $ start, end)
+                     in (fromIntegral start, end)
 
 -- | Generate a ByteString from piece manager.
 makeByteString :: PieceMgr -> IO B.ByteString
@@ -106,7 +107,7 @@ getPieceData (PieceMgr pSize pTotal ps pData) pIdx pOffset pLen = do
          | otherwise -> do
              hasBytes <- BF.checkRange bits start end
              if hasBytes
-               then Just . B.pack <$> (forM [start..end - 1] $ \idx -> MV.read pd idx)
+               then Just . B.pack <$> forM [start..end - 1] (\idx -> MV.read pd idx)
                else return Nothing
 
 getBytes :: PieceMgr -> IO B.ByteString
@@ -181,7 +182,7 @@ checkPieceHash pMgr pIdx pHash = (pHash ==) <$> generatePieceHash pMgr pIdx
 -- NOTE: This doesn't check hasehes.
 generateFiles :: PieceMgr -> Info -> IO [(FilePath, B.ByteString)]
 generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ _ files) = do
-    let (names, sizes) = unzip $ map (\(p, s) -> (BC.unpack name </> p, s)) $ collectFiles files
+    let (names, sizes) = unzip $ map (first (BC.unpack name </>)) $ collectFiles files
     (bytes, _, _) <- readMVar pData
     bs <- splitBytes bytes sizes
     return $ zip names bs

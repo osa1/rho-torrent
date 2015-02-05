@@ -32,14 +32,14 @@ import           Rho.Utils
 
 -- | Listen a connected socket and handle incoming messages.
 listenConnectedSock :: Session -> IORef PeerConn -> Listener -> IO ()
-listenConnectedSock sess peer listener = flip catchIOError errHandler $ loop
+listenConnectedSock sess peer listener = flip catchIOError errHandler loop
   where
     loop = do
       msg <- recvMessage listener
       case msg of
         ConnClosed msg'
           | B.null msg' -> return ()
-          | otherwise  -> putStrLn ("recvd a partial message: " ++ show (B.unpack msg')) >> return ()
+          | otherwise  -> putStrLn ("recvd a partial message: " ++ show (B.unpack msg'))
         Msg msg' -> handleMessage sess peer msg' >> loop
 
     errHandler err = do
@@ -137,11 +137,9 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
             putStrLn "downloaded a piece"
             atomicModifyIORef_ peer $ \pc -> pc{pcRequest=Nothing}
             missings <- missingPieces pieces
-            if null missings
-              then do
-                cb <- modifyMVar (sessOnTorrentComplete sess) $ \cb -> return (return (), cb)
-                cb
-              else return ()
+            when (null missings) $ do
+              cb <- modifyMVar (sessOnTorrentComplete sess) $ \cb -> return (return (), cb)
+              cb
           Just (pOffset, len) -> do
             pc <- readIORef peer
             void $ sendMessage pc $ Request pIdx pOffset (min len $ pcMaxPieceSize pc)

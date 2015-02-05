@@ -29,7 +29,7 @@ parseMagnet bs = do
       Nothing -> Left "Can't parse xt argument from magnet URL."
       Just xt ->
         let dn = lookup "dn" args
-            tr = mapMaybe (either (const Nothing) Just . parseTrackerBS) $
+            tr = mapMaybe (either (const Nothing) Just . parseTrackerBS) .
                    -- TODO: redundant bytestring packing/unpacking here
                    map (BC.pack . unEscapeString . BC.unpack . snd) . filter ((==) "tr" . fst) $ args
             xt' = parseInfoHash (B.drop 9 xt) -- drop "urn:btih:" prefix and parse
@@ -71,7 +71,7 @@ parseInfoHash = InfoHash . LB.toStrict . BB.toLazyByteString . go
          case BC.uncons rest of
            Nothing -> error "error while parsing info hash"
            Just (c2, rest') ->
-             (BB.word8 $ fromIntegral $ (digitToInt c1 `shiftL` 4) + digitToInt c2) <> go rest'
+             BB.word8 (fromIntegral $ (digitToInt c1 `shiftL` 4) + digitToInt c2) <> go rest'
 
 -- | Parse `a=b` pairs from a query string. Parsing starts from the
 -- position of '?' in the string.

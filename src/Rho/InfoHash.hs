@@ -10,7 +10,7 @@ import qualified Data.ByteString as B
 newtype InfoHash = InfoHash { unwrapInfoHash :: B.ByteString } deriving (Eq, Ord, NFData)
 
 instance Show InfoHash where
-    show (InfoHash hash) = concat $ map toHexDigit $ B.unpack hash
+    show (InfoHash hash) = concatMap toHexDigit $ B.unpack hash
       where
         toHexDigit d = [toHexDigit' (d `shiftR` 4), toHexDigit' (d .&. 0x0F)]
 

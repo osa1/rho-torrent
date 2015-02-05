@@ -45,12 +45,12 @@ import           Rho.TrackerComms.PeerResponse
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using magnet URI.
 initMagnetSession :: Magnet -> PeerId -> IO Session
-initMagnetSession m pid = initMagnetSession' 0 m pid
+initMagnetSession = initMagnetSession' 0
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using info dictionary.
 initTorrentSession :: Info -> [Tracker] -> PeerId -> IO Session
-initTorrentSession info ts pid = initTorrentSession' 0 info ts pid
+initTorrentSession = initTorrentSession' 0
 
 initMagnetSession' :: HostAddress -> Magnet -> PeerId -> IO Session
 initMagnetSession' host (Magnet ih ts _) pid = do
@@ -95,7 +95,7 @@ runMagnetSession sess@Session{sessInfoHash=hash, sessTrackers=ts} = do
     -- interrupt loop thread when metainfo download is complete.
     void $ waitAnyCancel [loopThread, miDoneThread]
 
-    putStrLn $ "Downloaded the info. Parsing..."
+    putStrLn "Downloaded the info. Parsing..."
     bytes <- getBytes miPieceMgr
     case parseInfoDict bytes of
       Left err   -> error $ "Can't parse info dict: " ++ err

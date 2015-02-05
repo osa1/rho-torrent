@@ -62,7 +62,7 @@ shouldParse = TestCase $ do
 parseMagnetUrls :: [B.ByteString] -> Assertion
 parseMagnetUrls magnetUrls =
   forM_ magnetUrls $ \magnetUrl ->
-    case (parseMagnet magnetUrl) of
+    case parseMagnet magnetUrl of
       Right Magnet{mTrackers=trackers} ->
         -- TODO: This is not a problem since magnets can omit trackers,
         -- but I couldn't find any torrents like this and we doesn't

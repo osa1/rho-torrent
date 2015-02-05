@@ -96,7 +96,7 @@ spec = do
 
     fromHUnitTest $ TestLabel "sending bytes one-by-one" $
       TestCase $ do
-        let bytes = map B.singleton $ replicate 100 0x12
+        let bytes = replicate 100 (B.singleton 0x12)
         emitter <- mkMessageEmitter bytes
         listener_ <- initListener emitter
         msg <- recvLen listener_ 100
