@@ -116,7 +116,7 @@ runMagnetSession sess@Session{sessInfoHash=hash, sessTrackers=ts} = do
       loop pieces
 
 runTorrentSession :: Session -> Info -> IO Bool
-runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
+runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessRequestedPieces=requests,
                                sessInfoHash=hash, sessTrackers=ts} info = do
     ts' <- readMVar ts
     PeerResponse _ _ _ peers' <- mconcat <$> mapM (requestPeers sess) ts'
@@ -159,7 +159,8 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
   where
     loop pmgr = do
       peersMap <- readMVar peers
-      sendPieceRequests peersMap pmgr
+      reqs <- readMVar requests
+      sendPieceRequests peersMap reqs pmgr
       threadDelay (1000000 * 5)
       loop pmgr
 

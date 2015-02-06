@@ -3,6 +3,7 @@ module Rho.SessionState where
 import           Control.Concurrent
 import           Data.IORef
 import qualified Data.Map                    as M
+import qualified Data.Set                    as S
 import           Data.Word
 import           Network.Socket              (PortNumber, SockAddr)
 
@@ -23,6 +24,8 @@ data Session = Session
     -- ^ piece manager for torrent data
   , sessMIPieceMgr        :: MVar PieceMgr
     -- ^ piece manager for info dictionary
+  , sessRequestedPieces   :: MVar (S.Set Word32)
+    -- ^ set of pieces we've requested
   , sessPort              :: PortNumber
     -- ^ port number of the socket that we use for incoming handshakes
   , sessOnMIComplete      :: MVar (IO ())
@@ -41,11 +44,12 @@ initSession peerId infoHash port trackers pieces miPieces = do
     peers  <- newMVar M.empty
     pmgr   <- newMVar pieces
     miPMgr <- maybe newEmptyMVar newMVar miPieces
+    reqs   <- newMVar S.empty
     miCb   <- newMVar (return ())
     tCb    <- newMVar (return ())
     dr     <- newIORef 0
     ur     <- newIORef 0
-    return $ Session peerId infoHash ts peers pmgr miPMgr port miCb tCb dr ur
+    return $ Session peerId infoHash ts peers pmgr miPMgr reqs port miCb tCb dr ur
 
 type SessStats = (Word64, Word64, Word64)
 

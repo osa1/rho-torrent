@@ -127,7 +127,7 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
       Nothing     -> warning "Got a piece message before initializing piece manager."
       Just pieces -> do
         newBytes <- writePiece pieces pIdx offset pData
-        atomicModifyIORef_ (sessDownloaded sess) $ \d -> d + fromIntegral newBytes
+        atomicModifyIORef_ (sessDownloaded sess) (+ fromIntegral newBytes)
         -- request next missing part of the piece
         missing <- nextMissingPart pieces pIdx
         case missing of
@@ -135,11 +135,23 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
             -- piece is complete.
             -- TODO: maybe check the hash here?
             putStrLn "downloaded a piece"
-            atomicModifyIORef_ peer $ \pc -> pc{pcRequest=Nothing}
+            -- request a new pieces, or call the callback if we're done
             missings <- missingPieces pieces
-            when (null missings) $ do
-              cb <- modifyMVar (sessOnTorrentComplete sess) $ \cb -> return (return (), cb)
-              cb
+            case missings of
+              [] -> do
+                modifyMVar_ (sessRequestedPieces sess) $ return . S.delete pIdx
+                atomicModifyIORef_ peer $ \pc -> pc{pcRequest=Nothing}
+                cb <- modifyMVar (sessOnTorrentComplete sess) $ \cb -> return (return (), cb)
+                cb
+              (pIdx' : _) -> do
+                modifyMVar_ (sessRequestedPieces sess) $ return . S.insert pIdx' . S.delete pIdx
+                atomicModifyIORef_ peer $ \pc -> pc{pcRequest=Just pIdx'}
+                nextMissingPart pieces pIdx' >>=
+                  \case Nothing -> error $ "Missing pieces returned " ++ show pIdx'
+                                             ++ ", but nextMissingPart returned Nothing"
+                        Just (pOffset, len) -> do
+                          pc <- readIORef peer
+                          void $ sendMessage pc $ Request pIdx' pOffset (min len $ pcMaxPieceSize pc)
           Just (pOffset, len) -> do
             pc <- readIORef peer
             void $ sendMessage pc $ Request pIdx pOffset (min len $ pcMaxPieceSize pc)
@@ -262,9 +274,9 @@ sendMetainfoRequests peersMap pieces = do
     peerFilter PeerConn{pcMetadataSize=Just _, pcRequest=Nothing} = True
     peerFilter _                                                  = False
 
-sendPieceRequests :: M.Map SockAddr (IORef PeerConn) -> PieceMgr -> IO ()
-sendPieceRequests peersMap pieces = do
-    missings <- missingPieces pieces
+sendPieceRequests :: M.Map SockAddr (IORef PeerConn) -> S.Set Word32 -> PieceMgr -> IO ()
+sendPieceRequests peersMap reqs pieces = do
+    missings <- ((`S.difference` reqs)  . S.fromList) <$> missingPieces pieces
     putStrLn $ "Missing pieces: " ++ show missings
     let peerRefs = M.elems peersMap
     peerVals <- mapM readIORef peerRefs
@@ -274,7 +286,7 @@ sendPieceRequests peersMap pieces = do
       mapM (\p -> case pcPieces p of
                     Nothing -> return Nothing
                     Just ps -> Just . (p,) . S.map fromIntegral <$> BF.availableBits ps) availablePeers
-    let asgns               = assignPieces missings availablePeerPieces
+    let asgns               = assignPieces (S.toList missings) availablePeerPieces
     putStrLn $ "assignments: " ++ show asgns
     forM_ asgns $ \(pc, pIdx) -> do
       missingP <- nextMissingPart pieces pIdx
