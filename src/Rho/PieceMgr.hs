@@ -17,6 +17,7 @@ import qualified Data.Vector.Storable.Mutable as MV
 import           Data.Word
 import           System.Directory             (doesFileExist)
 import           System.FilePath              ((</>))
+import qualified System.Log.Logger            as L
 
 import qualified Rho.Bitfield                 as BF
 import           Rho.Metainfo
@@ -221,22 +222,25 @@ tryReadFiles info root = do
     allExist <- and <$> mapM doesFileExist files
     if allExist
       then do
-        putStrLn "Files exist, checking hashes"
+        notice "Files exist, checking hashes"
         bytes <- mconcat <$> mapM B.readFile files
         pieces <- newPieceMgrFromData bytes (iPieceLength info)
         hashesMatch <- and <$> zipWithM (checkPieceHash pieces) [0..] (iPieces info)
         if hashesMatch
           then do
-            putStrLn "Hashes match, returning filled piece manager."
+            notice "Hashes match, returning filled piece manager."
             return (pieces, True)
           else do
-            putStrLn "Hashes don't match, returning empty piece manager."
+            notice "Hashes don't match, returning empty piece manager."
             freshPieceManager
       else do
-        putStrLn "Some files missing, returning empty piece manager."
+        notice "Some files missing, returning empty piece manager."
         freshPieceManager
   where
     freshPieceManager :: IO (PieceMgr, Bool)
     freshPieceManager = do
       pieces <- newPieceMgr (torrentSize info) (iPieceLength info)
       return (pieces, False)
+
+notice :: String -> IO ()
+notice = L.noticeM "Rho.PieceMgr"

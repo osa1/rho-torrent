@@ -18,6 +18,7 @@ import           Data.Word
 import           Network.Socket                hiding (recv, recvFrom, send,
                                                 sendTo)
 import           Network.Socket.ByteString
+import qualified System.Log.Logger             as L
 import           System.Random                 (randomIO)
 
 import           Rho.InfoHash
@@ -82,12 +83,12 @@ responseHandler dataChan tChan = do
           let tid' = Resp.tid msg
           case M.lookup tid' chans of
             Nothing -> do
-              putStrLn $ "error: can't find transaction id handler for: " ++ show tid'
+              notice $ "error: can't find transaction id handler for: " ++ show tid'
               return chans
             Just chan -> do
               putMVar chan msg
               return $ M.delete tid' chans
-      Left err -> putStrLn $ "Can't parse server response: " ++ err
+      Left err -> notice $ "Can't parse server response: " ++ err
     responseHandler dataChan tChan
 
 peerRequestUDP
@@ -139,3 +140,6 @@ req UDPCommHandler{sock=skt, transactionChans=tChan} addr udpReq = do
     modifyMVar_ tChan $ return . M.insert reqTid respVar
     sendAllTo skt (mkTrackerMsg udpReq) addr
     takeMVar respVar
+
+notice :: String -> IO ()
+notice = L.noticeM "Rho.TrackerComms.UDP"

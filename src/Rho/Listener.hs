@@ -41,6 +41,7 @@ import qualified Data.Dequeue             as D
 import           Data.IORef
 import           Data.Monoid
 import           System.IO.Error
+import qualified System.Log.Logger        as L
 
 import           Rho.Utils
 
@@ -157,7 +158,7 @@ listen recv deq dt recvs dld updated lock stopped = catchIOError loop errHandler
                loop
 
     errHandler err = do
-      putStrLn $ "Error happened while listening a socket: " ++ show err
+      notice $ "Error happened while listening a socket: " ++ show err
       stop'
 
     stop' = tryPutMVar updated () >> putMVar stopped ()
@@ -165,3 +166,6 @@ listen recv deq dt recvs dld updated lock stopped = catchIOError loop errHandler
 stopListener :: Listener -> IO ()
 stopListener Listener{updated=u, lock=lk, listener=l, stopped=s} =
     cancel l >> tryPutMVar u () >> tryPutMVar s () >> tryPutMVar lk () >> return ()
+
+notice :: String -> IO ()
+notice = L.noticeM "Rho.Listener"

@@ -26,7 +26,7 @@ import           Rho.Metainfo
 import           Rho.MetainfoSpec             (parseMIAssertion)
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
-import           Rho.PeerComms.PeerConnection
+import           Rho.PeerComms.PeerConnection hiding (info)
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr
@@ -76,7 +76,7 @@ scrapeTest = TestCase $ do
     scrapeRet <- scrapeRequestUDP udpComms sockAddr [iHash $ mInfo mi]
     case scrapeRet of
       Left err -> assertFailure $ "Can't scrape: " ++ err
-      Right sr -> putStrLn $ "Scrape result: " ++ show sr
+      Right sr -> return ()
 
     terminateProcess tracker
 

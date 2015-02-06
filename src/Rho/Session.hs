@@ -32,11 +32,11 @@ import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
-import           Rho.PeerComms.PeerConnection  hiding (errorLog, logger,
-                                                warning)
+import           Rho.PeerComms.PeerConnection  hiding (errorLog, info, logger,
+                                                notice, warning)
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerId
-import           Rho.PieceMgr
+import           Rho.PieceMgr                  hiding (notice)
 import           Rho.SessionState
 import           Rho.Tracker
 import           Rho.TrackerComms.PeerRequest
@@ -80,10 +80,10 @@ runMagnetSession sess@Session{sessInfoHash=hash, sessTrackers=ts} = do
     ts' <- readMVar ts
     PeerResponse _ _ _ peers <- mconcat <$> mapM (requestPeers sess) ts'
     forM_ peers $ \peer -> void $ forkIO $ void $ handshake sess peer hash
-    putStrLn $ "Waiting 5 seconds to establish connections with "
+    notice $ "Waiting 5 seconds to establish connections with "
                ++ show (length peers) ++ " peers."
     threadDelay (1000000 * 5)
-    putStrLn "Blocking until learning metainfo size from peers..."
+    notice "Blocking until learning metainfo size from peers..."
     miPieceMgr <- readMVar (sessMIPieceMgr sess)
     miDone <- newEmptyMVar
     modifyMVar_ (sessOnMIComplete sess) (\_ -> return $ putMVar miDone ())
@@ -95,18 +95,16 @@ runMagnetSession sess@Session{sessInfoHash=hash, sessTrackers=ts} = do
     -- interrupt loop thread when metainfo download is complete.
     void $ waitAnyCancel [loopThread, miDoneThread]
 
-    putStrLn "Downloaded the info. Parsing..."
+    notice "Downloaded the info. Parsing..."
     bytes <- getBytes miPieceMgr
     case parseInfoDict bytes of
       Left err   -> error $ "Can't parse info dict: " ++ err
-      Right info -> do
-        print info
-        if iHash info == hash
-          then do
-            putStrLn "Hash correct"
+      Right info
+        | iHash info == hash -> do
+            notice "Hash correct"
             runTorrentSession sess info
-          else do
-            putStrLn "Wrong hash"
+        | otherwise -> do
+            notice "Wrong hash"
             return False
   where
     loop pieces = do
@@ -146,14 +144,14 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessRequest
     -- loop until the torrent is complete
     void $ waitAnyCancel [loopThread, torrentDoneThread]
 
-    putStrLn "Torrent is complete. Checking hashes of pieces."
+    notice "Torrent is complete. Checking hashes of pieces."
     checks <- zipWithM (checkPieceHash pmgr) [0..] (iPieces info)
     if not (and checks)
       then do
-        putStrLn "Some of the hashes don't match."
+        notice "Some of the hashes don't match."
         return False
       else do
-        putStrLn "Torrent successfully downloaded. Generating files."
+        notice "Torrent successfully downloaded. Generating files."
         writeFiles =<< generateFiles pmgr info
         return True
   where
@@ -167,7 +165,7 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessRequest
     writeFiles :: [(FilePath, B.ByteString)] -> IO ()
     writeFiles [] = return ()
     writeFiles ((f, c) : rest) = do
-      putStrLn $ "Writing file: " ++ f
+      notice $ "Writing file: " ++ f
       createDirectoryIfMissing True (takeDirectory f)
       B.writeFile f c
       writeFiles rest
@@ -189,8 +187,8 @@ listenHandshake sess listener sock peerAddr = do
     msg <- recvHandshake listener
     case msg of
       ConnClosed bs
-        | B.null bs -> putStrLn "Got weird handshake attempt."
-        | otherwise -> putStrLn $ "Got partial handshake msg: " ++ show bs
+        | B.null bs -> notice "Got weird handshake attempt."
+        | otherwise -> notice $ "Got partial handshake msg: " ++ show bs
       Msg bs ->
         case parseHandshake bs of
           Left err ->
@@ -205,10 +203,10 @@ handshake sess@Session{sessPeerId=peerId} addr infoHash = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
       Left err -> do
-        putStrLn $ "Handshake failed: " ++ err
+        notice $ "Handshake failed: " ++ err
         return $ Left err
       Right (sock, listener, hs) -> do
-        putStrLn $ "Handshake successful. Extension support: " ++ show (hExtension hs)
+        notice $ "Handshake successful. Extension support: " ++ show (hExtension hs)
         handleHandshake sess sock addr listener hs
         return $ Right (hExtension hs)
 
@@ -219,7 +217,7 @@ sendHandshake :: SockAddr -> InfoHash -> PeerId -> IO (Either String (Socket, Li
 sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet aNY_PORT 0)
-    putStrLn $ "Sending handshake to remote: " ++ show addr
+    notice $ "Sending handshake to remote: " ++ show addr
     let msg = mkHandshake infoHash peerId
     connect sock addr
     listener <- initListener $ recv sock 4096
@@ -296,8 +294,6 @@ recvHandshake listener = do
 logger :: String
 logger = "Rho.Session"
 
-warning :: String -> IO ()
-warning = L.warningM logger
-
-errorLog :: String -> IO ()
-errorLog = L.errorM logger
+warning, notice :: String -> IO ()
+warning  = L.warningM logger
+notice   = L.noticeM logger

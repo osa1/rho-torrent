@@ -26,7 +26,7 @@ import           Rho.Listener                (Listener, recvLen)
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerPieceAsgn
-import           Rho.PieceMgr
+import           Rho.PieceMgr                hiding (notice, logger)
 import           Rho.SessionState
 import           Rho.Utils
 
@@ -39,11 +39,11 @@ listenConnectedSock sess peer listener = flip catchIOError errHandler loop
       case msg of
         ConnClosed msg'
           | B.null msg' -> return ()
-          | otherwise  -> putStrLn ("recvd a partial message: " ++ show (B.unpack msg'))
+          | otherwise  -> notice $ "recvd a partial message: " ++ show (B.unpack msg')
         Msg msg' -> handleMessage sess peer msg' >> loop
 
     errHandler err = do
-      putStrLn $ "Error happened while listening a socket: " ++ show err
+      notice $ "Error happened while listening a socket: " ++ show err
                   ++ ". Closing the connection."
 
 handleMessage :: Session -> IORef PeerConn -> B.ByteString -> IO ()
@@ -121,7 +121,7 @@ handleMessage' _ peer NotInterested =
     atomicModifyIORef_ peer $ \pc -> pc{pcPeerInterested = False}
 
 handleMessage' sess peer (Piece pIdx offset pData) = do
-    putStrLn "Got piece response"
+    info "Got piece response"
     pm <- readMVar $ sessPieceMgr sess
     case pm of
       Nothing     -> warning "Got a piece message before initializing piece manager."
@@ -134,7 +134,7 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
           Nothing -> do
             -- piece is complete.
             -- TODO: maybe check the hash here?
-            putStrLn "downloaded a piece"
+            info "downloaded a piece"
             -- request a new pieces, or call the callback if we're done
             missings <- missingPieces pieces
             case missings of
@@ -177,7 +177,7 @@ handleMessage' sess peer (Request pIdx pOffset pLen) = do
           return ()
 
 handleMessage' sess peer (Extended (ExtendedHandshake msgTbl msgData hsData)) = do
-    putStrLn "Got extended handshake."
+    info "Got extended handshake."
     metadataSize <- atomicModifyIORef' peer $ \pc' ->
       let metadataSize = find (\case UtMetadataSize{} -> True
                                      _ -> False) msgData >>= \(UtMetadataSize i) -> return i in
@@ -213,7 +213,7 @@ handleMessage' sess peer (Extended (MetadataRequest pIdx)) = do
             void $ sendMessage pc $ Extended $ MetadataData pIdx (pmTotalSize miPieces') pd
 
 handleMessage' sess peer (Extended (MetadataData pIdx totalSize pData)) = do
-    putStrLn "got metadata piece"
+    info "got metadata piece"
     miPieces <- tryReadMVar (sessMIPieceMgr sess)
     miPieces' <- case miPieces of
                    Nothing -> newPieceMgr totalSize (2 ^ (14 :: Word32))
@@ -233,7 +233,7 @@ handleMessage' sess peer (Extended (MetadataData pIdx totalSize pData)) = do
         cb <- modifyMVar (sessOnMIComplete sess) $ \cb -> return (return (), cb)
         cb
 
-handleMessage' _ _ msg = putStrLn $ "Unhandled peer msg: " ++ show msg
+handleMessage' _ _ msg = notice $ "Unhandled peer msg: " ++ show msg
 
 unchokePeer :: IORef PeerConn -> IO ()
 unchokePeer peer = do
@@ -265,7 +265,7 @@ sendMetainfoRequests peersMap pieces = do
     let peerRefsMap    = M.fromList $ zip peerVals peerRefs
         availablePeers = filter peerFilter peerVals
         asgns          = zip availablePeers missings
-    putStrLn $ "assignments: " ++ show asgns
+    info $ "assignments: " ++ show asgns
     forM_ asgns $ \(pc, pIdx) -> do
       void $ sendMessage pc $ Extended $ MetadataRequest pIdx
       atomicModifyIORef_ (fromJust $ M.lookup pc peerRefsMap) $ \pc' -> pc'{pcRequest=Just pIdx}
@@ -277,7 +277,7 @@ sendMetainfoRequests peersMap pieces = do
 sendPieceRequests :: M.Map SockAddr (IORef PeerConn) -> S.Set Word32 -> PieceMgr -> IO ()
 sendPieceRequests peersMap reqs pieces = do
     missings <- ((`S.difference` reqs)  . S.fromList) <$> missingPieces pieces
-    putStrLn $ "Missing pieces: " ++ show missings
+    info $ "Missing pieces: " ++ show missings
     let peerRefs = M.elems peersMap
     peerVals <- mapM readIORef peerRefs
     let availablePeers      = filter peerFilter peerVals
@@ -287,7 +287,7 @@ sendPieceRequests peersMap reqs pieces = do
                     Nothing -> return Nothing
                     Just ps -> Just . (p,) . S.map fromIntegral <$> BF.availableBits ps) availablePeers
     let asgns               = assignPieces (S.toList missings) availablePeerPieces
-    putStrLn $ "assignments: " ++ show asgns
+    info $ "assignments: " ++ show asgns
     forM_ asgns $ \(pc, pIdx) -> do
       missingP <- nextMissingPart pieces pIdx
       case missingP of
@@ -326,8 +326,8 @@ recvMessage listener = do
 logger :: String
 logger = "Rho.PeerComms.PeerConnection"
 
-warning :: String -> IO ()
-warning = L.warningM logger
-
-errorLog :: String -> IO ()
+warning, info, notice, errorLog :: String -> IO ()
+warning  = L.warningM logger
+info     = L.infoM logger
+notice   = L.noticeM logger
 errorLog = L.errorM logger
