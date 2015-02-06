@@ -1,14 +1,17 @@
 module Rho.TestUtils where
 
 import           Control.Applicative
+import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Concurrent.Chan
 import           Control.DeepSeq
 import qualified Control.Exception        as E
+import           Control.Monad
 import qualified Data.ByteString          as B
 import           Data.IORef
 import           Data.List                (foldl')
 import           Network.Socket
+import           System.IO.Error          (userError)
 
 import           Test.HUnit.Lang
 import           Test.QuickCheck
@@ -54,6 +57,14 @@ mkMessageEmitter msgs = do
         (m : ms') -> do
           writeIORef msgsRef ms'
           return m
+
+-- | IO action that blocks forever.
+blockingIOAction :: IO a
+blockingIOAction = forever $ threadDelay 100000000
+
+-- | IO action that fails with an exception.
+failingIOAction :: IO a
+failingIOAction = E.throwIO $ userError "failed"
 
 -- | Create an IO action that returns next byte from the bytestring in each
 -- call.

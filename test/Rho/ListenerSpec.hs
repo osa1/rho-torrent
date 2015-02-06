@@ -181,6 +181,29 @@ spec = do
         s <- downloadSpeed listener_
         return $ s == fromIntegral msgsLen / (5 * 1000)
 
+    fromHUnitTest $ TestLabel "exc safety: async exc while blocked in `recv` should release locks" $
+      TestCase $ do
+        listener_ <- initListener blockingIOAction
+        threadDelay 10000
+        cancel $ listener listener_
+        threadDelay 10000
+        checkLocks listener_
+
+    fromHUnitTest $ TestLabel "exc safety: sync exc thrown by `recv` should release locks" $
+      TestCase $ do
+        listener_ <- initListener failingIOAction
+        threadDelay 10000
+        checkLocks listener_
+
+checkLocks :: Listener -> Assertion
+checkLocks listener_ = do
+    stopped_ <- fmap not . isEmptyMVar $ stopped listener_
+    updated_ <- fmap not . isEmptyMVar $ updated listener_
+    unlocked <- fmap not . isEmptyMVar $ lock listener_
+    assertBool "stopped is not signalled" stopped_
+    assertBool "updated is not signalled" updated_
+    assertBool "lock is not free"  unlocked
+
 genMsgs :: Int -> Int -> Gen [B.ByteString]
 genMsgs maxMsgs maxMsgSize = do
     len <- oneof $ map return [1..maxMsgs]

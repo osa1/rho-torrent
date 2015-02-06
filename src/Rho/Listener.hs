@@ -35,6 +35,7 @@ module Rho.Listener where
 
 import           Control.Concurrent.Async
 import           Control.Concurrent.MVar
+import           Control.Exception        (bracket_)
 import           Control.Monad
 import qualified Data.ByteString          as B
 import qualified Data.Dequeue             as D
@@ -97,12 +98,14 @@ downloadSpeed Listener{recvHistoryTimeout=dt, recvHistory=recvH} = do
 recvLen :: Listener -> Int -> IO B.ByteString
 recvLen _               0   = return B.empty -- TODO: maybe signal an error?
 recvLen sl@Listener{..} len = do
+    -- NOTE: listener releases `lock` in case of an exception, so we need
+    -- to use `tryPutMVar` instead of `putMVar` to handle that case.
     takeMVar lock
     (deq, deqLen) <- readIORef deque
     if | deqLen >= len -> do
            let (d, m) = dequeue deq len
            writeIORef deque (d, deqLen - len)
-           putMVar lock ()
+           tryPutMVar lock ()
            return m
        | otherwise     -> do
            listenerStopped <- not `fmap` isEmptyMVar stopped
@@ -111,13 +114,13 @@ recvLen sl@Listener{..} len = do
                -- listener is stopped, then return whatever is in the buffer
                let m = mconcat $ D.takeFront (D.length deq) deq
                writeIORef deque (D.empty, 0)
-               putMVar lock ()
+               tryPutMVar lock ()
                return m
              else do
                -- we need to block until buffer is updated
                _ <- tryTakeMVar updated
                -- let the listener update the buffer
-               putMVar lock ()
+               tryPutMVar lock ()
                takeMVar updated
                -- buffer should be updated, recurse
                recvLen sl len
@@ -135,33 +138,28 @@ dequeue d len =
        let (h, t) = B.splitAt len bs in
        (D.pushFront d' t, h)
 
--- TODO: Test for exceptions and errors.
 listen
   :: IO B.ByteString -> IORef Deque -> Int -> IORef [(Int, Int)] -> IORef Int
   -> MVar () -> MVar () -> MVar () -> IO ()
-listen recv deq dt recvs dld updated lock stopped = catchIOError loop errHandler
+listen recv deq dt recvs dld updated lock stopped =
+    bracket_ (return ()) releaseLocks loop
   where
     loop = do
       bytes <- recv
-      stopped' <- not `fmap` isEmptyMVar stopped
-      unless stopped' $ do
-        atomicModifyIORef_ dld $ \d -> d + B.length bytes
-        if | B.null bytes -> stop'
-           | otherwise    -> do
-               takeMVar lock
-               ct <- currentTimeMillis
-               atomicModifyIORef_ recvs $ \rs ->
-                 (B.length bytes, ct) : filter (\(_, t) -> ct - t < dt) rs
-               modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
-               _ <- tryPutMVar updated ()
-               putMVar lock ()
-               loop
+      atomicModifyIORef_ dld $ \d -> d + B.length bytes
+      if | B.null bytes -> releaseLocks
+         | otherwise    -> do
+             takeMVar lock
+             ct <- currentTimeMillis
+             atomicModifyIORef_ recvs $ \rs ->
+               (B.length bytes, ct) : filter (\(_, t) -> ct - t < dt) rs
+             modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
+             _ <- tryPutMVar updated ()
+             putMVar lock ()
+             loop
 
-    errHandler err = do
-      notice $ "Error happened while listening a socket: " ++ show err
-      stop'
-
-    stop' = tryPutMVar updated () >> putMVar stopped ()
+    releaseLocks =
+      void (tryPutMVar updated () >> tryPutMVar stopped () >> tryPutMVar lock ())
 
 stopListener :: Listener -> IO ()
 stopListener Listener{updated=u, lock=lk, listener=l, stopped=s} =

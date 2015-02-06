@@ -51,7 +51,6 @@ connectTest = TestCase $ do
     hostAddr <- inet_addr "127.0.0.1"
     let sockAddr = SockAddrInet (fromIntegral (6969 :: Word16)) hostAddr
 
-    putStrLn "Spawning tracker"
     tracker <- spawnTracker pwd []
     threadDelay 500000
 
@@ -68,7 +67,6 @@ scrapeTest = TestCase $ do
     hostAddr <- inet_addr "127.0.0.1"
     let sockAddr = SockAddrInet (fromIntegral (6969 :: Word16)) hostAddr
 
-    putStrLn "Spawning tracker"
     tracker <- spawnTracker pwd []
     threadDelay 500000
 
