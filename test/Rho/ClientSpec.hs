@@ -74,7 +74,7 @@ scrapeTest = TestCase $ do
     scrapeRet <- scrapeRequestUDP udpComms sockAddr [iHash $ mInfo mi]
     case scrapeRet of
       Left err -> assertFailure $ "Can't scrape: " ++ err
-      Right sr -> return ()
+      Right _  -> return ()
 
     terminateProcess tracker
 

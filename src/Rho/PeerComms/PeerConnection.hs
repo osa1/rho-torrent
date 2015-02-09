@@ -26,7 +26,7 @@ import           Rho.Listener                (Listener, recvLen)
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerPieceAsgn
-import           Rho.PieceMgr                hiding (notice, logger)
+import           Rho.PieceMgr                hiding (notice)
 import           Rho.SessionState
 import           Rho.Utils
 

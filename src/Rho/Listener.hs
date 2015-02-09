@@ -41,7 +41,6 @@ import qualified Data.ByteString          as B
 import qualified Data.Dequeue             as D
 import           Data.IORef
 import           Data.Monoid
-import           System.IO.Error
 import qualified System.Log.Logger        as L
 
 import           Rho.Utils
@@ -105,7 +104,7 @@ recvLen sl@Listener{..} len = do
     if | deqLen >= len -> do
            let (d, m) = dequeue deq len
            writeIORef deque (d, deqLen - len)
-           tryPutMVar lock ()
+           _ <- tryPutMVar lock ()
            return m
        | otherwise     -> do
            listenerStopped <- not `fmap` isEmptyMVar stopped
@@ -114,13 +113,13 @@ recvLen sl@Listener{..} len = do
                -- listener is stopped, then return whatever is in the buffer
                let m = mconcat $ D.takeFront (D.length deq) deq
                writeIORef deque (D.empty, 0)
-               tryPutMVar lock ()
+               _ <- tryPutMVar lock ()
                return m
              else do
                -- we need to block until buffer is updated
                _ <- tryTakeMVar updated
                -- let the listener update the buffer
-               tryPutMVar lock ()
+               _ <- tryPutMVar lock ()
                takeMVar updated
                -- buffer should be updated, recurse
                recvLen sl len

@@ -5,7 +5,6 @@ import qualified Data.ByteString.Char8     as BC
 import           System.Environment        (getArgs)
 import           System.IO                 (Handle, stdout)
 import           System.Log.Formatter
-import           System.Log.Handler        hiding (setLevel)
 import           System.Log.Handler.Simple
 import           System.Log.Logger
 
