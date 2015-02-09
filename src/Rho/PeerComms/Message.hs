@@ -1,8 +1,10 @@
-{-# LANGUAGE NondecreasingIndentation, OverloadedStrings, TupleSections #-}
+{-# LANGUAGE DeriveGeneric, NondecreasingIndentation, OverloadedStrings,
+             TupleSections #-}
 
 module Rho.PeerComms.Message where
 
 import           Control.Applicative
+import           Control.DeepSeq         (NFData)
 import           Control.Monad
 import qualified Data.BEncode            as BE
 import qualified Data.BEncode.BDict      as BE
@@ -13,6 +15,7 @@ import qualified Data.Map                as M
 import           Data.Maybe              (catMaybes)
 import           Data.Monoid
 import           Data.Word
+import           GHC.Generics
 import           Network.Socket          hiding (KeepAlive)
 
 import           Rho.Parser
@@ -37,7 +40,8 @@ data PeerMsg
            Word32 -- length
   | Port PortNumber
   | Extended ExtendedPeerMsg
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+instance NFData PeerMsg
 
 -- | Extended peer message ids as determined in handshake.
 type ExtendedPeerMsgTable = M.Map ExtendedPeerMsgType Word8

@@ -9,6 +9,7 @@ import           Control.DeepSeq
 import           Criterion.Main
 import           Crypto.Hash.SHA1             (hash)
 import qualified Data.ByteString              as B
+import           Data.Monoid
 import qualified Data.Vector.Storable.Mutable as MV
 import           Data.Word
 import           System.Directory
@@ -16,6 +17,7 @@ import           System.FilePath
 
 import qualified Rho.Bitfield                 as BF
 import           Rho.Metainfo
+import           Rho.PeerComms.Message        (parsePeerMsg)
 import           Rho.PieceMgr
 import           Rho.Tracker
 
@@ -30,6 +32,9 @@ main = defaultMain
 
   , env (generatePieceMgr (1000 * 1000) 1024) $ \pMgr ->
       bench "generating piece hashes" $ nfIO (mapM (generatePieceHash pMgr) [0..99])
+
+  , env parseMsgFiles $ \msgs ->
+      bench "parsing peer messages" $ nf parsePeerMsg msgs
   ]
 
 root :: FilePath
@@ -81,6 +86,13 @@ generatePieceMgr totalSize pieceSize = PieceMgr pieceSize totalSize pieces <$> p
 
     fileContent :: [Word8]
     fileContent = B.unpack "dummy data "
+
+parseMsgFiles :: IO B.ByteString
+parseMsgFiles = do
+    let dir = "test/test_data"
+    files <- filter (\f -> head f /= '.') `fmap` getDirectoryContents dir
+    putStrLn $ "msg files: " ++ show files
+    mconcat <$> mapM (B.readFile . (dir </>)) files
 
 instance NFData Tracker where
     rnf (HTTPTracker _) = ()
