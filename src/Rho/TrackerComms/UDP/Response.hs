@@ -28,23 +28,23 @@ tid (ScrapeResponse tid' _)   = tid'
 tid (ErrorResponse tid' _)    = tid'
 
 parseUDPResponse :: B.ByteString -> Either String UDPResponse
-parseUDPResponse bs =
-    case execParser bs readWord32 of
-      Right (0, rest) -> uncurry ConnectResponse <$> parseConnectResp rest
-      Right (1, rest) -> uncurry AnnounceResponse <$> parseAnnounceResp rest
-      Right (2, rest) -> uncurry ScrapeResponse <$> parseScrapeResp rest
-      Right (3, rest) -> uncurry ErrorResponse <$> parseErrorResp rest
-      Right (n, _)    -> fail $ "Unknown response: " ++ show n
-      Left err        -> fail $ "Got ill-formed response: " ++ err
+parseUDPResponse bs = fmap fst . execParser bs $ do
+    w <- readWord32
+    case w of
+      0 -> uncurry ConnectResponse <$> parseConnectResp
+      1 -> uncurry AnnounceResponse <$> parseAnnounceResp
+      2 -> uncurry ScrapeResponse <$> parseScrapeResp
+      3 -> uncurry ErrorResponse <$> parseErrorResp
+      n -> fail $ "Unknown response: " ++ show n
 
-parseConnectResp :: B.ByteString -> Either String (TransactionId, ConnectionId)
-parseConnectResp bs = fmap fst . execParser bs $ do
+parseConnectResp :: Parser (TransactionId, ConnectionId)
+parseConnectResp = do
     tid' <- readWord32
     cid  <- readWord64
     return (tid', cid)
 
-parseAnnounceResp :: B.ByteString -> Either String (TransactionId, PeerResponse)
-parseAnnounceResp bs = fmap fst . execParser bs $ do
+parseAnnounceResp :: Parser (TransactionId, PeerResponse)
+parseAnnounceResp = do
     tid' <- readWord32
     interval <- readWord32
     leechers <- readWord32
@@ -52,8 +52,8 @@ parseAnnounceResp bs = fmap fst . execParser bs $ do
     addrs <- readAddrs
     return (tid', PeerResponse interval (Just leechers) (Just seeders) addrs)
 
-parseScrapeResp :: B.ByteString -> Either String (TransactionId, [(Word32, Word32, Word32)])
-parseScrapeResp bs = fmap fst . execParser bs $ do
+parseScrapeResp :: Parser (TransactionId, [(Word32, Word32, Word32)])
+parseScrapeResp = do
     tid' <- readWord32
     lst  <- parseList
     return (tid', lst)
@@ -64,8 +64,8 @@ parseScrapeResp bs = fmap fst . execParser bs $ do
         Nothing -> return []
         Just e' -> (:) e' <$> parseList
 
-parseErrorResp :: B.ByteString -> Either String (TransactionId, String)
-parseErrorResp bs = fmap fst . execParser bs $ do
+parseErrorResp :: Parser (TransactionId, String)
+parseErrorResp = do
     tid' <- readWord32
     msg  <- consume
     return (tid', BC.unpack msg)
