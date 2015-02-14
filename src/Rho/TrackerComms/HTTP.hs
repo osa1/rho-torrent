@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Connections with HTTP trackers.
+-- | Messaging with HTTP trackers.
 module Rho.TrackerComms.HTTP where
 
 import qualified Data.BEncode                  as BE

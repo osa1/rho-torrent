@@ -110,7 +110,7 @@ recvLen sl@Listener{..} len = do
            listenerStopped <- not `fmap` isEmptyMVar stopped
            if listenerStopped
              then do
-               -- listener is stopped, then return whatever is in the buffer
+               -- listener is stopped, return whatever is in the buffer
                let m = mconcat $ D.takeFront (D.length deq) deq
                writeIORef deque (D.empty, 0)
                _ <- tryPutMVar lock ()

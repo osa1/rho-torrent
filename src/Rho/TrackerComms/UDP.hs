@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Connections with UDP trackers
+-- | Messaging with UDP trackers
 --
 -- As a convention, all functions block except for the ones that return
 -- `Async a`.
@@ -93,11 +93,8 @@ responseHandler dataChan tChan = do
 
 peerRequestUDP
   :: UDPCommHandler -> SockAddr -> PeerId -> InfoHash -> SessStats -> IO (Either String PeerResponse)
-peerRequestUDP ch trackerAddr peerId infoHash (d, l, u) = do
-    cid <- connectRequest ch trackerAddr
-    case cid of
-      Left err -> return $ Left err
-      Right cid' -> announceRequest cid'
+peerRequestUDP ch trackerAddr peerId infoHash (d, l, u) =
+    either (return . Left) announceRequest =<< connectRequest ch trackerAddr
   where
     announceRequest :: ConnectionId -> IO (Either String PeerResponse)
     announceRequest cid = do
