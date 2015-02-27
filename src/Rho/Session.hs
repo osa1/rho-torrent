@@ -16,13 +16,11 @@ import qualified Data.Map                      as M
 import           Data.Monoid
 import qualified Data.Set                      as S
 import           Data.Word
-import           GHC.IO.Exception
 import           Network.Socket                hiding (KeepAlive, recv,
                                                 recvFrom, recvLen, send, sendTo)
 import           Network.Socket.ByteString
 import           System.Directory              (createDirectoryIfMissing)
 import           System.FilePath               (takeDirectory)
-import           System.IO.Error
 import qualified System.Log.Logger             as L
 
 import           Rho.InfoHash
@@ -215,7 +213,7 @@ handshake sess@Session{sessPeerId=peerId} addr infoHash = do
 -- the connected socket in case of a success. (e.g. receiving answer to
 -- handshake)
 sendHandshake :: SockAddr -> InfoHash -> PeerId -> IO (Either String (Socket, Listener, Handshake))
-sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
+sendHandshake addr infoHash peerId = do
     sock <- socket AF_INET Stream defaultProtocol
     bind sock (SockAddrInet aNY_PORT 0)
     notice $ "Sending handshake to remote: " ++ show addr
@@ -236,13 +234,6 @@ sendHandshake addr infoHash peerId = flip catchIOError errHandler $ do
                     warning $ err ++ " msg: " ++ show (B.unpack hs)
                     return $ Left err
                   Right hs' -> return $ Right (sock, listener, hs')
-  where
-    errHandler err@IOError{ioe_type=NoSuchThing} =
-      return $ Left $ "Problems with connection: " ++ show err
-    errHandler err@IOError{ioe_type=TimeExpired} =
-      return $ Left $ "Timeout happened: " ++ show err
-    errHandler err =
-      return $ Left $ "Unhandled error: " ++ show err
 
 sendExtendedHs :: Session -> PeerConn -> IO ()
 sendExtendedHs sess pc = do

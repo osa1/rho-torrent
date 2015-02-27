@@ -17,7 +17,6 @@ import           Data.Word
 import           Network.Socket              hiding (KeepAlive, recv, recvFrom,
                                               recvLen, send, sendTo)
 import           Network.Socket.ByteString
-import           System.IO.Error
 import qualified System.Log.Logger           as L
 
 import qualified Rho.Bitfield                as BF
@@ -32,19 +31,13 @@ import           Rho.Utils
 
 -- | Listen a connected socket and handle incoming messages.
 listenConnectedSock :: Session -> IORef PeerConn -> Listener -> IO ()
-listenConnectedSock sess peer listener = flip catchIOError errHandler loop
-  where
-    loop = do
-      msg <- recvMessage listener
-      case msg of
-        ConnClosed msg'
-          | B.null msg' -> return ()
-          | otherwise  -> notice $ "recvd a partial message: " ++ show (B.unpack msg')
-        Msg msg' -> handleMessage sess peer msg' >> loop
-
-    errHandler err = do
-      notice $ "Error happened while listening a socket: " ++ show err
-                  ++ ". Closing the connection."
+listenConnectedSock sess peer listener = do
+    msg <- recvMessage listener
+    case msg of
+      ConnClosed msg'
+        | B.null msg' -> return ()
+        | otherwise  -> notice $ "recvd a partial message: " ++ show (B.unpack msg')
+      Msg msg' -> handleMessage sess peer msg' >> listenConnectedSock sess peer listener
 
 handleMessage :: Session -> IORef PeerConn -> B.ByteString -> IO ()
 handleMessage sess peer msg = do
