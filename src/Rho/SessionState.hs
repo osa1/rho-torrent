@@ -18,6 +18,7 @@ data Session = Session
     -- ^ our peer id
   , sessInfoHash          :: InfoHash
   , sessTrackers          :: MVar [Tracker]
+  , sessNewPeers          :: MVar (S.Set SockAddr)
   , sessPeers             :: MVar (M.Map SockAddr (IORef PeerConn))
     -- ^ connected peers
   , sessPieceMgr          :: MVar (Maybe PieceMgr)
@@ -41,6 +42,7 @@ initSession
   -> [Tracker] -> Maybe PieceMgr -> Maybe PieceMgr -> IO Session
 initSession peerId infoHash port trackers pieces miPieces = do
     ts     <- newMVar trackers
+    newPeers <- newMVar S.empty
     peers  <- newMVar M.empty
     pmgr   <- newMVar pieces
     miPMgr <- maybe newEmptyMVar newMVar miPieces
@@ -49,7 +51,7 @@ initSession peerId infoHash port trackers pieces miPieces = do
     tCb    <- newMVar (return ())
     dr     <- newIORef 0
     ur     <- newIORef 0
-    return $ Session peerId infoHash ts peers pmgr miPMgr reqs port miCb tCb dr ur
+    return $ Session peerId infoHash ts newPeers peers pmgr miPMgr reqs port miCb tCb dr ur
 
 type SessStats = (Word64, Word64, Word64)
 

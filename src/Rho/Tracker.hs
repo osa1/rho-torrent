@@ -16,7 +16,7 @@ import           Network.URI
 data Tracker
     = HTTPTracker URI
     | UDPTracker B.ByteString PortNumber
-    deriving (Show, Eq)
+    deriving (Show, Eq, Ord)
 
 instance BEncode Tracker where
     toBEncode (HTTPTracker uri) = toBEncode . B.pack . show $ uri
