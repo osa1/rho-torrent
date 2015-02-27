@@ -28,6 +28,7 @@ import           Test.QuickCheck              hiding (Result)
 
 import           Rho.InfoHash
 import           Rho.Listener                 hiding (listener)
+import           Rho.ListenerUtils
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection

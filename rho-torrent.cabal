@@ -21,6 +21,7 @@ library
     Rho.Bitfield
     Rho.InfoHash
     Rho.Listener
+    Rho.ListenerUtils
     Rho.Magnet
     Rho.Metainfo
     Rho.Parser

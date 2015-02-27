@@ -12,7 +12,6 @@ import           Data.IORef
 import           Data.List                   (find)
 import qualified Data.Map                    as M
 import           Data.Maybe
-import           Data.Monoid
 import qualified Data.Set                    as S
 import           Data.Word
 import           Network.Socket              hiding (KeepAlive, recv, recvFrom,
@@ -22,7 +21,8 @@ import           System.IO.Error
 import qualified System.Log.Logger           as L
 
 import qualified Rho.Bitfield                as BF
-import           Rho.Listener                (Listener, recvLen)
+import           Rho.Listener                (Listener)
+import           Rho.ListenerUtils
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerPieceAsgn
@@ -303,22 +303,6 @@ sendPieceRequests peersMap reqs pieces = do
     peerFilter PeerConn{pcInterested=False, pcRequest=Nothing} = True
     peerFilter PeerConn{pcChoking=False, pcRequest=Nothing}    = True
     peerFilter _                                               = False
-
--- * Receive helpers
-
-data RecvMsg = ConnClosed B.ByteString | Msg B.ByteString deriving (Show, Eq)
-
--- | Try to receive a 4-byte length-prefixed message.
-recvMessage :: Listener -> IO RecvMsg
-recvMessage listener = do
-    lengthPrefix <- recvLen listener 4
-    if B.length lengthPrefix /= 4
-      then return $ ConnClosed lengthPrefix
-      else do
-    let [w1, w2, w3, w4] = B.unpack lengthPrefix
-        len = mkWord32 w1 w2 w3 w4
-    msg <- recvLen listener (fromIntegral len)
-    return $ Msg $ lengthPrefix <> msg
 
 -- * Logging stuff
 

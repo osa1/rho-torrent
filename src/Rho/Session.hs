@@ -26,8 +26,9 @@ import           System.IO.Error
 import qualified System.Log.Logger             as L
 
 import           Rho.InfoHash
-import           Rho.Listener                  (Listener, initListener, recvLen,
+import           Rho.Listener                  (Listener, initListener,
                                                 stopListener)
+import           Rho.ListenerUtils
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
@@ -281,12 +282,6 @@ sendBitfield Session{sessPieceMgr=pieces} pc = do
     case pmgr of
       Nothing    -> return () -- we don't have any pieces
       Just pmgr' -> void . sendMessage pc . Bitfield =<< makeByteString pmgr'
-
--- | Try to recv a message of length 68.
-recvHandshake :: Listener -> IO RecvMsg
-recvHandshake listener = do
-    msg <- recvLen listener 68
-    return $ (if B.length msg /= 68 then ConnClosed else Msg) msg
 
 -- * Logging stuff
 
