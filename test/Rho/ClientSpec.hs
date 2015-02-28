@@ -96,8 +96,8 @@ metadataTransferTest = TestCase $ do
       initMagnetSession' localhost magnet pid2
     modifyMVar_ (sessOnMIComplete clientWMagnet) (\_ -> return magnetCompleteAction)
     threadDelay 100000
-    hsResult <- handshake clientWMagnet (SockAddrInet (sessPort clientWInfo) localhost) hash
-    -- hsResult <- handshake clientWInfo (SockAddrInet (sessPort clientWMagnet) localhost) hash
+    hsResult <- handshake clientWMagnet (SockAddrInet (sessPort clientWInfo) localhost)
+    -- hsResult <- handshake clientWInfo (SockAddrInet (sessPort clientWMagnet) localhost)
     threadDelay 100000
     case hsResult of
       Left err            -> assertFailure $ "Handshake failed: " ++ err
@@ -191,7 +191,7 @@ torrentTransferTest = TestCase $ do
     -- manually introduce the peers.
     let seederPort = sessPort seeder
     localhost <- inet_addr "127.0.0.1"
-    hsResult <- handshake leecher (SockAddrInet seederPort localhost) (iHash info)
+    hsResult <- handshake leecher (SockAddrInet seederPort localhost)
     case hsResult of
       Left err            -> assertFailure $ "Handshake failed: " ++ err
       Right DoesntSupport -> assertFailure "Wrong extended message support"

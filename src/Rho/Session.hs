@@ -8,38 +8,37 @@ import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
-import qualified Data.BEncode                  as BE
-import qualified Data.ByteString               as B
-import qualified Data.ByteString.Lazy          as LB
+import qualified Data.BEncode                    as BE
+import qualified Data.ByteString                 as B
+import qualified Data.ByteString.Lazy            as LB
 import           Data.IORef
-import qualified Data.Map                      as M
-import           Data.Monoid
-import qualified Data.Set                      as S
+import qualified Data.Map                        as M
+import qualified Data.Set                        as S
 import           Data.Word
-import           Network.Socket                hiding (KeepAlive, recv,
-                                                recvFrom, recvLen, send, sendTo)
+import           Network.Socket                  hiding (KeepAlive, recv,
+                                                  recvFrom, recvLen, send,
+                                                  sendTo)
 import           Network.Socket.ByteString
-import           System.Directory              (createDirectoryIfMissing)
-import           System.FilePath               (takeDirectory)
-import qualified System.Log.Logger             as L
+import           System.Directory                (createDirectoryIfMissing)
+import           System.FilePath                 (takeDirectory)
+import qualified System.Log.Logger               as L
 
 import           Rho.InfoHash
-import           Rho.Listener                  (Listener, initListener,
-                                                stopListener)
+import           Rho.Listener                    (Listener, initListener,
+                                                  stopListener)
 import           Rho.ListenerUtils
 import           Rho.Magnet
 import           Rho.Metainfo
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
-import           Rho.PeerComms.PeerConnection  hiding (errorLog, info, logger,
-                                                notice, warning)
+import           Rho.PeerComms.PeerConnection    hiding (errorLog, info, logger,
+                                                  notice, warning)
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerId
-import           Rho.PieceMgr                  hiding (notice)
+import           Rho.PieceMgr                    hiding (notice)
 import           Rho.SessionState
 import           Rho.Tracker
-import           Rho.TrackerComms.PeerRequest
-import           Rho.TrackerComms.PeerResponse
+import           Rho.TrackerComms.TrackerManager (runTrackerManager)
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using magnet URI.
@@ -59,6 +58,7 @@ initMagnetSession' host (Magnet ih ts _) pid = do
     listen sock 1
     sess <- initSession pid ih port ts Nothing Nothing
     void $ async $ listenPeerSocket sess sock
+    void $ runTrackerManager sess
     return sess
 
 initTorrentSession' :: HostAddress -> Info -> [Tracker] -> PeerId -> IO Session
@@ -72,16 +72,15 @@ initTorrentSession' host info ts pid = do
     listen sock 1
     sess <- initSession pid (iHash info) port ts (Just pieceMgr) miPieceMgr
     void $ async $ listenPeerSocket sess sock
+    void $ runTrackerManager sess
     return sess
 
 runMagnetSession :: Session -> IO Bool
-runMagnetSession sess@Session{sessInfoHash=hash, sessTrackers=ts} = do
-    ts' <- readMVar ts
-    PeerResponse _ _ _ peers <- mconcat <$> mapM (requestPeers sess) ts'
-    forM_ peers $ \peer -> void $ forkIO $ void $ handshake sess peer hash
-    notice $ "Waiting 5 seconds to establish connections with "
-               ++ show (length peers) ++ " peers."
-    threadDelay (1000000 * 5)
+runMagnetSession sess@Session{sessInfoHash=hash} = do
+    void $ async $ forever $ do
+      handshakeWithNewPeers sess
+      threadDelay 1000000
+
     notice "Blocking until learning metainfo size from peers..."
     miPieceMgr <- readMVar (sessMIPieceMgr sess)
     miDone <- newEmptyMVar
@@ -113,13 +112,11 @@ runMagnetSession sess@Session{sessInfoHash=hash, sessTrackers=ts} = do
       loop pieces
 
 runTorrentSession :: Session -> Info -> IO Bool
-runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces, sessRequestedPieces=requests,
-                               sessInfoHash=hash, sessTrackers=ts} info = do
-    ts' <- readMVar ts
-    PeerResponse _ _ _ peers' <- mconcat <$> mapM (requestPeers sess) ts'
-    connectedPeers <- M.keysSet <$> readMVar peers
-    let newPeers = S.fromList peers' `S.difference` connectedPeers
-    forM_ (S.toList newPeers) $ \peer -> void $ forkIO $ void $ handshake sess peer hash
+runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
+                               sessRequestedPieces=requests} info = do
+    void $ async $ forever $ do
+      handshakeWithNewPeers sess
+      threadDelay 1000000
 
     -- initialize piece manager
     pieces' <- takeMVar pieces
@@ -179,6 +176,13 @@ listenPeerSocket sess sock = do
     void $ async $ listenHandshake sess listener peerSock peerAddr
     listenPeerSocket sess sock
 
+handshakeWithNewPeers :: Session -> IO ()
+handshakeWithNewPeers sess = do
+    newPeers <- readMVar (sessNewPeers sess)
+    connectedPeers <- M.keysSet <$> readMVar (sessPeers sess)
+    let news = newPeers `S.difference` connectedPeers
+    forM_ (S.toList news) $ \newPeer -> void $ forkIO $ void $ handshake sess newPeer
+
 -- | Wait for an incoming handshake, update peers state upon successfully
 -- parsing the handshake and continue listening the connected socket.
 listenHandshake :: Session -> Listener -> Socket -> SockAddr -> IO ()
@@ -197,8 +201,8 @@ listenHandshake sess listener sock peerAddr = do
             sendAll sock $ mkHandshake (hInfoHash hs) (sessPeerId sess)
             handleHandshake sess sock peerAddr listener hs
 
-handshake :: Session -> SockAddr -> InfoHash -> IO (Either String ExtendedMsgSupport)
-handshake sess@Session{sessPeerId=peerId} addr infoHash = do
+handshake :: Session -> SockAddr -> IO (Either String ExtendedMsgSupport)
+handshake sess@Session{sessPeerId=peerId, sessInfoHash=infoHash} addr = do
     ret <- sendHandshake addr infoHash peerId
     case ret of
       Left err -> do
