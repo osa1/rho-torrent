@@ -1,10 +1,12 @@
 -- | Handling requesting peers from trackers periodically.
+--
+-- FIXME: Find a way to test this code.
+--
 module Rho.TrackerComms.TrackerManager where
 
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
-import           Control.Monad
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
 import           Data.Word
@@ -23,28 +25,32 @@ data TrackerState = TrackerState
   , tsJob      :: Maybe (Async PeerResponse)
   }
 
-runTrackerManager :: Session -> MVar [Tracker] -> IO (Async ())
-runTrackerManager sess trackers = async $ loop M.empty
+runTrackerManager :: Session -> IO (Async ())
+runTrackerManager sess = async $ loop M.empty
   where
     loop :: M.Map Tracker TrackerState -> IO ()
-    loop trackerStates = forever $ do
-      trackers' <- readMVar trackers
-      loop' trackers' trackerStates
+    loop trackerStates = do
+      trackers' <- readMVar (sessTrackers sess)
+      newState <- loop' trackers' trackerStates
       threadDelay (60 * 1000000)
+      loop newState
 
-    loop' :: [Tracker] -> M.Map Tracker TrackerState -> IO ()
-    loop' [] _ = return ()
+    loop' :: [Tracker] -> M.Map Tracker TrackerState -> IO (M.Map Tracker TrackerState)
+    loop' [] trackerStates = return trackerStates
     loop' (tr : trs) trackerStates =
       case M.lookup tr trackerStates of
         Nothing -> do
-          -- new tracker
-          return ()
+          -- new tracker, initialize interval as 0 and send a request
+          now <- getTime Monotonic
+          newJob <- async $ peerReq sess tr
+          loop' trs (M.insert tr (TrackerState now 0 (Just newJob)) trackerStates)
         Just (TrackerState lastReq int (Just job)) -> do
           resp <- poll job
           case resp of
             Nothing -> loop' trs trackerStates
             Just (Left err) -> do
-              warning $ "error happened while requesting peers: " ++ show err
+              warning $ "error happened while requesting peers: "
+                        ++ show err ++ ". sending request again."
               now <- getTime Monotonic
               newJob <- async $ peerReq sess tr
               loop' trs (M.insert tr (TrackerState now int (Just newJob)) trackerStates)
