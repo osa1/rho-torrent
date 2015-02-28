@@ -270,7 +270,7 @@ sendMetainfoRequests peersMap pieces = do
 sendPieceRequests :: M.Map SockAddr (IORef PeerConn) -> S.Set Word32 -> PieceMgr -> IO ()
 sendPieceRequests peersMap reqs pieces = do
     missings <- ((`S.difference` reqs)  . S.fromList) <$> missingPieces pieces
-    info $ "Missing pieces: " ++ show missings
+    info $ show (S.size missings) ++ " pieces missing."
     let peerRefs = M.elems peersMap
     peerVals <- mapM readIORef peerRefs
     let availablePeers      = filter peerFilter peerVals

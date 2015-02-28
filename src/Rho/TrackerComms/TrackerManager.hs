@@ -41,6 +41,7 @@ runTrackerManager sess = async $ loop M.empty
       case M.lookup tr trackerStates of
         Nothing -> do
           -- new tracker, initialize interval as 0 and send a request
+          info "found new tracker, sending first request"
           now <- getTime Monotonic
           newJob <- async $ peerReq sess tr
           loop' trs (M.insert tr (TrackerState now 0 (Just newJob)) trackerStates)
@@ -55,6 +56,7 @@ runTrackerManager sess = async $ loop M.empty
               newJob <- async $ peerReq sess tr
               loop' trs (M.insert tr (TrackerState now int (Just newJob)) trackerStates)
             Just (Right (PeerResponse int' _ _ ps)) -> do
+              info $ "got a peer response, adding " ++ show (length ps) ++ " peers."
               modifyMVar_ (sessNewPeers sess) $ return . S.union (S.fromList ps)
               loop' trs (M.insert tr (TrackerState lastReq int' Nothing) trackerStates)
         Just (TrackerState lastReq int Nothing) -> do
@@ -86,5 +88,6 @@ peerReq sess tr@UDPTracker{} = loop 0
 logger :: String
 logger = "Rho.TrackerComms.TrackerManager"
 
-warning :: String -> IO ()
+warning, info :: String -> IO ()
 warning  = L.warningM logger
+info = L.infoM logger
