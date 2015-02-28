@@ -197,7 +197,7 @@ bsFromByteVector v =
 -- | Time difference.
 --
 -- >>> TimeSpec 1 0 `dt` TimeSpec 0 500000000
--- TimeSpec 0 500000000
+-- TimeSpec {sec = 0, nsec = 500000000}
 --
 -- Make sure that first argument is bigger than second one.
 --
