@@ -19,6 +19,7 @@ import           Data.Vector.Storable             (Vector, unsafeFromForeignPtr,
 import           Data.Word
 import           Network.Socket                   (PortNumber (..),
                                                    SockAddr (..))
+import           System.Clock                     (TimeSpec (..))
 
 import           Rho.Parser
 
@@ -192,3 +193,19 @@ bsFromByteVector v =
     PS fptr offset idx
   where
     (fptr, offset, idx) = unsafeToForeignPtr v
+
+-- | Time difference.
+--
+-- >>> TimeSpec 1 0 `dt` TimeSpec 0 500000000
+-- TimeSpec 0 500000000
+--
+-- Make sure that first argument is bigger than second one.
+--
+dt :: TimeSpec -> TimeSpec -> TimeSpec
+dt (TimeSpec s1 ns1) ts2@(TimeSpec s2 ns2)
+  | ns1 < ns2 = dt (TimeSpec (s1 - 1) (ns1 + 10^9)) ts2
+  | otherwise = TimeSpec (s1 - s2) (ns1 - ns2)
+
+-- | Convert a timespec to seconds, ignoring nanoseconds part.
+tsToSec :: TimeSpec -> Int
+tsToSec (TimeSpec s _) = s

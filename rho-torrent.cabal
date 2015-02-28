@@ -34,7 +34,6 @@ library
     Rho.PieceMgr
     Rho.Session
     Rho.SessionState
-    Rho.TimeUtils
     Rho.Tracker
     Rho.TrackerComms.HTTP
     Rho.TrackerComms.PeerRequest

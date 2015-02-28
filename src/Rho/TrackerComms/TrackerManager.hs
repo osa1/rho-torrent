@@ -12,10 +12,10 @@ import           System.Clock
 import qualified System.Log.Logger             as L
 
 import           Rho.SessionState
-import           Rho.TimeUtils
 import           Rho.Tracker
 import           Rho.TrackerComms.PeerRequest
 import           Rho.TrackerComms.PeerResponse
+import           Rho.Utils
 
 data TrackerState = TrackerState
   { tsLastReq  :: TimeSpec
