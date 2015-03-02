@@ -1,4 +1,5 @@
-{-# LANGUAGE NondecreasingIndentation, OverloadedStrings #-}
+{-# LANGUAGE NondecreasingIndentation, OverloadedStrings, ScopedTypeVariables
+             #-}
 
 -- | Handling all the state required to download a single torrent.
 -- A new session is created for every torrent.
@@ -7,6 +8,7 @@ module Rho.Session where
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
+import           Control.Exception               (IOException, try)
 import           Control.Monad
 import qualified Data.BEncode                    as BE
 import qualified Data.ByteString                 as B
@@ -237,22 +239,29 @@ sendHandshake addr infoHash peerId = do
     bind sock (SockAddrInet aNY_PORT 0)
     notice $ "Sending handshake to remote: " ++ show addr
     let msg = mkHandshake infoHash peerId
-    connect sock addr
-    listener <- initListener $ recv sock 4096
-    sendAll sock msg
-    incomingHs <- recvHandshake listener
-    case incomingHs of
-      ConnClosed hs
-        | B.null hs ->
-            stopListener listener >> return (Left "refused")
-        | otherwise ->
-            stopListener listener >> return (Left $ "partial message: " ++ show (B.unpack hs))
-      Msg hs -> case parseHandshake hs of
-                  Left err -> do
-                    stopListener listener
-                    warning $ err ++ " msg: " ++ show (B.unpack hs)
-                    return $ Left err
-                  Right hs' -> return $ Right (sock, listener, hs')
+    ret <- try $ connect sock addr
+    case ret of
+      Left (err :: IOException) -> do
+        close sock
+        return $ Left $ show err
+      Right () -> do
+        listener <- initListener $ recv sock 4096
+        sendAll sock msg
+        incomingHs <- recvHandshake listener
+        case incomingHs of
+          ConnClosed hs
+            | B.null hs -> do
+                stopListener listener
+                return (Left "refused")
+            | otherwise -> do
+                stopListener listener
+                return (Left $ "partial message: " ++ show (B.unpack hs))
+          Msg hs -> case parseHandshake hs of
+                      Left err -> do
+                        stopListener listener
+                        warning $ err ++ " msg: " ++ show (B.unpack hs)
+                        return $ Left err
+                      Right hs' -> return $ Right (sock, listener, hs')
 
 sendExtendedHs :: Session -> PeerConn -> IO ()
 sendExtendedHs sess pc = do
