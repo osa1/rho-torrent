@@ -132,10 +132,8 @@ connectRequest ch trackerAddr = do
 
 req :: UDPCommHandler -> SockAddr -> UDPRequest -> IO UDPResponse
 req UDPCommHandler{sock=skt, transactionChans=tChan} addr udpReq = do
-    -- TODO: set timeouts
-    let reqTid = Req.tid udpReq
     respVar <- newEmptyMVar
-    modifyMVar_ tChan $ return . M.insert reqTid respVar
+    modifyMVar_ tChan $ return . M.insert (Req.tid udpReq) respVar
     sendAllTo skt (mkTrackerMsg udpReq) addr
     takeMVar respVar
 
