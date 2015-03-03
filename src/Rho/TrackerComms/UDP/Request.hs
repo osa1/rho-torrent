@@ -55,7 +55,7 @@ mkTrackerMsg (AnnounceRequest cid tid' infoHash pid downloaded left uploaded ev 
       , BB.word64BE left
       , BB.word64BE uploaded
       , BB.word32BE $ announceEventBytes ev
-      , BB.word32BE 0 -- IP address FIXME
+      , BB.word32BE 0 -- IP address, 0 to make trackers use sender address
       , BB.word32BE 0 -- key
       , BB.word32BE (-1) -- numwant
       , BB.word16LE port
