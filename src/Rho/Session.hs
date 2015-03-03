@@ -196,10 +196,11 @@ listenHandshake sess listener sock peerAddr = do
         case parseHandshake bs of
           Left err ->
             warning $ "Can't parse handshake: " ++ err ++ " msg: " ++ show bs
-          Right hs -> do
-            -- TODO: we probably need to check info_hash
-            sendAll sock $ mkHandshake (hInfoHash hs) (sessPeerId sess)
-            handleHandshake sess sock peerAddr listener hs
+          Right hs
+            | checkHandshake sess hs -> do
+                sendAll sock $ mkHandshake (hInfoHash hs) (sessPeerId sess)
+                handleHandshake sess sock peerAddr listener hs
+            | otherwise -> return ()
 
 handshake :: Session -> SockAddr -> IO (Either String ExtendedMsgSupport)
 handshake sess@Session{sessPeerId=peerId, sessInfoHash=infoHash} addr = do
@@ -208,10 +209,24 @@ handshake sess@Session{sessPeerId=peerId, sessInfoHash=infoHash} addr = do
       Left err -> do
         notice $ "Handshake failed: " ++ err
         return $ Left err
-      Right (sock, listener, hs) -> do
-        notice $ "Handshake successful. Extension support: " ++ show (hExtension hs)
-        handleHandshake sess sock addr listener hs
-        return $ Right (hExtension hs)
+      Right (sock, listener, hs)
+        | checkHandshake sess hs -> do
+            notice $ "Handshake successful. Extension support: " ++ show (hExtension hs)
+            handleHandshake sess sock addr listener hs
+            return $ Right (hExtension hs)
+        | otherwise -> return $ Left $
+            "Rejecting handshake, either info_hash is wrong or " ++
+            "we're trying to handshake with ourselves."
+
+-- | Check whether we should answer to the handshake or not. Cases when we
+-- shouldn't answer:
+-- * When handshake contains wrong info_hash.
+-- * When we're trying to handshake with ourselves.
+-- Second case happens because trackers may return us as a response to our
+-- peer requests.
+checkHandshake :: Session -> Handshake -> Bool
+checkHandshake sess hs =
+    (hInfoHash hs == sessInfoHash sess) && (hPeerId hs /= sessPeerId sess)
 
 -- | Send a handshake message to given target using a fresh socket. Return
 -- the connected socket in case of a success. (e.g. receiving answer to
@@ -252,24 +267,21 @@ sendExtendedHs sess pc = do
 -- | Process incoming handshake; update data structures, spawn socket
 -- listener.
 handleHandshake :: Session -> Socket -> SockAddr -> Listener -> Handshake -> IO ()
-handleHandshake sess@Session{sessInfoHash=ih, sessPeers=peers} sock addr listener hs
-  | ih == hInfoHash hs = do
-      peers' <- takeMVar peers
-      case M.lookup addr peers' of
-        Nothing -> do
-          let pc    = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr listener
-          peerConn <- newIORef pc
-          void $ async $ do
-            listenConnectedSock sess peerConn listener
-            modifyMVar_ peers $ return . M.delete addr
-          sendBitfield sess pc
-          sendExtendedHs sess pc
-          putMVar peers $ M.insert addr peerConn peers'
-        Just _ -> do
-          -- TODO: I don't know how can this happen.
-          warning $ "Got a handshake from a peer we've already connected: " ++ show addr
-    | otherwise = do
-        warning $ "Got handshake for a different torrent: " ++ show (hInfoHash hs)
+handleHandshake sess@Session{sessPeers=peers} sock addr listener hs = do
+    peers' <- takeMVar peers
+    case M.lookup addr peers' of
+      Nothing -> do
+        let pc    = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr listener
+        peerConn <- newIORef pc
+        void $ async $ do
+          listenConnectedSock sess peerConn listener
+          modifyMVar_ peers $ return . M.delete addr
+        sendBitfield sess pc
+        sendExtendedHs sess pc
+        putMVar peers $ M.insert addr peerConn peers'
+      Just _ -> do
+        -- TODO: I don't know how can this happen.
+        warning $ "Got a handshake from a peer we've already connected: " ++ show addr
 
 sendBitfield :: Session -> PeerConn -> IO ()
 sendBitfield Session{sessPieceMgr=pieces} pc = do
