@@ -6,12 +6,12 @@ import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
-import qualified Data.BEncode                 as BE
-import qualified Data.ByteString.Char8        as BC
-import qualified Data.ByteString.Lazy         as LB
+import qualified Data.BEncode                as BE
+import qualified Data.ByteString.Char8       as BC
+import qualified Data.ByteString.Lazy        as LB
 import           Data.Either
 import           Data.IORef
-import qualified Data.Map                     as M
+import qualified Data.Map                    as M
 import           Data.Maybe
 import           Data.Word
 import           Network.Socket
@@ -25,8 +25,7 @@ import           Test.HUnit
 
 import           Rho.Magnet
 import           Rho.Metainfo
-import           Rho.MetainfoSpec             (parseMIAssertion)
-import           Rho.PeerComms.Handshake
+import           Rho.MetainfoSpec            (parseMIAssertion)
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerId
@@ -85,14 +84,14 @@ metadataTransferTest = TestCase $ do
     -- FIXME: We're having a race conditions here -- when the tracker
     -- returns two peers to both peers, both peers get stuck.
     opentracker <- spawnTracker "tests/should_parse/" []
-    let trackers = [UDPTracker "127.0.0.1" (fromIntegral 6969)]
+    let ts = [UDPTracker "127.0.0.1" (fromIntegral 6969)]
     Metainfo{mInfo=info} <- parseMIAssertion "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
     let infoSize = fromIntegral $ LB.length $ BE.encode info
         pid1     = mkPeerId 1
         pid2     = mkPeerId 2
         hash     = iHash info
-        magnet   = Magnet hash trackers Nothing
-    clientWInfo   <- initTorrentSession info trackers pid1
+        magnet   = Magnet hash ts Nothing
+    clientWInfo   <- initTorrentSession info ts pid1
     checkMIPieceMgrInit clientWInfo
     checkMIPieceMgrMissings "clientWInfo" clientWInfo
     magnetComplete <- newEmptyMVar
@@ -175,13 +174,15 @@ metadataTransferTest = TestCase $ do
 
 torrentTransferTest :: Test
 torrentTransferTest = TestCase $ do
+    opentracker <- spawnTracker "tests/should_parse/" []
+    let ts = [UDPTracker "127.0.0.1" (fromIntegral 6969)]
     pwd <- getCurrentDirectory
     Metainfo{mInfo=info} <- parseMIAssertion (pwd </> "test/test.torrent")
     let pid1 = mkPeerId 1
         pid2 = mkPeerId 2
 
     -- setup seeder
-    seeder <- initTorrentSession info [] pid1
+    seeder <- initTorrentSession info ts pid1
     modifyMVar_ (sessPieceMgr seeder) $ \_ -> (Just . fst) <$> tryReadFiles info "test"
     checkPiecesComplete (sessPieceMgr seeder)
     checkDownloadedZero seeder
@@ -191,19 +192,8 @@ torrentTransferTest = TestCase $ do
     threadDelay 500000
 
     -- setup leecher
-    leecher <- initMagnetSession (Magnet (iHash info) [] Nothing) pid2
+    leecher <- initMagnetSession (Magnet (iHash info) ts Nothing) pid2
     leecherThread <- async $ runMagnetSession leecher
-
-    -- for some reason, opentracker returning weird port address(0) to the
-    -- peers and they can't establish a connection because of that. so we
-    -- manually introduce the peers.
-    let seederPort = sessPort seeder
-    localhost <- inet_addr "127.0.0.1"
-    hsResult <- handshake leecher (SockAddrInet seederPort localhost)
-    case hsResult of
-      Left err            -> assertFailure $ "Handshake failed: " ++ err
-      Right DoesntSupport -> assertFailure "Wrong extended message support"
-      Right Supports      -> return ()
 
     timeoutThread <- async $ threadDelay (10 * 2000000) >> return False
     (_, torrentDone) <- waitAnyCancel [leecherThread, timeoutThread]
@@ -221,6 +211,8 @@ torrentTransferTest = TestCase $ do
 
     -- remove downloaded files
     removeDirectoryRecursive (pwd </> "seed_files")
+
+    terminateProcess opentracker
   where
     checkPiecesComplete :: MVar (Maybe PieceMgr) -> Assertion
     checkPiecesComplete var = do
