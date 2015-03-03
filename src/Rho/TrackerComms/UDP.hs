@@ -92,14 +92,15 @@ responseHandler dataChan tChan = do
     responseHandler dataChan tChan
 
 peerRequestUDP
-  :: UDPCommHandler -> SockAddr -> PeerId -> InfoHash -> SessStats -> IO (Either String PeerResponse)
-peerRequestUDP ch trackerAddr peerId infoHash (d, l, u) =
+  :: UDPCommHandler -> SockAddr -> PeerId -> InfoHash -> SessStats
+  -> PortNumber -> IO (Either String PeerResponse)
+peerRequestUDP ch trackerAddr peerId infoHash (d, l, u) pn =
     either (return . Left) announceRequest =<< connectRequest ch trackerAddr
   where
     announceRequest :: ConnectionId -> IO (Either String PeerResponse)
     announceRequest cid = do
       annReqTid <- randomIO
-      let msg = AnnounceRequest cid annReqTid infoHash peerId d l u Started
+      let msg = AnnounceRequest cid annReqTid infoHash peerId d l u Started pn
       annResp <- req ch trackerAddr msg
       case annResp of
         AnnounceResponse _ ps -> return $ Right ps

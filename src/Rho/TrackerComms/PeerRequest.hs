@@ -19,7 +19,8 @@ requestPeers :: Session -> Tracker -> IO PeerResponse
 requestPeers s@Session{sessPeerId=pid, sessInfoHash=hash, sessPort=port} (HTTPTracker uri) = do
     stats' <- stats s
     peerRequestHTTP pid port uri stats' hash >>= either error return
-requestPeers s@Session{sessPeerId=pid, sessInfoHash=hash} (UDPTracker host port) = do
+requestPeers s@Session{sessPeerId=pid, sessInfoHash=hash, sessPort=peerPort}
+             (UDPTracker host port) = do
     addrInfo <-
       (Just <$> getAddrInfo (Just defaultHints) (Just $ BC.unpack host) (Just $ show port))
         `catch` \(_ :: IOException) -> return Nothing
@@ -29,5 +30,6 @@ requestPeers s@Session{sessPeerId=pid, sessInfoHash=hash} (UDPTracker host port)
       Just addrInfo' -> do
         let trackerAddr = addrAddress (last addrInfo')
         commHandler <- initUDPCommHandler
-        (peerRequestUDP commHandler trackerAddr pid hash stats' >>= either error return)
+        (peerRequestUDP commHandler trackerAddr pid hash stats' peerPort
+            >>= either error return)
           `catch` \(_ :: IOException) -> return mempty

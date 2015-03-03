@@ -6,6 +6,7 @@ import qualified Data.ByteString.Builder    as BB
 import qualified Data.ByteString.Lazy       as LB
 import           Data.Monoid
 import           Data.Word
+import           Network.Socket             (PortNumber (..))
 
 import           Rho.InfoHash
 import           Rho.PeerComms.PeerId
@@ -30,19 +31,20 @@ data UDPRequest
       Word64 -- left
       Word64 -- uploaded
       AnnounceEvent
+      PortNumber
   | ScrapeRequest ConnectionId TransactionId [InfoHash]
   deriving (Show, Eq)
 
 tid :: UDPRequest -> TransactionId
-tid (ConnectRequest tid')                = tid'
-tid (AnnounceRequest _ tid' _ _ _ _ _ _) = tid'
-tid (ScrapeRequest _ tid' _)             = tid'
+tid (ConnectRequest tid')                  = tid'
+tid (AnnounceRequest _ tid' _ _ _ _ _ _ _) = tid'
+tid (ScrapeRequest _ tid' _)               = tid'
 
 mkTrackerMsg :: UDPRequest -> B.ByteString
 mkTrackerMsg (ConnectRequest tid') =
     LB.toStrict . BB.toLazyByteString $
       BB.word64BE 0x41727101980 <> BB.word32BE 0 <> BB.word32BE tid'
-mkTrackerMsg (AnnounceRequest cid tid' infoHash pid downloaded left uploaded ev) =
+mkTrackerMsg (AnnounceRequest cid tid' infoHash pid downloaded left uploaded ev (PortNum port)) =
     LB.toStrict . BB.toLazyByteString . mconcat $
       [ BB.word64BE cid
       , BB.word32BE 1 -- action: announce
@@ -56,7 +58,7 @@ mkTrackerMsg (AnnounceRequest cid tid' infoHash pid downloaded left uploaded ev)
       , BB.word32BE 0 -- IP address FIXME
       , BB.word32BE 0 -- key
       , BB.word32BE (-1) -- numwant
-      , BB.word16BE 0 -- port FIXME
+      , BB.word16LE port
       ]
 mkTrackerMsg (ScrapeRequest cid tid' infos) =
     LB.toStrict . BB.toLazyByteString . mconcat
