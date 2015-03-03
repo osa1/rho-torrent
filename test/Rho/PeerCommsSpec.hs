@@ -6,34 +6,32 @@ module Rho.PeerCommsSpec where
 import           Control.Applicative
 import           Control.Concurrent.Async
 import           Control.Monad
-import qualified Data.ByteString              as B
-import qualified Data.ByteString.Builder      as BB
-import qualified Data.ByteString.Lazy         as LB
-import qualified Data.Dequeue                 as D
+import qualified Data.ByteString           as B
+import qualified Data.ByteString.Builder   as BB
+import qualified Data.ByteString.Lazy      as LB
+import qualified Data.Dequeue              as D
 import           Data.IORef
 import           Data.List
-import qualified Data.Map                     as M
+import qualified Data.Map                  as M
 import           Data.Maybe
 import           Data.Monoid
-import           Data.Text.Encoding           (decodeUtf8)
+import           Data.Text.Encoding        (decodeUtf8)
 import           Data.Word
-import           Network.Socket.ByteString    (recv, send)
+import           Network.Socket.ByteString (recv, send)
 import           System.FilePath
 
 import           Test.Hspec
 import           Test.Hspec.Contrib.HUnit
 import           Test.Hspec.QuickCheck
 import           Test.HUnit
-import           Test.QuickCheck              hiding (Result)
+import           Test.QuickCheck           hiding (Result)
 
 import           Rho.InfoHash
-import           Rho.Listener                 hiding (listener)
+import           Rho.Listener              hiding (listener)
 import           Rho.ListenerUtils
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
-import           Rho.PeerComms.PeerConnection
 import           Rho.PeerComms.PeerId
-import           Rho.Session
 import           Rho.TestUtils
 
 dataRoot :: FilePath

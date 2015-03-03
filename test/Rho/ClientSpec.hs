@@ -28,7 +28,6 @@ import           Rho.Metainfo
 import           Rho.MetainfoSpec             (parseMIAssertion)
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
-import           Rho.PeerComms.PeerConnection hiding (info)
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr
@@ -87,7 +86,6 @@ metadataTransferTest = TestCase $ do
     -- returns two peers to both peers, both peers get stuck.
     opentracker <- spawnTracker "tests/should_parse/" []
     let trackers = [UDPTracker "127.0.0.1" (fromIntegral 6969)]
-    pwd <- getCurrentDirectory
     Metainfo{mInfo=info} <- parseMIAssertion "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
     let infoSize = fromIntegral $ LB.length $ BE.encode info
         pid1     = mkPeerId 1
@@ -102,9 +100,9 @@ metadataTransferTest = TestCase $ do
     clientWMagnet <- initMagnetSession magnet pid2
     modifyMVar_ (sessOnMIComplete clientWMagnet) (\_ -> return magnetCompleteAction)
 
-    seederThread <- async $ runTorrentSession clientWInfo info
+    _seederThread <- async $ runTorrentSession clientWInfo info
     threadDelay (1 * 1000000)
-    leecherThread <- async $ runMagnetSession clientWMagnet
+    _leecherThread <- async $ runMagnetSession clientWMagnet
 
     threadDelay (5 * 1000000)
     checkConnectedPeer "clientWInfo" clientWInfo
