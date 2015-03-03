@@ -86,7 +86,7 @@ runMagnetSession sess@Session{sessInfoHash=hash} = do
     notice "Blocking until learning metainfo size from peers..."
     miPieceMgr <- readMVar (sessMIPieceMgr sess)
     miDone <- newEmptyMVar
-    modifyMVar_ (sessOnMIComplete sess) (\_ -> return $ putMVar miDone ())
+    modifyMVar_ (sessOnMIComplete sess) (\cb -> return $ putMVar miDone () >> cb)
 
     loopThread   <- async $ loop miPieceMgr
     miDoneThread <- async $ void $ readMVar miDone
