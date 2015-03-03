@@ -280,18 +280,24 @@ handleHandshake sess@Session{sessPeers=peers} sock addr listener hs = do
     peers' <- takeMVar peers
     case M.lookup addr peers' of
       Nothing -> do
-        let pc    = newPeerConn (hPeerId hs) (hInfoHash hs) (hExtension hs) sock addr listener
-        peerConn <- newIORef pc
-        void $ async $ do
-          listenConnectedSock sess peerConn listener
-          modifyMVar_ peers $ return . M.delete addr
-        sendBitfield sess pc
-        sendExtendedHs sess pc
-        putMVar peers $ M.insert addr peerConn peers'
-      Just _ -> do
-        -- TODO: I don't know how can this happen.
-        warning $ "Got a handshake from a peer we've already connected: " ++ show addr
-        putMVar peers peers'
+        -- let's say a peer is listening port_1 and sending handshakes from
+        -- port_2, and we sent and handshake to port_1 and the peer sent
+        -- a handshake to us using port_2. to not have two connections with
+        -- one peer, we need to check peer id here, because these two
+        -- connections will have different 'SockAddr's.
+        -- FIXME: This may turn out to be too inefficient.
+        ps <- S.fromList <$> mapM (fmap pcPeerId . readIORef) (M.elems peers')
+        unless (S.member (hPeerId hs) ps) $ do
+          let pc    = newPeerConn (hPeerId hs) (hInfoHash hs)
+                                  (hExtension hs) sock addr listener
+          peerConn <- newIORef pc
+          void $ async $ do
+            listenConnectedSock sess peerConn listener
+            modifyMVar_ peers $ return . M.delete addr
+          sendBitfield sess pc
+          sendExtendedHs sess pc
+          putMVar peers $ M.insert addr peerConn peers'
+      Just _ -> putMVar peers peers'
 
 sendBitfield :: Session -> PeerConn -> IO ()
 sendBitfield Session{sessPieceMgr=pieces} pc = do
