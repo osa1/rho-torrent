@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Rho.ClientSpec where
 
 import           Control.Applicative
@@ -32,6 +34,7 @@ import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr
 import           Rho.Session
 import           Rho.SessionState
+import           Rho.Tracker
 import           Rho.TrackerComms.UDP
 
 main :: IO ()
@@ -80,30 +83,30 @@ scrapeTest = TestCase $ do
 
 metadataTransferTest :: Test
 metadataTransferTest = TestCase $ do
+    -- FIXME: We're having a race conditions here -- when the tracker
+    -- returns two peers to both peers, both peers get stuck.
+    opentracker <- spawnTracker "tests/should_parse/" []
+    let trackers = [UDPTracker "127.0.0.1" (fromIntegral 6969)]
+    pwd <- getCurrentDirectory
     Metainfo{mInfo=info} <- parseMIAssertion "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
     let infoSize = fromIntegral $ LB.length $ BE.encode info
         pid1     = mkPeerId 1
         pid2     = mkPeerId 2
         hash     = iHash info
-        magnet   = Magnet hash [] Nothing
-    localhost     <- inet_addr "127.0.0.1"
-    clientWInfo   <- initTorrentSession' localhost info [] pid1
+        magnet   = Magnet hash trackers Nothing
+    clientWInfo   <- initTorrentSession info trackers pid1
     checkMIPieceMgrInit clientWInfo
     checkMIPieceMgrMissings "clientWInfo" clientWInfo
     magnetComplete <- newEmptyMVar
     let magnetCompleteAction = putMVar magnetComplete ()
-    clientWMagnet <-
-      initMagnetSession' localhost magnet pid2
+    clientWMagnet <- initMagnetSession magnet pid2
     modifyMVar_ (sessOnMIComplete clientWMagnet) (\_ -> return magnetCompleteAction)
-    threadDelay 100000
-    hsResult <- handshake clientWMagnet (SockAddrInet (sessPort clientWInfo) localhost)
-    -- hsResult <- handshake clientWInfo (SockAddrInet (sessPort clientWMagnet) localhost)
-    threadDelay 100000
-    case hsResult of
-      Left err            -> assertFailure $ "Handshake failed: " ++ err
-      Right DoesntSupport -> assertFailure "Wrong extended message support"
-      Right Supports      -> return ()
 
+    seederThread <- async $ runTorrentSession clientWInfo info
+    threadDelay (1 * 1000000)
+    leecherThread <- async $ runMagnetSession clientWMagnet
+
+    threadDelay (5 * 1000000)
     checkConnectedPeer "clientWInfo" clientWInfo
     checkConnectedPeer "clientWMagnet" clientWMagnet
 
@@ -115,12 +118,18 @@ metadataTransferTest = TestCase $ do
     -- clientWMagnet's metainfo piece manager should be initialized
     checkMIPieceMgrInit clientWMagnet
 
-    miPieces <- fromJust <$> tryReadMVar (sessMIPieceMgr clientWMagnet)
-    peersMap <- readMVar $ sessPeers clientWMagnet
-    sendMetainfoRequests peersMap miPieces
-    threadDelay 100000
+    threadDelay 1000000
+    -- check this again for two reasons:
+    -- * sometimes peers handshake with themselves (e.g. when tracker
+    --   returns the peer that requested peers)
+    -- * when P1 sends handshake to P2 and at the same time P2 sends
+    --   a handshake to P1. sometimes they establish two connections.
+    checkConnectedPeer "clientWInfo" clientWInfo
+    checkConnectedPeer "clientWMagnet" clientWMagnet
     checkMIPieceMgrMissings "clientWMagnet" clientWMagnet
     checkCallbackCalled magnetComplete
+
+    terminateProcess opentracker
   where
     checkConnectedPeer :: String -> Session -> Assertion
     checkConnectedPeer info Session{sessPeers=peers} = do
@@ -133,7 +142,8 @@ metadataTransferTest = TestCase $ do
       case ps' of
         [peerWInfo] -> do
           p <- readIORef peerWInfo
-          assertEqual ("wrong extended msg tbl(" ++ info ++ ")") defaultMsgTable (pcExtendedMsgTbl p)
+          assertEqual ("wrong extended msg tbl(" ++ info ++ ")") defaultMsgTable
+                      (pcExtendedMsgTbl p)
         _ -> assertFailure $
                "Connected to wrong number of clients(" ++ info ++ "): " ++ show (length ps')
 
