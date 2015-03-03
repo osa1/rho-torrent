@@ -18,6 +18,7 @@ import           Rho.SessionState
 import           Rho.Tracker
 import           Rho.TrackerComms.PeerRequest
 import           Rho.TrackerComms.PeerResponse
+import           Rho.TrackerComms.UDP
 import           Rho.Utils
 
 data TrackerState = TrackerState
@@ -27,57 +28,63 @@ data TrackerState = TrackerState
   }
 
 runTrackerManager :: Session -> IO (Async ())
-runTrackerManager sess = async $ loop M.empty
+runTrackerManager sess = do
+    -- TODO: mayby lazily initialize UDP comm handler, no need to
+    -- initialize it when we don't have and UDP trackers.
+    udpHandler <- initUDPCommHandler
+    async $ loop udpHandler M.empty
   where
-    loop :: M.Map Tracker TrackerState -> IO ()
-    loop trackerStates = do
+    loop :: UDPCommHandler -> M.Map Tracker TrackerState -> IO ()
+    loop udpHandler trackerStates = do
       trackers' <- readMVar (sessTrackers sess)
-      newState <- loop' trackers' trackerStates
+      newState <- loop' udpHandler trackers' trackerStates
       threadDelay (60 * 1000000)
-      loop newState
+      loop udpHandler newState
 
-    loop' :: [Tracker] -> M.Map Tracker TrackerState -> IO (M.Map Tracker TrackerState)
-    loop' [] trackerStates = return trackerStates
-    loop' (tr : trs) trackerStates =
+    loop'
+      :: UDPCommHandler
+      -> [Tracker] -> M.Map Tracker TrackerState -> IO (M.Map Tracker TrackerState)
+    loop' _ [] trackerStates = return trackerStates
+    loop' udpHandler (tr : trs) trackerStates =
       case M.lookup tr trackerStates of
         Nothing -> do
           -- new tracker, initialize interval as 0 and send a request
           info "found new tracker, sending first request"
           now <- getTime Monotonic
-          newJob <- async $ peerReq sess tr (sessNewPeers sess)
-          loop' trs (M.insert tr (TrackerState now 0 (Just newJob)) trackerStates)
+          newJob <- async $ peerReq sess udpHandler tr (sessNewPeers sess)
+          loop' udpHandler trs (M.insert tr (TrackerState now 0 (Just newJob)) trackerStates)
         Just (TrackerState lastReq int (Just job)) -> do
           resp <- poll job
           case resp of
-            Nothing -> loop' trs trackerStates
+            Nothing -> loop' udpHandler trs trackerStates
             Just (Left err) -> do
               warning $ "error happened while requesting peers: "
                         ++ show err ++ ". sending request again."
               now <- getTime Monotonic
-              newJob <- async $ peerReq sess tr (sessNewPeers sess)
-              loop' trs (M.insert tr (TrackerState now int (Just newJob)) trackerStates)
+              newJob <- async $ peerReq sess udpHandler tr (sessNewPeers sess)
+              loop' udpHandler trs (M.insert tr (TrackerState now int (Just newJob)) trackerStates)
             Just (Right (PeerResponse int' _ _ _)) -> do
-              loop' trs (M.insert tr (TrackerState lastReq int' Nothing) trackerStates)
+              loop' udpHandler trs (M.insert tr (TrackerState lastReq int' Nothing) trackerStates)
         Just (TrackerState lastReq int Nothing) -> do
           now <- getTime Monotonic
           if (fromIntegral (tsToSec (now `dt` lastReq)) >= int)
             then do
-              job <- async $ peerReq sess tr (sessNewPeers sess)
-              loop' trs (M.insert tr (TrackerState now int (Just job)) trackerStates)
+              job <- async $ peerReq sess udpHandler tr (sessNewPeers sess)
+              loop' udpHandler trs (M.insert tr (TrackerState now int (Just job)) trackerStates)
             else
-              loop' trs trackerStates
+              loop' udpHandler trs trackerStates
 
-peerReq :: Session -> Tracker -> MVar (S.Set SockAddr) -> IO PeerResponse
-peerReq sess tr@HTTPTracker{} newPeers = do
+peerReq :: Session -> UDPCommHandler -> Tracker -> MVar (S.Set SockAddr) -> IO PeerResponse
+peerReq sess udpHandler tr@(HTTPTracker uri) newPeers = do
     timerThread <- async $ threadDelay (60 * 1000000) >> return Nothing
     resp <- async $ do
-      resp@(PeerResponse _ _ _ newPeers') <- requestPeers sess tr
+      resp@(PeerResponse _ _ _ newPeers') <- requestPeersHTTP sess uri
       info $ "got a peer response, adding " ++ show (length newPeers') ++ " peers."
       modifyMVar_ newPeers $ \ps -> return $ foldl' (flip S.insert) ps newPeers'
       return $ Just resp
     (_, ret) <- waitAnyCancel [timerThread, resp]
-    maybe (peerReq sess tr newPeers) return ret
-peerReq sess tr@UDPTracker{} newPeers = loop 0
+    maybe (peerReq sess udpHandler tr newPeers) return ret
+peerReq sess udpHandler (UDPTracker host port) newPeers = loop 0
   where
     loop :: Int -> IO PeerResponse
     loop i = do
@@ -85,7 +92,7 @@ peerReq sess tr@UDPTracker{} newPeers = loop 0
       -- FIXME: this creates a socket in every call, and sockets are
       -- probably never closed
       resp <- async $ do
-        resp@(PeerResponse _ _ _ newPeers') <- requestPeers sess tr
+        resp@(PeerResponse _ _ _ newPeers') <- requestPeersUDP sess udpHandler host port
         info $ "got a peer response, adding " ++ show (length newPeers') ++ " peers."
         modifyMVar_ newPeers $ \ps -> return $ foldl' (flip S.insert) ps newPeers'
         return $ Just resp
