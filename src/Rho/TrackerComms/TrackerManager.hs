@@ -104,5 +104,4 @@ logger = "Rho.TrackerComms.TrackerManager"
 
 warning, info :: String -> IO ()
 warning  = L.warningM logger
--- info = L.infoM logger
-info = putStrLn
+info = L.infoM logger
