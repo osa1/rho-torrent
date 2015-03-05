@@ -91,8 +91,6 @@ peerReq sess udpHandler (UDPTracker host port) chan = loop 0
     loop :: Int -> IO PeerResponse
     loop i = do
       timerThread <- async $ threadDelay (15 * (2 ^ i)) >> return Nothing
-      -- FIXME: this creates a socket in every call, and sockets are
-      -- probably never closed
       resp <- async $ do
         resp@(PeerResponse _ _ _ newPeers) <- requestPeersUDP sess udpHandler host port
         info $ "got a peer response, adding " ++ show (length newPeers) ++ " peers."
