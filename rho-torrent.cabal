@@ -131,10 +131,6 @@ test-suite test
     , text
     , vector
 
-    -- for scraping magnets/torrents
-    , HTTP
-    , hxt
-
 test-suite doctests
   type:             exitcode-stdio-1.0
   ghc-options:      -threaded -O2
