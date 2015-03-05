@@ -60,7 +60,6 @@ initMagnetSession' host (Magnet ih ts _) pid = do
     listen sock 1
     sess <- initSession pid ih port ts Nothing Nothing
     void $ async $ listenPeerSocket sess sock
-    void $ runTrackerManager sess
     return sess
 
 initTorrentSession' :: HostAddress -> Info -> [Tracker] -> PeerId -> IO Session
@@ -74,14 +73,12 @@ initTorrentSession' host info ts pid = do
     listen sock 1
     sess <- initSession pid (iHash info) port ts (Just pieceMgr) miPieceMgr
     void $ async $ listenPeerSocket sess sock
-    void $ runTrackerManager sess
     return sess
 
 runMagnetSession :: Session -> IO Bool
 runMagnetSession sess@Session{sessInfoHash=hash} = do
-    void $ async $ forever $ do
-      handshakeWithNewPeers sess
-      threadDelay 1000000
+    (newPeers, _) <- runTrackerManager sess
+    void $ async $ handshakeWithNewPeers sess newPeers
 
     notice "Blocking until learning metainfo size from peers..."
     miPieceMgr <- readMVar (sessMIPieceMgr sess)
@@ -116,9 +113,8 @@ runMagnetSession sess@Session{sessInfoHash=hash} = do
 runTorrentSession :: Session -> Info -> IO Bool
 runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
                                sessRequestedPieces=requests} info = do
-    void $ async $ forever $ do
-      handshakeWithNewPeers sess
-      threadDelay 1000000
+    (newPeers, _) <- runTrackerManager sess
+    void $ async $ handshakeWithNewPeers sess newPeers
 
     -- initialize piece manager
     pieces' <- takeMVar pieces
@@ -178,12 +174,12 @@ listenPeerSocket sess sock = do
     void $ async $ listenHandshake sess listener peerSock peerAddr
     listenPeerSocket sess sock
 
-handshakeWithNewPeers :: Session -> IO ()
-handshakeWithNewPeers sess = do
-    newPeers <- readMVar (sessNewPeers sess)
-    connectedPeers <- M.keysSet <$> readMVar (sessPeers sess)
-    let news = newPeers `S.difference` connectedPeers
-    forM_ (S.toList news) $ \newPeer -> void $ forkIO $ void $ handshake sess newPeer
+handshakeWithNewPeers :: Session -> Chan SockAddr -> IO ()
+handshakeWithNewPeers sess chan = do
+    newPeer <- readChan chan
+    connectedPeers <- readMVar (sessPeers sess)
+    unless (M.member newPeer connectedPeers) $
+      void $ forkIO $ void $ handshake sess newPeer
 
 -- | Wait for an incoming handshake, update peers state upon successfully
 -- parsing the handshake and continue listening the connected socket.

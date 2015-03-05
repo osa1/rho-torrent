@@ -6,9 +6,8 @@ module Rho.TrackerComms.TrackerManager where
 
 import           Control.Concurrent
 import           Control.Concurrent.Async
-import           Data.List                     (foldl')
+import           Control.Monad
 import qualified Data.Map                      as M
-import qualified Data.Set                      as S
 import           Data.Word
 import           Network.Socket                (SockAddr)
 import           System.Clock
@@ -27,64 +26,67 @@ data TrackerState = TrackerState
   , tsJob      :: Maybe (Async PeerResponse)
   }
 
-runTrackerManager :: Session -> IO (Async ())
+runTrackerManager :: Session -> IO (Chan SockAddr, Async ())
 runTrackerManager sess = do
     -- TODO: mayby lazily initialize UDP comm handler, no need to
     -- initialize it when we don't have and UDP trackers.
     udpHandler <- initUDPCommHandler
-    async $ loop udpHandler M.empty
+    chan <- newChan
+    thread <- async $ loop udpHandler M.empty chan
+    return (chan, thread)
   where
-    loop :: UDPCommHandler -> M.Map Tracker TrackerState -> IO ()
-    loop udpHandler trackerStates = do
+    loop :: UDPCommHandler -> M.Map Tracker TrackerState -> Chan SockAddr -> IO ()
+    loop udpHandler trackerStates chan = do
       trackers' <- readMVar (sessTrackers sess)
-      newState <- loop' udpHandler trackers' trackerStates
+      newState <- loop' udpHandler trackers' trackerStates chan
       threadDelay (60 * 1000000)
-      loop udpHandler newState
+      loop udpHandler newState chan
 
     loop'
       :: UDPCommHandler
-      -> [Tracker] -> M.Map Tracker TrackerState -> IO (M.Map Tracker TrackerState)
-    loop' _ [] trackerStates = return trackerStates
-    loop' udpHandler (tr : trs) trackerStates =
+      -> [Tracker] -> M.Map Tracker TrackerState
+      -> Chan SockAddr -> IO (M.Map Tracker TrackerState)
+    loop' _ [] trackerStates _ = return trackerStates
+    loop' udpHandler (tr : trs) trackerStates chan =
       case M.lookup tr trackerStates of
         Nothing -> do
           -- new tracker, initialize interval as 0 and send a request
           info "found new tracker, sending first request"
           now <- getTime Monotonic
-          newJob <- async $ peerReq sess udpHandler tr (sessNewPeers sess)
-          loop' udpHandler trs (M.insert tr (TrackerState now 0 (Just newJob)) trackerStates)
+          newJob <- async $ peerReq sess udpHandler tr chan
+          loop' udpHandler trs (M.insert tr (TrackerState now 0 (Just newJob)) trackerStates) chan
         Just (TrackerState lastReq int (Just job)) -> do
           resp <- poll job
           case resp of
-            Nothing -> loop' udpHandler trs trackerStates
+            Nothing -> loop' udpHandler trs trackerStates chan
             Just (Left err) -> do
               warning $ "error happened while requesting peers: "
                         ++ show err ++ ". sending request again."
               now <- getTime Monotonic
-              newJob <- async $ peerReq sess udpHandler tr (sessNewPeers sess)
-              loop' udpHandler trs (M.insert tr (TrackerState now int (Just newJob)) trackerStates)
+              newJob <- async $ peerReq sess udpHandler tr chan
+              loop' udpHandler trs (M.insert tr (TrackerState now int (Just newJob)) trackerStates) chan
             Just (Right (PeerResponse int' _ _ _)) -> do
-              loop' udpHandler trs (M.insert tr (TrackerState lastReq int' Nothing) trackerStates)
+              loop' udpHandler trs (M.insert tr (TrackerState lastReq int' Nothing) trackerStates) chan
         Just (TrackerState lastReq int Nothing) -> do
           now <- getTime Monotonic
           if (fromIntegral (tsToSec (now `dt` lastReq)) >= int)
             then do
-              job <- async $ peerReq sess udpHandler tr (sessNewPeers sess)
-              loop' udpHandler trs (M.insert tr (TrackerState now int (Just job)) trackerStates)
+              job <- async $ peerReq sess udpHandler tr chan
+              loop' udpHandler trs (M.insert tr (TrackerState now int (Just job)) trackerStates) chan
             else
-              loop' udpHandler trs trackerStates
+              loop' udpHandler trs trackerStates chan
 
-peerReq :: Session -> UDPCommHandler -> Tracker -> MVar (S.Set SockAddr) -> IO PeerResponse
-peerReq sess udpHandler tr@(HTTPTracker uri) newPeers = do
+peerReq :: Session -> UDPCommHandler -> Tracker -> Chan SockAddr -> IO PeerResponse
+peerReq sess udpHandler tr@(HTTPTracker uri) chan = do
     timerThread <- async $ threadDelay (60 * 1000000) >> return Nothing
     resp <- async $ do
-      resp@(PeerResponse _ _ _ newPeers') <- requestPeersHTTP sess uri
-      info $ "got a peer response, adding " ++ show (length newPeers') ++ " peers."
-      modifyMVar_ newPeers $ \ps -> return $ foldl' (flip S.insert) ps newPeers'
+      resp@(PeerResponse _ _ _ newPeers) <- requestPeersHTTP sess uri
+      info $ "got a peer response, adding " ++ show (length newPeers) ++ " peers."
+      forM_ newPeers $ writeChan chan
       return $ Just resp
     (_, ret) <- waitAnyCancel [timerThread, resp]
-    maybe (peerReq sess udpHandler tr newPeers) return ret
-peerReq sess udpHandler (UDPTracker host port) newPeers = loop 0
+    maybe (peerReq sess udpHandler tr chan) return ret
+peerReq sess udpHandler (UDPTracker host port) chan = loop 0
   where
     loop :: Int -> IO PeerResponse
     loop i = do
@@ -92,9 +94,9 @@ peerReq sess udpHandler (UDPTracker host port) newPeers = loop 0
       -- FIXME: this creates a socket in every call, and sockets are
       -- probably never closed
       resp <- async $ do
-        resp@(PeerResponse _ _ _ newPeers') <- requestPeersUDP sess udpHandler host port
-        info $ "got a peer response, adding " ++ show (length newPeers') ++ " peers."
-        modifyMVar_ newPeers $ \ps -> return $ foldl' (flip S.insert) ps newPeers'
+        resp@(PeerResponse _ _ _ newPeers) <- requestPeersUDP sess udpHandler host port
+        info $ "got a peer response, adding " ++ show (length newPeers) ++ " peers."
+        forM_ newPeers $ writeChan chan
         return $ Just resp
       (_, ret) <- waitAnyCancel [timerThread, resp]
       maybe (loop (i+1)) return ret
