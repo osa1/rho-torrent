@@ -106,7 +106,7 @@ metadataTransferTest = TestCase $ do
     threadDelay (1 * 1000000)
     _leecherThread <- async $ runMagnetSession clientWMagnet
 
-    threadDelay (5 * 1000000)
+    threadDelay (3 * 1000000)
     checkConnectedPeer "clientWInfo" clientWInfo
     checkConnectedPeer "clientWMagnet" clientWMagnet
 
@@ -118,7 +118,6 @@ metadataTransferTest = TestCase $ do
     -- clientWMagnet's metainfo piece manager should be initialized
     checkMIPieceMgrInit clientWMagnet
 
-    threadDelay 1000000
     -- check this again for two reasons:
     -- * sometimes peers handshake with themselves (e.g. when tracker
     --   returns the peer that requested peers)
@@ -187,7 +186,7 @@ torrentTransferTest = TestCase $ do
     seederThread <- async $ runTorrentSession seeder info
 
     -- make sure the seeder established a connection with the tracker
-    threadDelay 500000
+    threadDelay 300000
 
     -- setup leecher
     leecher <- initMagnetSession (Magnet (iHash info) ts Nothing) pid2
@@ -267,7 +266,7 @@ deadlockTest = TestCase $ do
     _seederThread <- async $ runTorrentSession clientWInfo info
     _leecherThread <- async $ runMagnetSession clientWMagnet
 
-    threadDelay (10 * 1000000)
+    threadDelay (3 * 1000000)
     checkConnectedPeer "clientWInfo" clientWInfo
     checkConnectedPeer "clientWMagnet" clientWMagnet
 
