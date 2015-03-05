@@ -103,6 +103,8 @@ test-suite test
     Rho.PeerComms.PeerPieceAsgnSpec
     Rho.PeerCommsSpec
     Rho.PieceMgrSpec
+    Rho.TestTracker
+    Rho.TestTrackerSpec
     Rho.TestUtils
     Rho.TrackerCommsSpec
 
@@ -124,6 +126,7 @@ test-suite test
     , process
     , QuickCheck == 2.*
     , quickcheck-instances
+    , random
     , RhoTorrent
     , text
     , vector

@@ -13,6 +13,7 @@ import           Data.Either
 import           Data.IORef
 import qualified Data.Map                    as M
 import           Data.Maybe
+import qualified Data.Set                    as S
 import           Data.Word
 import           Network.Socket
 import           System.Directory
@@ -32,6 +33,7 @@ import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr
 import           Rho.Session
 import           Rho.SessionState
+import           Rho.TestTracker
 import           Rho.Tracker
 import           Rho.TrackerComms.UDP
 
@@ -45,6 +47,7 @@ spec = do
       fromHUnitTest $ TestLabel "scraping" scrapeTest
       fromHUnitTest $ TestLabel "metadata transfer" metadataTransferTest
       fromHUnitTest $ TestLabel "torrent transfer" torrentTransferTest
+      -- fromHUnitTest $ TestLabel "deadlock regression" deadlockTest
 
 connectTest :: Test
 connectTest = TestCase $ do
@@ -128,11 +131,6 @@ metadataTransferTest = TestCase $ do
 
     terminateProcess opentracker
   where
-    checkConnectedPeer :: String -> Session -> Assertion
-    checkConnectedPeer info Session{sessPeers=peers} = do
-      ps' <- M.elems <$> readMVar peers
-      assertEqual ("connected to wrong number of clients(" ++ info ++ ")") 1 (length ps')
-
     checkExtendedMsgTbl :: String -> Session -> Assertion
     checkExtendedMsgTbl info Session{sessPeers=peers} = do
       ps' <- M.elems <$> readMVar peers
@@ -242,6 +240,43 @@ torrentTransferTest = TestCase $ do
       (_, _, u) <- stats sess
       pm <- fromJust <$> readMVar (sessPieceMgr sess)
       assertEqual "uploaded is wrong" (pmTotalSize pm) u
+
+deadlockTest :: Test
+deadlockTest = TestCase $ do
+    (tr, SockAddrInet pn _) <- runTracker
+    localhost <- inet_addr "127.0.0.1"
+    let ts = [UDPTracker "127.0.0.1" pn]
+    Metainfo{mInfo=info} <- parseMIAssertion "test/test.torrent"
+    let pid1     = mkPeerId 1
+        pid2     = mkPeerId 2
+        hash     = iHash info
+        magnet   = Magnet hash ts Nothing
+    clientWInfo   <- initTorrentSession info ts pid1
+    magnetComplete <- newEmptyMVar
+    let magnetCompleteAction = putMVar magnetComplete ()
+    clientWMagnet <- initMagnetSession magnet pid2
+    modifyMVar_ (sessOnMIComplete clientWMagnet) (\_ -> return magnetCompleteAction)
+
+    let client1Port = sessPort clientWInfo
+        client2Port = sessPort clientWMagnet
+
+    modifyMVar_ (connectedClients tr) $ \s ->
+      return $ S.insert (SockAddrInet client1Port localhost) $
+                 S.insert (SockAddrInet client2Port localhost) s
+
+    _seederThread <- async $ runTorrentSession clientWInfo info
+    _leecherThread <- async $ runMagnetSession clientWMagnet
+
+    threadDelay (10 * 1000000)
+    checkConnectedPeer "clientWInfo" clientWInfo
+    checkConnectedPeer "clientWMagnet" clientWMagnet
+
+    return ()
+
+checkConnectedPeer :: String -> Session -> Assertion
+checkConnectedPeer info Session{sessPeers=peers} = do
+  ps' <- M.elems <$> readMVar peers
+  assertEqual ("connected to wrong number of clients(" ++ info ++ ")") 1 (length ps')
 
 spawnTracker :: FilePath -> [String] -> IO ProcessHandle
 spawnTracker pwd args = do
