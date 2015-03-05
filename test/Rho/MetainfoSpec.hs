@@ -43,7 +43,7 @@ spec = do
 shouldParse :: Test
 shouldParse = TestCase $ do
   tfs <- getFiles "tests/should_parse"
-  sequence_ $ flip map tfs $ \(f, c) -> do
+  forM_ tfs $ \(f, c) ->
     case decode c of
       Left err -> assertFailure ("Can't parse torrent file " ++ f ++ ": " ++ err)
       Right mi -> ppProp mi
@@ -51,7 +51,7 @@ shouldParse = TestCase $ do
 shouldNotParse :: Test
 shouldNotParse = TestCase $ do
   tfs <- getFiles "tests/should_not_parse"
-  sequence_ $ flip map tfs $ \(f, c) ->
+  forM_ tfs $ \(f, c) ->
     assertBool ("Parsed a broken torrent file: " ++ f) $ isLeft (decode c :: BE.Result Metainfo)
 
 regressions :: Test
