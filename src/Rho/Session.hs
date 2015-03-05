@@ -287,16 +287,18 @@ handleHandshake sess@Session{sessPeers=peers} sock addr listener hs = do
         -- connections will have different 'SockAddr's.
         -- FIXME: This may turn out to be too inefficient.
         ps <- S.fromList <$> mapM (fmap pcPeerId . readIORef) (M.elems peers')
-        unless (S.member (hPeerId hs) ps) $ do
-          let pc    = newPeerConn (hPeerId hs) (hInfoHash hs)
-                                  (hExtension hs) sock addr listener
-          peerConn <- newIORef pc
-          void $ async $ do
-            listenConnectedSock sess peerConn listener
-            modifyMVar_ peers $ return . M.delete addr
-          sendBitfield sess pc
-          sendExtendedHs sess pc
-          putMVar peers $ M.insert addr peerConn peers'
+        if S.member (hPeerId hs) ps
+          then putMVar peers peers'
+          else do
+            let pc    = newPeerConn (hPeerId hs) (hInfoHash hs)
+                                    (hExtension hs) sock addr listener
+            peerConn <- newIORef pc
+            void $ async $ do
+              listenConnectedSock sess peerConn listener
+              modifyMVar_ peers $ return . M.delete addr
+            sendBitfield sess pc
+            sendExtendedHs sess pc
+            putMVar peers $ M.insert addr peerConn peers'
       Just _ -> putMVar peers peers'
 
 sendBitfield :: Session -> PeerConn -> IO ()

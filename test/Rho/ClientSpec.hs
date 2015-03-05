@@ -47,7 +47,7 @@ spec = do
       fromHUnitTest $ TestLabel "scraping" scrapeTest
       fromHUnitTest $ TestLabel "metadata transfer" metadataTransferTest
       fromHUnitTest $ TestLabel "torrent transfer" torrentTransferTest
-      -- fromHUnitTest $ TestLabel "deadlock regression" deadlockTest
+      fromHUnitTest $ TestLabel "deadlock regression" deadlockTest
 
 connectTest :: Test
 connectTest = TestCase $ do
