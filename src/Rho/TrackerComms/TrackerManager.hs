@@ -12,6 +12,7 @@ import           Data.Word
 import           Network.Socket                (SockAddr)
 import           System.Clock
 import qualified System.Log.Logger             as L
+import           System.Timeout
 
 import           Rho.SessionState
 import           Rho.Tracker
@@ -78,25 +79,21 @@ runTrackerManager sess = do
 
 peerReq :: Session -> UDPCommHandler -> Tracker -> Chan SockAddr -> IO PeerResponse
 peerReq sess udpHandler tr@(HTTPTracker uri) chan = do
-    timerThread <- async $ threadDelay (60 * 1000000) >> return Nothing
-    resp <- async $ do
+    ret <- timeout (60 * 1000000) $ do
       resp@(PeerResponse _ _ _ newPeers) <- requestPeersHTTP sess uri
       info $ "got a peer response, adding " ++ show (length newPeers) ++ " peers."
       forM_ newPeers $ writeChan chan
-      return $ Just resp
-    (_, ret) <- waitAnyCancel [timerThread, resp]
+      return resp
     maybe (peerReq sess udpHandler tr chan) return ret
 peerReq sess udpHandler (UDPTracker host port) chan = loop 0
   where
     loop :: Int -> IO PeerResponse
     loop i = do
-      timerThread <- async $ threadDelay (15 * (2 ^ i)) >> return Nothing
-      resp <- async $ do
+      ret <- timeout (15 * (2 ^ i)) $ do
         resp@(PeerResponse _ _ _ newPeers) <- requestPeersUDP sess udpHandler host port
         info $ "got a peer response, adding " ++ show (length newPeers) ++ " peers."
         forM_ newPeers $ writeChan chan
-        return $ Just resp
-      (_, ret) <- waitAnyCancel [timerThread, resp]
+        return resp
       maybe (loop (i+1)) return ret
 
 logger :: String

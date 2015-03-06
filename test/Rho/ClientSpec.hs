@@ -19,6 +19,7 @@ import           Network.Socket
 import           System.Directory
 import           System.FilePath
 import           System.Process
+import           System.Timeout
 
 import           Test.Hspec
 import           Test.Hspec.Contrib.HUnit
@@ -190,13 +191,12 @@ torrentTransferTest = TestCase $ do
 
     -- setup leecher
     leecher <- initMagnetSession (Magnet (iHash info) ts Nothing) pid2
-    leecherThread <- async $ runMagnetSession leecher
 
-    timeoutThread <- async $ threadDelay (10 * 2000000) >> return False
-    (_, torrentDone) <- waitAnyCancel [leecherThread, timeoutThread]
+    ret <- timeout (20 * 1000000) (runMagnetSession leecher)
     cancel seederThread
-
-    assertBool "Failed to download the torrent in time" torrentDone
+    case ret of
+      Nothing -> assertFailure "Leecher timed out"
+      Just b  -> assertBool "Failed to download the torrent in time" b
 
     checkDownloaded leecher
     checkUploaded seeder
