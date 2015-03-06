@@ -6,7 +6,6 @@ import           Data.Word
 import           Network.Socket          (SockAddr, Socket)
 
 import qualified Rho.Bitfield            as BF
-import           Rho.InfoHash
 import           Rho.Listener
 import           Rho.PeerComms.Handshake
 import           Rho.PeerComms.Message
