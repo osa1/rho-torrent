@@ -23,8 +23,6 @@ data PeerConn = PeerConn
   , pcInterested     :: Bool
     -- ^ we're interested in something that peer has to offer
   , pcPeerId         :: PeerId
-  , pcOffers         :: InfoHash
-    -- ^ torrent that the peer offers
   , pcRequest        :: Maybe Word32
     -- ^ the piece data we're expecting this peer to send
     -- NOTE: this should probably be a set if we want to take the advantage
@@ -69,9 +67,9 @@ instance Eq PeerConn where
 instance Show PeerConn where
   show PeerConn{pcPeerId=PeerId pid} = "<Peer with id: " ++ show (B.dropWhile (== 0) pid) ++ ">"
 
-newPeerConn :: PeerId -> InfoHash -> ExtendedMsgSupport -> Socket -> SockAddr -> Listener -> PeerConn
-newPeerConn peerId infoHash extension sock sockAddr l =
-  PeerConn True False True False peerId infoHash Nothing
+newPeerConn :: PeerId -> ExtendedMsgSupport -> Socket -> SockAddr -> Listener -> PeerConn
+newPeerConn peerId extension sock sockAddr l =
+  PeerConn True False True False peerId Nothing
            Nothing sock sockAddr l extension M.empty Nothing
            (2 ^ (14 :: Word32)) -- 16Kb for now, we may need to dynamically adjust the value
            250 -- default value of libtorrent

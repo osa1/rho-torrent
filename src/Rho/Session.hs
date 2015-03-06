@@ -286,8 +286,7 @@ handleHandshake sess@Session{sessPeers=peers} sock addr listener hs = do
         if S.member (hPeerId hs) ps
           then putMVar peers peers'
           else do
-            let pc    = newPeerConn (hPeerId hs) (hInfoHash hs)
-                                    (hExtension hs) sock addr listener
+            let pc    = newPeerConn (hPeerId hs) (hExtension hs) sock addr listener
             peerConn <- newIORef pc
             void $ async $ do
               listenConnectedSock sess peerConn listener

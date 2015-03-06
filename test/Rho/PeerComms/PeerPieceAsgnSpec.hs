@@ -142,7 +142,7 @@ newPeer pg = do
     return $ mkPeerConn next
 
 mkPeerConn :: Int -> PeerConn
-mkPeerConn i = newPeerConn (mkPeerId i) undefined undefined undefined undefined undefined
+mkPeerConn i = newPeerConn (mkPeerId i) undefined undefined undefined undefined
 
 mkPeerId :: Int -> PeerId
 mkPeerId i =
