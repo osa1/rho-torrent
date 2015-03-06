@@ -17,7 +17,9 @@ data Session = Session
   { sessPeerId            :: PeerId
     -- ^ our peer id
   , sessInfoHash          :: InfoHash
+    -- ^ info hash of the torrent we're downloading/seeding
   , sessTrackers          :: MVar [Tracker]
+    -- ^ trackers we use to request peers
   , sessPeers             :: MVar (M.Map SockAddr (IORef PeerConn))
     -- ^ connected peers
   , sessPieceMgr          :: MVar (Maybe PieceMgr)
