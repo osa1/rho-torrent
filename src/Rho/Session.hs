@@ -175,7 +175,7 @@ listenPeerSocket sess sock = do
     listenPeerSocket sess sock
 
 handshakeWithNewPeers :: Session -> Chan SockAddr -> IO ()
-handshakeWithNewPeers sess chan = do
+handshakeWithNewPeers sess chan = forever $ do
     newPeer <- readChan chan
     connectedPeers <- readMVar (sessPeers sess)
     unless (M.member newPeer connectedPeers) $
