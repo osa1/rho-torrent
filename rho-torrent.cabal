@@ -61,7 +61,6 @@ library
     , network >= 2.6 && < 2.7
     , network-uri >= 2.6 && < 2.7
     , random
-    , time
     , vector
 
     -- `bencoding` doesn't provide flexibility we need..

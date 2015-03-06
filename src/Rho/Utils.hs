@@ -13,13 +13,12 @@ import qualified Data.ByteString.Char8            as BC
 import           Data.ByteString.Internal         (ByteString (PS))
 import           Data.Char
 import           Data.IORef                       (IORef, atomicModifyIORef')
-import           Data.Time.Clock                  (getCurrentTime, utctDayTime)
 import           Data.Vector.Storable             (Vector, unsafeFromForeignPtr,
                                                    unsafeToForeignPtr)
 import           Data.Word
 import           Network.Socket                   (PortNumber (..),
                                                    SockAddr (..))
-import           System.Clock                     (TimeSpec (..))
+import           System.Clock
 
 import           Rho.Parser
 
@@ -175,8 +174,8 @@ mkWord64 w1 w2 w3 w4 w5 w6 w7 w8 =
 -- | Return system time in milliseconds.
 currentTimeMillis :: IO Int
 currentTimeMillis = do
-    time <- getCurrentTime
-    return $ floor $ toRational (utctDayTime time) * 1000
+    TimeSpec s ns <- getTime Monotonic
+    return $ (s * 1000) + (ns `div` 1000000)
 
 -- | Like `atomicModifyIORef'`, but returns ().
 atomicModifyIORef_ :: IORef a -> (a -> a) -> IO ()
