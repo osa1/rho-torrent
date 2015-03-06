@@ -48,7 +48,7 @@ data PeerConn = PeerConn
     -- "An integer, the number of outstanding request messages this client
     -- supports without dropping any. The default in in libtorrent is 250."
   , pcClientName     :: Maybe B.ByteString
-    -- ^ `v` from exxtended handshake. from BEP10:
+    -- ^ `v` from extended handshake. from BEP10:
     -- "Client name and version (as a utf-8 string). This is a much more
     -- reliable way of identifying the client than relying on the peer id
     -- encoding."
