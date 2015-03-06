@@ -79,22 +79,24 @@ runTrackerManager sess = do
 
 peerReq :: Session -> UDPCommHandler -> Tracker -> Chan SockAddr -> IO PeerResponse
 peerReq sess udpHandler tr@(HTTPTracker uri) chan = do
-    ret <- timeout (60 * 1000000) $ do
-      resp@(PeerResponse _ _ _ newPeers) <- requestPeersHTTP sess uri
-      info $ "got a peer response, adding " ++ show (length newPeers) ++ " peers."
-      forM_ newPeers $ writeChan chan
-      return resp
-    maybe (peerReq sess udpHandler tr chan) return ret
+    ret <- timeout (60 * 1000000) $ requestPeersHTTP sess uri
+    case ret of
+      Nothing -> peerReq sess udpHandler tr chan
+      Just resp@(PeerResponse _ _ _ newPeers) -> do
+        info $ "got a peer response, adding " ++ show (length newPeers) ++ " peers."
+        forM_ newPeers $ writeChan chan
+        return resp
 peerReq sess udpHandler (UDPTracker host port) chan = loop 0
   where
     loop :: Int -> IO PeerResponse
     loop i = do
-      ret <- timeout (15 * (2 ^ i)) $ do
-        resp@(PeerResponse _ _ _ newPeers) <- requestPeersUDP sess udpHandler host port
-        info $ "got a peer response, adding " ++ show (length newPeers) ++ " peers."
-        forM_ newPeers $ writeChan chan
-        return resp
-      maybe (loop (i+1)) return ret
+      ret <- timeout (15 * (2 ^ i)) $ requestPeersUDP sess udpHandler host port
+      case ret of
+        Nothing -> loop (i + 1)
+        Just resp@(PeerResponse _ _ _ newPeers) -> do
+          info $ "got a peer response, adding " ++ show (length newPeers) ++ " peers."
+          forM_ newPeers $ writeChan chan
+          return resp
 
 logger :: String
 logger = "Rho.TrackerComms.TrackerManager"
