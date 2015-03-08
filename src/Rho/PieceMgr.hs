@@ -92,7 +92,7 @@ writePiece pmgr@(PieceMgr pSize _ pieces m) pIdx pOffset pData = do
 
     readIORef news
 
--- | Return piece data for given piece index, offest and length.
+-- | Return piece data for given piece index, offset and length.
 -- Length may be smaller then the given length for last piece.
 -- Returns `Nothing` if either missing some part of the piece or given
 -- piece is not in range.
@@ -180,7 +180,7 @@ checkPieceHash :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
 checkPieceHash pMgr pIdx pHash = (pHash ==) <$> generatePieceHash pMgr pIdx
 
 -- | Generate files from given piece manager for the given torrent.
--- NOTE: This doesn't check hasehes.
+-- NOTE: This doesn't check hashes.
 generateFiles :: PieceMgr -> Info -> IO [(FilePath, B.ByteString)]
 generateFiles (PieceMgr _ _ _ pData) (Info name _ _ _ _ files) = do
     let (names, sizes) = unzip $ map (first (BC.unpack name </>)) $ collectFiles files
