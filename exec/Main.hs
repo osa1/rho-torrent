@@ -3,7 +3,7 @@ module Main where
 import qualified Data.ByteString           as B
 import qualified Data.ByteString.Char8     as BC
 import           System.Environment        (getArgs)
-import           System.IO                 (Handle, stdout)
+import           System.IO                 (stdout)
 import           System.Log.Formatter
 import           System.Log.Handler.Simple
 import           System.Log.Logger
@@ -47,10 +47,5 @@ installLogger :: IO ()
 installLogger = do
     fh <- fileHandler "logs.log" DEBUG
     sh <- streamHandler stdout DEBUG
-    -- let formatter = simpleLogFormatter "[$time : $loggername : $prio] $msg"
-    let formatter = simpleLogFormatter "[$loggername : $prio] $msg"
-    let sfh :: GenericHandler (Handle, Handle)
-        sfh = GenericHandler DEBUG formatter (privData fh, privData sh)
-                (\(fHandle, out) msg -> writeFunc fh fHandle msg >> writeFunc sh out msg)
-                (\(fHandle, out)     -> closeFunc fh fHandle >> closeFunc sh out)
-    updateGlobalLogger "Rho" (setLevel DEBUG . addHandler sfh . removeHandler)
+    let f = simpleLogFormatter "[$loggername : $prio] $msg"
+    updateGlobalLogger "" (setLevel DEBUG . setHandlers [fh{formatter=f}, sh{formatter=f}])
