@@ -38,22 +38,19 @@ import           Control.Concurrent.MVar
 import           Control.Exception        (bracket_)
 import           Control.Monad
 import qualified Data.ByteString          as B
-import qualified Data.Dequeue             as D
+import qualified Data.ByteString.Lazy     as LB
 import           Data.IORef
 import           Data.Monoid
 import qualified System.Log.Logger        as L
 
 import           Rho.Utils
 
-type Deque = (D.BankersDequeue B.ByteString, Int)
-
 data Listener = Listener
-  { deque              :: IORef Deque
-    -- ^ buffer
+  { buffer             :: IORef LB.ByteString
   , updated            :: MVar ()
-    -- ^ to be able to block until deque is updated
+    -- ^ to be able to block until buffer is updated
   , lock               :: MVar ()
-    -- ^ we need to update `updated` and `deque` without any intervention
+    -- ^ we need to update `updated` and `buffer` without any intervention
   , listener           :: Async ()
     -- ^ listener thread
   , stopped            :: MVar ()
@@ -73,14 +70,14 @@ initListener recv = initListener' recv 5000
 -- timeout value.
 initListener' :: IO B.ByteString -> Int -> IO Listener
 initListener' recv dt = do
-    deque <- newIORef (D.empty, 0)
+    buffer <- newIORef LB.empty
     updated <- newEmptyMVar
     lock <- newMVar ()
     stopped <- newEmptyMVar
     recvH <- newIORef []
     dld <- newIORef 0
-    listener <- async $ listen recv deque dt recvH dld updated lock stopped
-    return $ Listener deque updated lock listener stopped dt recvH dld
+    listener <- async $ listen recv buffer dt recvH dld updated lock stopped
+    return $ Listener buffer updated lock listener stopped dt recvH dld
 
 -- | Download speed in kbps, generated using bytes received in last
 -- `recvHistoryTimeout` milliseconds.
@@ -100,19 +97,19 @@ recvLen sl@Listener{..} len = do
     -- NOTE: listener releases `lock` in case of an exception, so we need
     -- to use `tryPutMVar` instead of `putMVar` to handle that case.
     takeMVar lock
-    (deq, deqLen) <- readIORef deque
-    if | deqLen >= len -> do
-           let (d, m) = dequeue deq len
-           writeIORef deque (d, deqLen - len)
+    buf <- readIORef buffer
+    if | fromIntegral (LB.length buf) >= len -> do
+           let (m, rest) = LB.splitAt (fromIntegral len) buf
+           writeIORef buffer rest
            _ <- tryPutMVar lock ()
-           return m
+           return (LB.toStrict m)
        | otherwise     -> do
            listenerStopped <- not `fmap` isEmptyMVar stopped
            if listenerStopped
              then do
                -- listener is stopped, return whatever is in the buffer
-               let m = mconcat $ D.takeFront (D.length deq) deq
-               writeIORef deque (D.empty, 0)
+               let m = LB.toStrict buf
+               writeIORef buffer LB.empty
                _ <- tryPutMVar lock ()
                return m
              else do
@@ -124,23 +121,10 @@ recvLen sl@Listener{..} len = do
                -- buffer should be updated, recurse
                recvLen sl len
 
-dequeue :: D.BankersDequeue B.ByteString -> Int -> (D.BankersDequeue B.ByteString, B.ByteString)
-dequeue d 0   = (d, B.empty)
-dequeue d len =
-    let (Just bs, d') = D.popFront d in
-    case compare (B.length bs) len of
-      LT ->
-       let (d'', bs') = dequeue d' (len - B.length bs) in
-       (d'', bs <> bs')
-      EQ -> (d', bs)
-      GT ->
-       let (h, t) = B.splitAt len bs in
-       (D.pushFront d' t, h)
-
 listen
-  :: IO B.ByteString -> IORef Deque -> Int -> IORef [(Int, Int)] -> IORef Int
+  :: IO B.ByteString -> IORef LB.ByteString -> Int -> IORef [(Int, Int)] -> IORef Int
   -> MVar () -> MVar () -> MVar () -> IO ()
-listen recv deq dt recvs dld updated lock stopped =
+listen recv buffer dt recvs dld updated lock stopped =
     bracket_ (return ()) releaseLocks loop
   where
     loop = do
@@ -152,7 +136,7 @@ listen recv deq dt recvs dld updated lock stopped =
              ct <- currentTimeMillis
              atomicModifyIORef_ recvs $ \rs ->
                (B.length bytes, ct) : filter (\(_, t) -> ct - t < dt) rs
-             modifyIORef' deq $ \(d, s) -> (D.pushBack d bytes, s + B.length bytes)
+             modifyIORef' buffer $ \d -> d <> LB.fromStrict bytes
              _ <- tryPutMVar updated ()
              putMVar lock ()
              loop

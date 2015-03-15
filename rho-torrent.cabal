@@ -53,7 +53,6 @@ library
     , containers
     , cryptohash
     , deepseq
-    , dequeue
     , directory
     , filepath
     , hslogger
@@ -114,7 +113,6 @@ test-suite test
     , bytestring
     , containers
     , deepseq
-    , dequeue
     , directory
     , filepath
     , hspec

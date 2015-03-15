@@ -9,7 +9,6 @@ import           Control.Monad
 import qualified Data.ByteString           as B
 import qualified Data.ByteString.Builder   as BB
 import qualified Data.ByteString.Lazy      as LB
-import qualified Data.Dequeue              as D
 import           Data.IORef
 import           Data.List
 import qualified Data.Map                  as M
@@ -207,12 +206,9 @@ recvAndParse listener n = do
   parseMsgs parsePeerMsg ms
 
 checkBuffer :: Listener -> Assertion
-checkBuffer Listener{deque=buf} = do
-    (d, l) <- readIORef buf
-    unless (D.null d) $ do
-      let bufContents = mconcat $ D.takeFront (D.length d) d
-      assertFailure $ "Buffer is not empty: " ++ show bufContents
-    assertEqual "Buffer length is not zero" 0 l
+checkBuffer Listener{buffer=buf} = do
+    d <- readIORef buf
+    assertBool ("Buffer is not empty: " ++ show d) $ LB.null d
 
 parseMsgs :: (B.ByteString -> Either String a) -> [B.ByteString] -> Assertion' [a]
 parseMsgs _ [] = return []

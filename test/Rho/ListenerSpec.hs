@@ -7,7 +7,7 @@ import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
 import qualified Data.ByteString          as B
-import qualified Data.Dequeue             as D
+import qualified Data.ByteString.Lazy     as LB
 import           Data.IORef
 import           Data.Monoid
 
@@ -25,15 +25,6 @@ main = hspec spec
 
 spec :: Spec
 spec = do
-  describe "ByteString Queue dequeueing" $
-    modifyMaxSuccess (const 1000) $ prop "should be able to dequeue as long as len < queue len" $ do
-      msgs <- genMsgs 100 20
-      let deq = D.fromList msgs
-          deqLen = ll msgs
-      len <- oneof $ map return [0..deqLen - 1]
-      let (_, msg) = dequeue deq len
-      return $ B.length msg == len
-
   describe "Listeners" $ do
     fromHUnitTest $ TestLabel "listener thread should stop when emitter is closed" $
       TestCase $ do
@@ -58,8 +49,8 @@ spec = do
           assertEqual "recvLen did not return all it read" (ll msgs) (B.length msg)
           msg' <- recvLen listener_ 10
           assertEqual "recvLen did not return empty after buffer is cleared" 0 (B.length msg')
-          (buffer, _) <- readIORef (deque listener_)
-          assertEqual "buffer not empty" 0 (D.length buffer)
+          buf <- readIORef (buffer listener_)
+          assertBool "buffer not empty" (LB.null buf)
           dld <- readIORef $ totalDownloaded listener_
           assertEqual "totalDownloaded is wrong" (ll msgs) dld
 
@@ -70,8 +61,8 @@ spec = do
         readMVar (stopped listener_)
         msgs <- mapM (recvLen listener_) [10, 20, 30]
         assertEqual "recvLen returned something wrong" msgs [B.empty, B.empty, B.empty]
-        (buffer, _) <- readIORef (deque listener_)
-        assertEqual "buffer not empty" 0 (D.length buffer)
+        buf <- readIORef (buffer listener_)
+        assertBool "buffer not empty" (LB.null buf)
         dld <- readIORef $ totalDownloaded listener_
         assertEqual "totalDownloaded is wrong" 0 dld
 
@@ -101,8 +92,8 @@ spec = do
         listener_ <- initListener emitter
         msg <- recvLen listener_ 100
         assertEqual "recvLen returned something wrong" msg (mconcat bytes)
-        (buffer, _) <- readIORef (deque listener_)
-        assertEqual "buffer not empty" 0 (D.length buffer)
+        buf <- readIORef (buffer listener_)
+        assertBool "buffer not empty" (LB.null buf)
         dld <- readIORef $ totalDownloaded listener_
         assertEqual "totalDownloaded is wrong" (ll bytes) dld
 
@@ -114,21 +105,8 @@ spec = do
       msg2 <- recvLen listener_ 4
       assertEqual "first message is wrong" [0,0,0,1,1] (B.unpack msg1)
       assertEqual "second message is wrong" [0,0,0,0] (B.unpack msg2)
-      (buffer, _) <- readIORef (deque listener_)
-      assertEqual "buffer not empty" 0 (D.length buffer)
-
-    fromHUnitTest $ TestLabel "dequeue test" $ TestCase $ do
-      let first = [0,0,0,1,1]
-          second = [0,0,0,0]
-          d = D.pushBack (D.pushBack D.empty (B.pack first)) (B.pack second)
-      assertEqual "" [first, second] (map B.unpack $ D.takeFront 2 d)
-      let (d', firstMsg) = dequeue d 4
-          (d'', firstMsg') = dequeue d' 1
-          (d''', secondMsg) = dequeue d'' 4
-          (d'''', secondMsg') = dequeue d''' 0
-      assertEqual "first message is wrong" first (B.unpack $ firstMsg <> firstMsg')
-      assertEqual "second message is wrong" second (B.unpack $ secondMsg <> secondMsg')
-      assertEqual "deque is not empty" 0 (D.length d'''')
+      buf <- readIORef (buffer listener_)
+      assertBool "buffer not empty" (LB.null buf)
 
     modifyMaxSuccess (const 100) $ prop "listener should be able to receive from emitter" $ do
       msgs <- genMsgs 100 20
@@ -140,8 +118,8 @@ spec = do
         -- The line below fails with "thread blocked indefinitely in an MVar operation"
         -- Try to guess why. `getChanContents` is awful.
         -- receivedMsg <- mconcat <$> getChanContents (buffer listener)
-        receivedMsgs <- readBuffer listener_
-        return $ ll receivedMsgs == msgsLen
+        receivedMsgs <- readIORef $ buffer listener_
+        return $ fromIntegral (LB.length receivedMsgs) == msgsLen
 
     modifyMaxSuccess (const 100) $ prop "recvLen should be able to receive all messages" $ do
       msgs <- genMsgs 100 20
@@ -221,8 +199,3 @@ generateRecvLens n = do
     i <- oneof $ map return [0..n]
     r <- generateRecvLens (n - i)
     return $ i : r
-
-readBuffer :: Listener -> IO [B.ByteString]
-readBuffer Listener{deque=deq} = do
-    (d, _) <- readIORef deq
-    return $ D.takeFront (D.length d) d
