@@ -2,11 +2,12 @@
 module Rho.TrackerComms.UDP.Response where
 
 import           Control.Applicative
+import           Data.Binary.Get
 import qualified Data.ByteString               as B
-import qualified Data.ByteString.Char8         as BC
+import qualified Data.ByteString.Lazy          as LB
+import qualified Data.ByteString.Lazy.Char8    as LBC
 import           Data.Word
 
-import           Rho.Parser
 import           Rho.TrackerComms.PeerResponse
 import           Rho.TrackerComms.UDP.Types
 import           Rho.Utils
@@ -28,8 +29,8 @@ tid (ScrapeResponse tid' _)   = tid'
 tid (ErrorResponse tid' _)    = tid'
 
 parseUDPResponse :: B.ByteString -> Either String UDPResponse
-parseUDPResponse bs = fmap fst . execParser bs $ do
-    w <- readWord32
+parseUDPResponse bs = getResult $ flip runGetOrFail (LB.fromStrict bs) $ do
+    w <- getWord32be
     case w of
       0 -> uncurry ConnectResponse <$> parseConnectResp
       1 -> uncurry AnnounceResponse <$> parseAnnounceResp
@@ -37,35 +38,37 @@ parseUDPResponse bs = fmap fst . execParser bs $ do
       3 -> uncurry ErrorResponse <$> parseErrorResp
       n -> fail $ "Unknown response: " ++ show n
 
-parseConnectResp :: Parser (TransactionId, ConnectionId)
+parseConnectResp :: Get (TransactionId, ConnectionId)
 parseConnectResp = do
-    tid' <- readWord32
-    cid  <- readWord64
+    tid' <- getWord32be
+    cid  <- getWord64be
     return (tid', cid)
 
-parseAnnounceResp :: Parser (TransactionId, PeerResponse)
+parseAnnounceResp :: Get (TransactionId, PeerResponse)
 parseAnnounceResp = do
-    tid' <- readWord32
-    interval <- readWord32
-    leechers <- readWord32
-    seeders <- readWord32
+    tid' <- getWord32be
+    interval <- getWord32be
+    leechers <- getWord32be
+    seeders <- getWord32be
     addrs <- readAddrs
     return (tid', PeerResponse interval (Just leechers) (Just seeders) addrs)
 
-parseScrapeResp :: Parser (TransactionId, [(Word32, Word32, Word32)])
+parseScrapeResp :: Get (TransactionId, [(Word32, Word32, Word32)])
 parseScrapeResp = do
-    tid' <- readWord32
+    tid' <- getWord32be
     lst  <- parseList
     return (tid', lst)
   where
     parseList = do
-      e <- tryP ((,,) <$> readWord32 <*> readWord32 <*> readWord32)
-      case e of
-        Nothing -> return []
-        Just e' -> (:) e' <$> parseList
+      emp <- isEmpty
+      if emp
+        then return []
+        else do
+          e <- ((,,) <$> getWord32be <*> getWord32be <*> getWord32be)
+          (e :) <$> parseList
 
-parseErrorResp :: Parser (TransactionId, String)
+parseErrorResp :: Get (TransactionId, String)
 parseErrorResp = do
-    tid' <- readWord32
-    msg  <- consume
-    return (tid', BC.unpack msg)
+    tid' <- getWord32be
+    msg  <- getRemainingLazyByteString
+    return (tid', LBC.unpack msg)

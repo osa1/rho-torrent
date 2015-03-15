@@ -5,9 +5,9 @@ module Rho.PeerComms.Message where
 
 import           Control.Applicative
 import           Control.DeepSeq         (NFData)
-import           Control.Monad
 import qualified Data.BEncode            as BE
 import qualified Data.BEncode.BDict      as BE
+import           Data.Binary.Get
 import qualified Data.ByteString         as B
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy    as LB
@@ -18,7 +18,6 @@ import           Data.Word
 import           GHC.Generics
 import           Network.Socket          hiding (KeepAlive)
 
-import           Rho.Parser
 import           Rho.Utils
 
 data PeerMsg
@@ -178,12 +177,12 @@ mkPeerMsg' tbl (Extended (MetadataReject pidx)) =
                , BB.byteString bcString ]
 
 parsePeerMsg :: B.ByteString -> Either String PeerMsg
-parsePeerMsg bs = fmap fst $ execParser bs $ do
-    len <- readWord32
+parsePeerMsg bs = getResult $ flip runGetOrFail (LB.fromStrict bs) $ do
+    len <- getWord32be
     if len == 0
       then return KeepAlive
       else do
-    msgId <- readWord
+    msgId <- getWord8
     case msgId of
       0 -> return Choke
       1 -> return Unchoke
@@ -193,44 +192,44 @@ parsePeerMsg bs = fmap fst $ execParser bs $ do
         -- we know `have` message has fixed, 4-byte payload
         -- (so `len` is always 5)
         -- TODO: maybe make a sanity check here
-        Have <$> readWord32
+        Have <$> getWord32be
       5 ->
         -- TODO: check for errors
-        (Bitfield . B.pack) <$> replicateM (fromIntegral len - 1) readWord
-      6 -> Request <$> readWord32 <*> readWord32 <*> readWord32
-      7 -> Piece <$> readWord32 <*> readWord32 <*> consume
-      8 -> Cancel <$> readWord32 <*> readWord32 <*> readWord32
-      9 -> Port . PortNum <$> readWord16LE
+        Bitfield <$> getByteString (fromIntegral len - 1)
+      6 -> Request <$> getWord32be <*> getWord32be <*> getWord32be
+      7 -> Piece <$> getWord32be <*> getWord32be
+                 <*> (LB.toStrict <$> getRemainingLazyByteString)
+      8 -> Cancel <$> getWord32be <*> getWord32be <*> getWord32be
+      9 -> Port . PortNum <$> getWord16le
       20 -> Extended <$> parseExtendedPeerMsg len
       _ -> fail $ "Unknown peer message id: " ++ show msgId
 
-parseExtendedPeerMsg :: Word32 -> Parser ExtendedPeerMsg
+parseExtendedPeerMsg :: Word32 -> Get ExtendedPeerMsg
 parseExtendedPeerMsg len = do
-    extendedMsgType <- readWord
+    extendedMsgType <- getWord8
     -- TODO: redundant bytestring unpacking/packing here
-    payload <- B.pack <$> replicateM (fromIntegral len - 2) readWord
+    payload <- getByteString (fromIntegral len - 2)
     if extendedMsgType == 0
-      then do
-        (msgTbl, msgData, hsData) <- parseExtendedHandshake payload
-        return $ ExtendedHandshake msgTbl msgData hsData
-      else parseExtendedMsg extendedMsgType payload
+      then
+        case parseExtendedHandshake payload of
+          Left err -> fail err
+          Right (msgTbl, msgData, hsData) ->
+            return $ ExtendedHandshake msgTbl msgData hsData
+      else either fail return $ parseExtendedMsg extendedMsgType payload
   where
-    p :: Either String a -> Parser a
-    p = either fail return
-
-    opt :: Either String a -> Parser (Maybe a)
+    opt :: Either String a -> Either String (Maybe a)
     opt (Left _) = return Nothing
     opt (Right a) = return $ Just a
 
     parseExtendedHandshake
       :: B.ByteString
-      -> Parser (ExtendedPeerMsgTable, [ExtendedMsgTypeData], ExtendedHandshakeData)
+      -> Either String (ExtendedPeerMsgTable, [ExtendedMsgTypeData], ExtendedHandshakeData)
     parseExtendedHandshake payload = do
-      bc <- p $ BE.decode payload
+      bc <- BE.decode payload
       v <- opt $ getField bc "v"
       reqq <- opt $ getField bc "reqq"
       let hsData = ExtendedHandshakeData v reqq
-      mdict <- p $ getField bc "m"
+      mdict <- getField bc "m"
       case getField mdict "ut_metadata" of
         Left _ -> return (M.empty, [], hsData)
         Right (BE.BInteger i) -> do
@@ -245,19 +244,19 @@ parseExtendedPeerMsg len = do
           return (M.singleton UtMetadata (fromIntegral i), metainfoData, hsData)
         Right bv -> fail $ "ut_metadata value is not a number: " ++ show bv
 
-    parseExtendedMsg :: Word8 -> B.ByteString -> Parser ExtendedPeerMsg
+    parseExtendedMsg :: Word8 -> B.ByteString -> Either String ExtendedPeerMsg
     parseExtendedMsg t payload
       | t == uT_METADATA_KEY = parseUtMetadataMsg payload
       | otherwise = return $ UnknownExtendedMsg t
 
-    parseUtMetadataMsg :: B.ByteString -> Parser ExtendedPeerMsg
+    parseUtMetadataMsg :: B.ByteString -> Either String ExtendedPeerMsg
     parseUtMetadataMsg payload = do
-      (bc, rest) <- p $ decodeNonConsumed payload
-      msgType <- p $ getField bc "msg_type" :: Parser Word8
+      (bc, rest) <- decodeNonConsumed payload
+      msgType <- getField bc "msg_type" :: Either String Word8
       case msgType of
-        0 -> MetadataRequest <$> p (getField bc "piece")
-        1 -> MetadataData <$> p (getField bc "piece")
-                          <*> p (getField bc "total_size")
+        0 -> MetadataRequest <$> getField bc "piece"
+        1 -> MetadataData <$> getField bc "piece"
+                          <*> getField bc "total_size"
                           <*> pure rest
-        2 -> MetadataReject <$> p (getField bc "piece")
+        2 -> MetadataReject <$> getField bc "piece"
         _ -> fail $ "Unknown ut_metadata type: " ++ show msgType

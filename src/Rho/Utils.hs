@@ -7,10 +7,12 @@ import qualified Data.BEncode                     as BE
 import qualified Data.BEncode.BDict               as BE
 import qualified Data.BEncode.Internal            as BEI
 import qualified Data.BEncode.Types               as BE
+import           Data.Binary.Get
 import           Data.Bits                        (shiftL)
 import qualified Data.ByteString                  as B
 import qualified Data.ByteString.Char8            as BC
 import           Data.ByteString.Internal         (ByteString (PS))
+import qualified Data.ByteString.Lazy             as LB
 import           Data.Char
 import           Data.IORef                       (IORef, atomicModifyIORef')
 import           Data.Vector.Storable             (Vector, unsafeFromForeignPtr,
@@ -19,8 +21,6 @@ import           Data.Word
 import           Network.Socket                   (PortNumber (..),
                                                    SockAddr (..))
 import           System.Clock
-
-import           Rho.Parser
 
 -- | `urlEncode` takes a UTF-8 string. This is becoming a problem while
 -- encoding bytes:
@@ -109,23 +109,26 @@ decodeNonConsumed bs =
 -- | Parse list of <4-byte ip address><2-byte port number>s.
 --
 -- >>> :{
---   execParser (B.pack [192, 168, 0, 1, 0x1b, 0x39,
---                       0, 0, 0, 0, 0x04, 0xd2]) readAddrs
+--   runGet readAddrs (LB.pack [192, 168, 0, 1, 0x1b, 0x39,
+--                              0, 0, 0, 0, 0x04, 0xd2])
 -- :}
--- Right ([192.168.0.1:6969,0.0.0.0:1234],"")
+-- [192.168.0.1:6969,0.0.0.0:1234]
 --
-readAddrs :: Parser [SockAddr]
+readAddrs :: Get [SockAddr]
 readAddrs = do
-    addr <- readAddr
-    case addr of
-      Nothing -> return []
-      Just addr' -> (addr' :) <$> readAddrs
-  where
-    readAddr :: Parser (Maybe SockAddr)
-    readAddr = tryP $ do
-      ip <- readWord32LE
-      port <- readWord16LE
-      return $ SockAddrInet (PortNum port) ip
+    emp <- isEmpty
+    if emp
+      then return []
+      else do
+        ip <- getWord32le
+        port <- getWord16le
+        (SockAddrInet (PortNum port) ip :) <$> readAddrs
+
+getResult
+  :: Either (LB.ByteString, ByteOffset, String) (LB.ByteString, ByteOffset, a)
+  -> Either String a
+getResult (Right (_, _, ret)) = Right ret
+getResult (Left  (_, _, err)) = Left err
 
 -- | Make a `Word16` from bytes. First argument is most-significant byte.
 --

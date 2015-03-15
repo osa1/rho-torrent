@@ -2,16 +2,16 @@
 
 module Rho.PeerComms.Handshake where
 
-import           Control.Monad
+import           Data.Binary.Get
 import           Data.Bits
-import qualified Data.ByteString         as B
-import qualified Data.ByteString.Builder as BB
-import qualified Data.ByteString.Char8   as BC
-import qualified Data.ByteString.Lazy    as LB
+import qualified Data.ByteString            as B
+import qualified Data.ByteString.Builder    as BB
+import qualified Data.ByteString.Char8      as BC
+import qualified Data.ByteString.Lazy       as LB
+import qualified Data.ByteString.Lazy.Char8 as LBC
 import           Data.Monoid
 
 import           Rho.InfoHash
-import           Rho.Parser
 import           Rho.PeerComms.PeerId
 
 data ExtendedMsgSupport = Supports | DoesntSupport deriving (Show, Eq)
@@ -35,25 +35,25 @@ mkHandshake (InfoHash infoHash) (PeerId peerId) =
       , BB.byteString peerId
       ]
 
-parseHandshake :: B.ByteString -> Either String Handshake
+parseHandshake :: LB.ByteString -> Either String Handshake
 parseHandshake bs =
-    case execParser bs handshakeParser of
-      Right ((pstr, infoHash, peerId, extension), rest) -> do
+    case runGetOrFail handshakeParser bs of
+      Right (rest, _, (pstr, infoHash, peerId, extension)) -> do
         assert ("Unknown pstr: " ++ BC.unpack pstr) (pstr == "BitTorrent protocol")
-        assert ("Unparsed handshake contents: " ++ BC.unpack rest) (B.null rest)
+        assert ("Unparsed handshake contents: " ++ LBC.unpack rest) (LB.null rest)
         return $ Handshake infoHash peerId extension
-      Left err -> Left $ "Can't parse handshake message: " ++ err
+      Left (_, _, err) -> Left $ "Can't parse handshake message: " ++ err
   where
     assert :: String -> Bool -> Either String ()
     assert _   True  = Right ()
     assert err False = Left err
 
-    handshakeParser :: Parser (B.ByteString, InfoHash, PeerId, ExtendedMsgSupport)
+    handshakeParser :: Get (B.ByteString, InfoHash, PeerId, ExtendedMsgSupport)
     handshakeParser = do
-      pstrLen <- readWord
-      pstr <- replicateM (fromIntegral pstrLen) readWord
-      reserveds <- replicateM 8 readWord
-      let extension = if testBit (reserveds !! 5) 4 then Supports else DoesntSupport
-      infoHash <- replicateM 20 readWord
-      peerId <- replicateM 20 readWord
-      return (B.pack pstr, InfoHash $ B.pack infoHash, PeerId $ B.pack peerId, extension)
+      pstrLen <- getWord8
+      pstr <- getByteString (fromIntegral pstrLen)
+      reserveds <- getByteString 8
+      let extension = if testBit (B.index reserveds 5) 4 then Supports else DoesntSupport
+      infoHash <- getByteString 20
+      peerId <- getByteString 20
+      return (pstr, InfoHash infoHash, PeerId peerId, extension)

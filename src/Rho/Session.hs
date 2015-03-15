@@ -191,7 +191,7 @@ listenHandshake sess listener sock peerAddr = do
         | B.null bs -> notice "Got weird handshake attempt."
         | otherwise -> notice $ "Got partial handshake msg: " ++ show bs
       Msg bs ->
-        case parseHandshake bs of
+        case parseHandshake (LB.fromStrict bs) of
           Left err ->
             warning $ "Can't parse handshake: " ++ err ++ " msg: " ++ show bs
           Right hs
@@ -252,7 +252,7 @@ sendHandshake addr infoHash peerId = do
             | otherwise -> do
                 stopListener listener
                 return (Left $ "partial message: " ++ show (B.unpack hs))
-          Msg hs -> case parseHandshake hs of
+          Msg hs -> case parseHandshake (LB.fromStrict hs) of
                       Left err -> do
                         stopListener listener
                         warning $ err ++ " msg: " ++ show (B.unpack hs)

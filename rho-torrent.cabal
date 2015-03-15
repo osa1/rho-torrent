@@ -24,7 +24,6 @@ library
     Rho.ListenerUtils
     Rho.Magnet
     Rho.Metainfo
-    Rho.Parser
     Rho.PeerComms.Handshake
     Rho.PeerComms.Message
     Rho.PeerComms.PeerConnection
@@ -48,6 +47,7 @@ library
   build-depends:
       base >=4.5 && <5
     , async
+    , binary
     , bytestring
     , clock
     , containers
@@ -98,7 +98,6 @@ test-suite test
     Rho.ListenerSpec
     Rho.MagnetSpec
     Rho.MetainfoSpec
-    Rho.ParserSpec
     Rho.PeerComms.PeerPieceAsgnSpec
     Rho.PeerCommsSpec
     Rho.PieceMgrSpec
@@ -111,6 +110,7 @@ test-suite test
       base >=4.7 && <5
     , async
     , bencoding
+    , binary
     , bytestring
     , containers
     , deepseq

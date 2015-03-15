@@ -4,8 +4,10 @@
 module Rho.TrackerComms.HTTP where
 
 import qualified Data.BEncode                  as BE
+import           Data.Binary.Get
 import qualified Data.ByteString               as B
 import qualified Data.ByteString.Char8         as BC
+import qualified Data.ByteString.Lazy          as LB
 import           Data.List                     (intercalate)
 import           Data.Maybe                    (fromMaybe)
 import           Data.Word
@@ -15,7 +17,6 @@ import           Network.Socket                (PortNumber)
 import           Network.URI                   (URI, uriQuery)
 
 import           Rho.InfoHash
-import           Rho.Parser
 import           Rho.PeerComms.PeerId
 import           Rho.TrackerComms.PeerResponse
 import           Rho.Utils
@@ -62,7 +63,7 @@ peerRequestHTTP (PeerId peerId) port uri (downloaded, left, uploaded) hash = do
           -- (in case of compact form). currently only compact form
           -- is handled.
           peers_bs <- getField bv "peers"
-          peers <- fst `fmap` execParser peers_bs readAddrs
+          peers <- getResult $ runGetOrFail readAddrs (LB.fromStrict peers_bs)
           return $ PeerResponse (fromMaybe interval minInterval)
                                 incomplete
                                 complete

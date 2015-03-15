@@ -46,7 +46,8 @@ spec = do
     -- no need to test a lot of times since only thing that'll chance is
     -- info_hash and peer_id
     modifyMaxSuccess (const 100) $ prop "printing-parsing handshake" $ \(infoHash, peerId) ->
-      parseHandshake (mkHandshake infoHash peerId) == Right (Handshake infoHash peerId Supports)
+      parseHandshake (LB.fromStrict $ mkHandshake infoHash peerId)
+        == Right (Handshake infoHash peerId Supports)
 
     modifyMaxSuccess (const 10000) $ prop "printing-parsing messages" $ \msg ->
       let
@@ -194,7 +195,7 @@ recvAndParseHs listener = do
     case hsMsg of
       ConnClosed _ -> assertFailure' "Receiving handshake failed"
       Msg hs ->
-        case parseHandshake hs of
+        case parseHandshake (LB.fromStrict hs) of
           Left err  -> assertFailure' $ "Parsing handshake failed: " ++ err
           Right hs' -> return hs'
 

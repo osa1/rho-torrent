@@ -4,6 +4,7 @@ module Rho.TestTracker where
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Monad
+import           Data.Binary.Get
 import qualified Data.ByteString              as B
 import qualified Data.ByteString.Builder      as BB
 import qualified Data.ByteString.Lazy         as LB
@@ -15,10 +16,10 @@ import           Network.Socket.ByteString    (recvFrom, sendTo)
 import           System.Random
 
 import           Rho.InfoHash
-import           Rho.Parser
 import           Rho.PeerComms.PeerId
 import           Rho.TrackerComms.UDP.Request hiding (tid)
 import           Rho.TrackerComms.UDP.Types
+import           Rho.Utils
 
 data TestTracker = TestTracker
   { connectedClients :: MVar (S.Set SockAddr)
@@ -55,40 +56,40 @@ trackerLoop sock cs = forever $ do
       Left err -> putStrLn $ "Can't parse request: " ++ err
 
 parseRequest :: B.ByteString -> Either String UDPRequest
-parseRequest bs = fst <$> execParser bs requestParser
+parseRequest bs = getResult $ runGetOrFail requestParser (LB.fromStrict bs)
   where
-    requestParser :: Parser UDPRequest
+    requestParser :: Get UDPRequest
     requestParser = do
-      connId <- readWord64
+      connId <- getWord64be
       if connId == 0x41727101980
         then do
-          action <- readWord32
+          action <- getWord32be
           if action == 0
-            then ConnectRequest <$> readWord32
+            then ConnectRequest <$> getWord32be
             else fail "wrong action for connect request"
         else do
-          action <- readWord32
+          action <- getWord32be
           if action == 1
             then annParser connId
             else fail "wrong action for announce request"
 
-    annParser :: ConnectionId -> Parser UDPRequest
+    annParser :: ConnectionId -> Get UDPRequest
     annParser connId =
       AnnounceRequest connId
-        <$> readWord32
-        <*> (InfoHash . B.pack <$> replicateM 20 readWord)
-        <*> (PeerId . B.pack <$> replicateM 20 readWord)
-        <*> readWord64
-        <*> readWord64
-        <*> readWord64
-        <*> (parseAnnEv =<< readWord32)
+        <$> getWord32be
+        <*> (InfoHash <$> getByteString 20)
+        <*> (PeerId <$> getByteString 20)
+        <*> getWord64be
+        <*> getWord64be
+        <*> getWord64be
+        <*> (parseAnnEv =<< getWord32be)
         <*> (PortNum <$> do
-              void $ readWord32 -- skip ip
-              void $ readWord32 -- skip key
-              void $ readWord32 -- skip numwant
-              readWord16LE)
+              void $ getWord32be -- skip ip
+              void $ getWord32be -- skip key
+              void $ getWord32be -- skip numwant
+              getWord16le)
 
-    parseAnnEv :: Word32 -> Parser AnnounceEvent
+    parseAnnEv :: Word32 -> Get AnnounceEvent
     parseAnnEv 0 = return None
     parseAnnEv 1 = return Completed
     parseAnnEv 2 = return Started
