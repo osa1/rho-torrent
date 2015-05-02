@@ -3,7 +3,6 @@
 
 module Rho.MetainfoSpec where
 
-import           Control.Applicative
 import           Control.Monad
 import           Data.BEncode              as BE
 import qualified Data.ByteString           as B

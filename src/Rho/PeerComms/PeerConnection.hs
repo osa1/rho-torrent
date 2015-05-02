@@ -4,7 +4,6 @@
 -- | Handling communications with peers after a successful handshake.
 module Rho.PeerComms.PeerConnection where
 
-import           Control.Applicative
 import           Control.Concurrent
 import           Control.Monad
 import qualified Data.ByteString             as B

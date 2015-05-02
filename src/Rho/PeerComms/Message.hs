@@ -1,9 +1,8 @@
-{-# LANGUAGE DeriveGeneric, NondecreasingIndentation, OverloadedStrings,
-             TupleSections #-}
+{-# LANGUAGE DeriveAnyClass, DeriveGeneric, NondecreasingIndentation,
+             OverloadedStrings, TupleSections #-}
 
 module Rho.PeerComms.Message where
 
-import           Control.Applicative
 import           Control.DeepSeq         (NFData)
 import qualified Data.BEncode            as BE
 import qualified Data.BEncode.BDict      as BE
@@ -18,6 +17,7 @@ import           Data.Word
 import           GHC.Generics
 import           Network.Socket          hiding (KeepAlive)
 
+import           Rho.Instances           ()
 import           Rho.Utils
 
 data PeerMsg
@@ -39,15 +39,14 @@ data PeerMsg
            Word32 -- length
   | Port PortNumber
   | Extended ExtendedPeerMsg
-  deriving (Show, Eq, Generic)
-instance NFData PeerMsg
+  deriving (Show, Eq, Generic, NFData)
 
 -- | Extended peer message ids as determined in handshake.
 type ExtendedPeerMsgTable = M.Map ExtendedPeerMsgType Word8
 
 data ExtendedPeerMsgType
   = UtMetadata -- ^ BEP 9
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic, NFData)
 
 -- | BDict keys of extended peer message types to be used while generating
 -- m-dictionaries.
@@ -62,13 +61,13 @@ uT_METADATA_KEY = 3
 -- type. Ugly, but I don't know any better ways to handle this right now.
 data ExtendedMsgTypeData
   = UtMetadataSize Word64
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
 -- | Some widely used fields in extended handshake.
 data ExtendedHandshakeData = ExtendedHandshakeData
   { ehdV    :: Maybe B.ByteString -- ^ `v` from BEP 10
   , ehdReqq :: Maybe Word32 -- ^ `reqq` from BEP 10
-  } deriving (Show, Eq)
+  } deriving (Show, Eq, Generic, NFData)
 
 -- | Our extended message id table.
 defaultMsgTable :: ExtendedPeerMsgTable
@@ -97,7 +96,7 @@ data ExtendedPeerMsg
         Word64 -- total size, in bytes
         B.ByteString -- data
   | MetadataReject Word32 -- piece index
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
 mkPeerMsg :: ExtendedPeerMsgTable -> PeerMsg -> Either String B.ByteString
 mkPeerMsg msgTbl msg = (LB.toStrict . BB.toLazyByteString . mconcat) <$> mkPeerMsg' msgTbl msg

@@ -3,7 +3,6 @@
 
 module Rho.PeerCommsSpec where
 
-import           Control.Applicative
 import           Control.Concurrent.Async
 import           Control.Monad
 import qualified Data.ByteString           as B

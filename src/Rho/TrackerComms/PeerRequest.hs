@@ -2,10 +2,8 @@
 
 module Rho.TrackerComms.PeerRequest where
 
-import           Control.Applicative
 import           Control.Exception
 import qualified Data.ByteString.Char8         as BC
-import           Data.Monoid
 import           Network.Socket
 import           Network.URI                   (URI)
 

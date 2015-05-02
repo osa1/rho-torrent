@@ -1,7 +1,6 @@
 -- | A very incomplete tracker implementation, to be used in tests.
 module Rho.TestTracker where
 
-import           Control.Applicative
 import           Control.Concurrent
 import           Control.Monad
 import           Data.Binary.Get

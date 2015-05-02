@@ -1,15 +1,13 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE OverloadedStrings, RecordWildCards #-}
+{-# LANGUAGE GADTs, OverloadedStrings, RecordWildCards #-}
 
 module Main where
 
-import           Control.Applicative
 import           Control.Concurrent
 import           Control.DeepSeq
 import           Criterion.Main
 import           Crypto.Hash.SHA1             (hash)
 import qualified Data.ByteString              as B
-import           Data.Monoid
 import qualified Data.Vector.Storable.Mutable as MV
 import           Data.Word
 import           System.Directory
@@ -19,7 +17,6 @@ import qualified Rho.Bitfield                 as BF
 import           Rho.Metainfo
 import           Rho.PeerComms.Message        (parsePeerMsg)
 import           Rho.PieceMgr
-import           Rho.Tracker
 
 main :: IO ()
 main = defaultMain
@@ -93,10 +90,6 @@ parseMsgFiles = do
     files <- filter (\f -> head f /= '.') `fmap` getDirectoryContents dir
     putStrLn $ "msg files: " ++ show files
     mconcat <$> mapM (B.readFile . (dir </>)) files
-
-instance NFData Tracker where
-    rnf (HTTPTracker _) = ()
-    rnf (UDPTracker bs _) = rnf bs
 
 -- TODO: Is there a way to deepseq references?
 instance NFData PieceMgr where

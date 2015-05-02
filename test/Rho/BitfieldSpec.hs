@@ -2,7 +2,6 @@
 
 module Rho.BitfieldSpec where
 
-import           Control.Applicative
 import           Control.Exception         (ErrorCall, catch)
 import           Control.Monad
 import           Data.Bits

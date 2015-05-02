@@ -2,7 +2,6 @@
 
 module Rho.ClientSpec where
 
-import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad

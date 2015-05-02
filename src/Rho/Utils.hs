@@ -1,7 +1,6 @@
 -- | ... because every project needs one.
 module Rho.Utils where
 
-import           Control.Applicative
 import qualified Data.Attoparsec.ByteString.Char8 as P
 import qualified Data.BEncode                     as BE
 import qualified Data.BEncode.BDict               as BE
@@ -178,7 +177,7 @@ mkWord64 w1 w2 w3 w4 w5 w6 w7 w8 =
 currentTimeMillis :: IO Int
 currentTimeMillis = do
     TimeSpec s ns <- getTime Monotonic
-    return $ (s * 1000) + (ns `div` 1000000)
+    return . fromIntegral $ (s * 1000) + (ns `div` 1000000)
 
 -- | Like `atomicModifyIORef'`, but returns ().
 atomicModifyIORef_ :: IORef a -> (a -> a) -> IO ()
@@ -210,4 +209,4 @@ dt (TimeSpec s1 ns1) ts2@(TimeSpec s2 ns2)
 
 -- | Convert a timespec to seconds, ignoring nanoseconds part.
 tsToSec :: TimeSpec -> Int
-tsToSec (TimeSpec s _) = s
+tsToSec (TimeSpec s _) = fromIntegral s

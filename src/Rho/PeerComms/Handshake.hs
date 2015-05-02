@@ -9,7 +9,6 @@ import qualified Data.ByteString.Builder    as BB
 import qualified Data.ByteString.Char8      as BC
 import qualified Data.ByteString.Lazy       as LB
 import qualified Data.ByteString.Lazy.Char8 as LBC
-import           Data.Monoid
 
 import           Rho.InfoHash
 import           Rho.PeerComms.PeerId

@@ -5,7 +5,6 @@
 -- A new session is created for every torrent.
 module Rho.Session where
 
-import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Exception               (IOException, try)

@@ -1,7 +1,6 @@
 -- | Responses from UDP trackers.
 module Rho.TrackerComms.UDP.Response where
 
-import           Control.Applicative
 import           Data.Binary.Get
 import qualified Data.ByteString               as B
 import qualified Data.ByteString.Lazy          as LB

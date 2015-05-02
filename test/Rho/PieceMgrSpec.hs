@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs, OverloadedStrings #-}
 
 module Rho.PieceMgrSpec where
 

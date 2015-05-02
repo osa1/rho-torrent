@@ -1,22 +1,24 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveAnyClass, DeriveGeneric, OverloadedStrings #-}
 
 module Rho.Tracker
   ( Tracker (..)
   , parseTrackerBS
   ) where
 
-import           Control.Applicative   ((<$>))
+import           Control.DeepSeq       (NFData)
 import           Data.BEncode
 import qualified Data.ByteString.Char8 as B
 import           Data.Char             (isNumber)
-import           Data.Monoid
+import           GHC.Generics
 import           Network.Socket        (PortNumber)
 import           Network.URI
+
+import           Rho.Instances         ()
 
 data Tracker
     = HTTPTracker URI
     | UDPTracker B.ByteString PortNumber
-    deriving (Show, Eq, Ord)
+    deriving (Show, Eq, Ord, Generic, NFData)
 
 instance BEncode Tracker where
     toBEncode (HTTPTracker uri) = toBEncode . B.pack . show $ uri

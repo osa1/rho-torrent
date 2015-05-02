@@ -2,7 +2,6 @@
 
 module Rho.PieceMgr where
 
-import           Control.Applicative
 import           Control.Arrow                (first)
 import           Control.Concurrent.MVar
 import           Control.Monad
@@ -11,7 +10,6 @@ import qualified Data.ByteString              as B
 import qualified Data.ByteString.Char8        as BC
 import           Data.IORef
 import           Data.List                    (foldl')
-import           Data.Monoid
 import qualified Data.Vector.Storable         as SV
 import qualified Data.Vector.Storable.Mutable as MV
 import           Data.Word

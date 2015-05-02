@@ -2,14 +2,12 @@
 
 module Rho.ListenerSpec where
 
-import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
 import qualified Data.ByteString          as B
 import qualified Data.ByteString.Lazy     as LB
 import           Data.IORef
-import           Data.Monoid
 
 import           Test.Hspec
 import           Test.Hspec.Contrib.HUnit
