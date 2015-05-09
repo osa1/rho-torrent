@@ -1,6 +1,6 @@
 language: haskell
 
-ghc: 7.8
+ghc: 7.10
 
 before_install:
  - sudo add-apt-repository ppa:mystic-mirage/opentracker -y
