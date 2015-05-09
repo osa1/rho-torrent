@@ -84,6 +84,7 @@ main = do
     let gui = GUI listStore sorted
 
     treeView <- treeViewNewWithModel listStore
+    btnLayout <- initButtons treeView listStore
 
     initNameCol treeView gui
     initCompletedCol treeView gui
@@ -99,15 +100,46 @@ main = do
       row <- listStoreGetValue listStore (fromIntegral n)
       return (map toLower str `isPrefixOf` map toLower (filter isAlphaNum (rName row)))
 
+    vbox <- vBoxNew False 10
+    boxPackStart vbox btnLayout PackNatural 0
+
     swin <- scrolledWindowNew Nothing Nothing
+    boxPackStart vbox swin PackGrow 0
+
     set swin [ containerChild := treeView ]
-    set win [ containerChild := swin ]
+    set win [ containerChild := vbox ]
 
     -- FIXME: Make sure things stay sorted
     _ <- forkIO $ updater gui rows
 
     widgetShowAll win
     mainGUI
+
+initButtons :: TreeView -> ListStore Row -> IO HButtonBox
+initButtons treeView listStore = do
+    btnBox <- hButtonBoxNew
+    buttonBoxSetLayout btnBox ButtonboxStart
+
+    addNewBtn <- buttonNewFromStock stockAdd
+    addNewBtn `on` buttonActivated $ putStrLn "showing add window"
+
+    startPauseBtn <- buttonNewFromStock stockMediaPlay
+    startPauseBtn `on` buttonActivated $ do
+      sel <- treeViewGetSelection treeView
+      rows <- treeSelectionGetSelectedRows sel
+      -- TreeView should be in SingleSelection mode, and we don't have tree
+      -- views, so this should return at most one element.
+      case join rows of
+        [] -> putStrLn "Nothing selected."
+        [i] -> do
+          row <- listStoreGetValue listStore i
+          putStrLn $ "Toggling " ++ rName row
+        _ -> error $ "Unexpected selected: " ++ show rows
+
+    containerAdd btnBox addNewBtn
+    containerAdd btnBox startPauseBtn
+
+    return btnBox
 
 setColAttrs :: TreeViewColumn -> String -> IO ()
 setColAttrs col colName =
