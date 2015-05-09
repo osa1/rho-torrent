@@ -1,11 +1,14 @@
-language: haskell
-
-ghc: 7.10
+env:
+ - CABALVER=1.22 GHCVER=7.10.1
 
 before_install:
  - sudo add-apt-repository ppa:mystic-mirage/opentracker -y
+ - sudo add-apt-repository ppa:hvr/ghc -y
  - sudo apt-get update -q
  - sudo apt-get install opentracker opentracker-ipv6
+ - sudo apt-get install cabal-install-$CABALVER ghc-$GHCVER
+ - export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
+ - cabal update
  - cabal install --only-dependencies --enable-tests
 
 install:
