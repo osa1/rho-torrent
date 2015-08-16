@@ -14,11 +14,11 @@ import           Rho.PeerComms.PeerId
 -- | State of connection with a peer.
 data PeerConn = PeerConn
   { pcPeerChoking    :: Bool
-    -- ^ peer is choking us
+    -- ^ peer is choking us(we shouldn't request pieces)
   , pcPeerInterested :: Bool
     -- ^ peer interested in something that we have to offer
   , pcChoking        :: Bool
-    -- ^ we're choking the peer
+    -- ^ we're choking the peer(refusing to upload)
   , pcInterested     :: Bool
     -- ^ we're interested in something that peer has to offer
   , pcPeerId         :: PeerId

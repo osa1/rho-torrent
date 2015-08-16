@@ -29,7 +29,7 @@ data TrackerState = TrackerState
 
 runTrackerManager :: Session -> IO (Chan SockAddr, Async ())
 runTrackerManager sess = do
-    -- TODO: mayby lazily initialize UDP comm handler, no need to
+    -- TODO: maybe lazily initialize UDP comm handler, no need to
     -- initialize it when we don't have and UDP trackers.
     udpHandler <- initUDPCommHandler
     chan <- newChan

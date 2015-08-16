@@ -28,7 +28,8 @@ import           Rho.PieceMgr                hiding (notice)
 import           Rho.SessionState
 import           Rho.Utils
 
--- | Listen a connected socket and handle incoming messages.
+-- | Listen a connected socket and handle incoming messages. Returns only when
+-- connection is closed.
 listenConnectedSock :: Session -> IORef PeerConn -> Listener -> IO ()
 listenConnectedSock sess peer listener = do
     msg <- recvMessage listener
@@ -82,7 +83,8 @@ handleMessage' _ peer Choke =
 handleMessage' sess peer Unchoke = do
     pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcChoking = False} in (pc', pc')
     case pcRequest pc of
-      Nothing   -> return ()
+      Nothing   ->
+        warning "We got unchoked before requesting any pieces"
       Just pIdx -> do
         pmgr <- readMVar $ sessPieceMgr sess
         case pmgr of
@@ -263,7 +265,7 @@ sendMetainfoRequests peersMap pieces = do
       atomicModifyIORef_ (fromJust $ M.lookup pc peerRefsMap) $ \pc' -> pc'{pcRequest=Just pIdx}
   where
     peerFilter :: PeerConn -> Bool
-    peerFilter PeerConn{pcMetadataSize=Just _, pcRequest=Nothing} = True
+    peerFilter PeerConn{pcMetadataSize=Just{}, pcRequest=Nothing} = True
     peerFilter _                                                  = False
 
 sendPieceRequests :: M.Map SockAddr (IORef PeerConn) -> S.Set Word32 -> PieceMgr -> IO ()

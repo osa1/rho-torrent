@@ -114,6 +114,8 @@ runMagnetSession sess@Session{sessInfoHash=hash} = do
 runTorrentSession :: Session -> Info -> IO Bool
 runTorrentSession sess@Session{sessPieceMgr=pieces} info = do
     (newPeers, _) <- runTrackerManager sess
+    -- TODO: Who's going to stop this thread? It's seems like it becomes a
+    -- zombie after a while.
     void $ async $ handshakeWithNewPeers sess newPeers
 
     -- initialize piece manager
