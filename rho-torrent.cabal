@@ -71,7 +71,7 @@ library
     , attoparsec
 
   hs-source-dirs:      src
-  ghc-options:         -Wall -threaded -O2
+  ghc-options:         -Wall -O2
   default-language:    Haskell2010
 
 executable rho
@@ -86,18 +86,18 @@ executable rho
     , hslogger
     , RhoTorrent
 
-executable rho-gui
-  hs-source-dirs: gui
-  main-is: GUI.hs
-  ghc-options: -Wall -threaded -O2
-  default-language: Haskell2010
-
-  build-depends:
-      base >=4.8 && <5
-    , containers
-    , random
-    , RhoTorrent
-    , gtk3
+-- executable rho-gui
+--   hs-source-dirs: gui
+--   main-is: GUI.hs
+--   ghc-options: -Wall -threaded -O2
+--   default-language: Haskell2010
+-- 
+--   build-depends:
+--       base >=4.8 && <5
+--     , containers
+--     , random
+--     , RhoTorrent
+--     , gtk3
 
 test-suite test
   type:             exitcode-stdio-1.0
