@@ -1,6 +1,9 @@
 {-# LANGUAGE MultiWayIf #-}
 
-module Rho.PieceMgr where
+module Rho.PieceMgr
+  ( module Rho.PieceMgr
+  , PieceIdx, PieceOffset, PieceRequestLen
+  ) where
 
 import           Control.Arrow                (first)
 import           Control.Concurrent.MVar
@@ -19,6 +22,8 @@ import qualified System.Log.Logger            as L
 
 import qualified Rho.Bitfield                 as BF
 import           Rho.Metainfo
+import           Rho.PeerComms.Message        (PieceIdx, PieceOffset,
+                                               PieceRequestLen)
 import           Rho.Utils
 
 data PieceMgr = PieceMgr
@@ -54,7 +59,7 @@ newPieceMgrFromData bs pieceLength = do
     var  <- newMVar (arr, bits, pieceBits)
     return $ PieceMgr pieceLength (fromIntegral totalSize) (fromIntegral pieces) var
 
-pRange :: PieceMgr -> Word32 -> (Int, Int)
+pRange :: PieceMgr -> PieceIdx -> (Int, Int)
 pRange (PieceMgr pSize pTotalSize pieces _) pIdx
   | pIdx >= pieces = error "requested range for a piece out of range"
   | otherwise      = let start = pSize * pIdx
@@ -66,12 +71,12 @@ makeByteString :: PieceMgr -> IO B.ByteString
 makeByteString (PieceMgr _ _ _ m) = BF.toBS . (\(_, _, bs) -> bs) =<< readMVar m
 
 -- | Write piece data, return number of new(non-overwritten) bytes.
-writePiece :: PieceMgr -> Word32 -> Word32 -> B.ByteString -> IO Int
+writePiece :: PieceMgr -> PieceIdx -> PieceOffset -> B.ByteString -> IO Int
 writePiece pmgr@(PieceMgr pSize _ pieces m) pIdx pOffset pData = do
     let
       startIdx :: Int
       startIdx = fromIntegral pSize * fromIntegral pIdx + fromIntegral pOffset
-      lastP :: Word32
+      lastP :: PieceIdx
       lastP    = fromIntegral ((startIdx + B.length pData) `div` fromIntegral pSize)
 
     news <- newIORef 0
@@ -94,7 +99,7 @@ writePiece pmgr@(PieceMgr pSize _ pieces m) pIdx pOffset pData = do
 -- Length may be smaller then the given length for last piece.
 -- Returns `Nothing` if either missing some part of the piece or given
 -- piece is not in range.
-getPieceData :: PieceMgr -> Word32 -> Word32 -> Word32 -> IO (Maybe B.ByteString)
+getPieceData :: PieceMgr -> PieceIdx -> PieceOffset -> PieceRequestLen -> IO (Maybe B.ByteString)
 getPieceData (PieceMgr pSize pTotal ps pData) pIdx pOffset pLen = do
     let
       start, end :: Int
@@ -116,7 +121,7 @@ getBytes (PieceMgr _ _ _ pData) = do
 
 -- | Returns `Just (offset, length)` if we're missing some parts of the
 -- given piece.
-nextMissingPart :: PieceMgr -> Word32 -> IO (Maybe (Word32, Word32))
+nextMissingPart :: PieceMgr -> PieceIdx -> IO (Maybe (PieceOffset, PieceRequestLen))
 nextMissingPart pmgr@(PieceMgr _ _ _ m) pIdx = do
     (_, bits, pBits) <- readMVar m
     pieceComplete <- BF.test pBits (fromIntegral pIdx)
@@ -151,13 +156,13 @@ nextMissingPart pmgr@(PieceMgr _ _ _ m) pIdx = do
                    else return start
 
 -- | Generate list of missing piece indexes.
-missingPieces :: PieceMgr -> IO [Word32]
+missingPieces :: PieceMgr -> IO [PieceIdx]
 missingPieces (PieceMgr _ _ ps m) = do
     withMVar m $ \(_, _, pBits) ->
       filterM (\pIdx -> not <$> BF.test pBits (fromIntegral pIdx)) [0..ps-1]
 
 -- | Generate hash of a downloaded piece.
-generatePieceHash :: PieceMgr -> Word32 -> IO B.ByteString
+generatePieceHash :: PieceMgr -> PieceIdx -> IO B.ByteString
 generatePieceHash (PieceMgr pSize totalSize pieces pData) pIdx = do
     (arr, _, _) <- readMVar pData
     let
@@ -174,7 +179,7 @@ generatePieceHash (PieceMgr pSize totalSize pieces pData) pIdx = do
     return $! hash bytes
 
 -- | Check if piece data has correct hash.
-checkPieceHash :: PieceMgr -> Word32 -> B.ByteString -> IO Bool
+checkPieceHash :: PieceMgr -> PieceIdx -> B.ByteString -> IO Bool
 checkPieceHash pMgr pIdx pHash = (pHash ==) <$> generatePieceHash pMgr pIdx
 
 -- | Generate files from given piece manager for the given torrent.

@@ -236,13 +236,13 @@ unchokePeer peer = do
     pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcChoking=False} in (pc', pc')
     void $ sendMessage pc Unchoke
 
-sendInterested :: IORef PeerConn -> Word32 -> IO ()
+sendInterested :: IORef PeerConn -> PieceIdx -> IO ()
 sendInterested peer pIdx = do
     pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcInterested=True, pcRequest=Just pIdx}
                                            in (pc', pc')
     void $ sendMessage pc Interested
 
-sendPieceRequest :: IORef PeerConn -> Word32 -> Word32 -> Word32 -> IO ()
+sendPieceRequest :: IORef PeerConn -> PieceIdx -> PieceOffset -> PieceRequestLen -> IO ()
 sendPieceRequest peer pIdx pOffset pLen = do
     pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcRequest=Just pIdx} in (pc', pc')
     void $ sendMessage pc (Request pIdx pOffset pLen)
@@ -270,7 +270,7 @@ sendMetainfoRequests peersMap pieces = do
     peerFilter PeerConn{pcMetadataSize=Just{}, pcRequest=Nothing} = True
     peerFilter _                                                  = False
 
-sendPieceRequests :: M.Map SockAddr (IORef PeerConn) -> S.Set Word32 -> PieceMgr -> IO ()
+sendPieceRequests :: M.Map SockAddr (IORef PeerConn) -> S.Set PieceIdx -> PieceMgr -> IO ()
 sendPieceRequests peersMap reqs pieces = do
     missings <- ((`S.difference` reqs)  . S.fromList) <$> missingPieces pieces
     info $ show (S.size missings) ++ " pieces missing."

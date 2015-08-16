@@ -20,23 +20,27 @@ import           Network.Socket          hiding (KeepAlive)
 import           Rho.Instances           ()
 import           Rho.Utils
 
+type PieceIdx           = Word32
+type PieceOffset        = Word32
+type PieceRequestLen    = Word32
+
 data PeerMsg
   = KeepAlive
   | Choke
   | Unchoke
   | Interested
   | NotInterested
-  | Have Word32
+  | Have PieceIdx
   | Bitfield B.ByteString
-  | Request Word32 -- piece index
-            Word32 -- offset in piece
-            Word32 -- length
-  | Piece Word32 -- piece index
-          Word32 -- offset in piece
+  | Request PieceIdx
+            PieceOffset
+            PieceRequestLen
+  | Piece PieceIdx
+          PieceOffset
           B.ByteString -- data
-  | Cancel Word32 -- piece index
-           Word32 -- offset in piece
-           Word32 -- length
+  | Cancel PieceIdx
+           PieceOffset
+           PieceRequestLen
   | Port PortNumber
   | Extended ExtendedPeerMsg
   deriving (Show, Eq, Generic, NFData)
@@ -90,12 +94,12 @@ data ExtendedPeerMsg
       ExtendedHandshakeData
   | UnknownExtendedMsg Word8
   -- Messages from BEP 9
-  | MetadataRequest Word32 -- piece index
+  | MetadataRequest PieceIdx
   | MetadataData
-        Word32 -- piece index
+        PieceIdx
         Word64 -- total size, in bytes
         B.ByteString -- data
-  | MetadataReject Word32 -- piece index
+  | MetadataReject PieceIdx
   deriving (Show, Eq, Generic, NFData)
 
 mkPeerMsg :: ExtendedPeerMsgTable -> PeerMsg -> Either String B.ByteString
