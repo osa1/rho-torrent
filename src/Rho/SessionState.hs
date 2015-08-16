@@ -36,6 +36,8 @@ data Session = Session
     -- ^ callback to call when torrent download completed
   , sessDownloaded        :: IORef Word64
   , sessUploaded          :: IORef Word64
+
+  , sessCurrentOptUnchoke :: IORef (Maybe (IORef PeerConn))
   }
 
 initSession
@@ -51,7 +53,8 @@ initSession peerId infoHash port trackers pieces miPieces = do
     tCb    <- newMVar (return ())
     dr     <- newIORef 0
     ur     <- newIORef 0
-    return $ Session peerId infoHash ts peers pmgr miPMgr reqs port miCb tCb dr ur
+    opt    <- newIORef Nothing
+    return $ Session peerId infoHash ts peers pmgr miPMgr reqs port miCb tCb dr ur opt
 
 type SessStats = (Word64, Word64, Word64)
 

@@ -4,9 +4,12 @@ import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
 import           Data.IORef
-import qualified Data.Map                    as M
+import qualified Data.Map                     as M
 import           System.Clock
+import           System.Random                (randomRIO)
 
+import           Rho.PeerComms.Message
+import           Rho.PeerComms.PeerConnection
 import           Rho.PeerComms.PeerConnState
 import           Rho.SessionState
 import           Rho.Utils
@@ -29,8 +32,10 @@ torrentLoop sess lastTurn = async $ forever $ do
     when (luckyPeers < 4) $
       sendUnchokes peers (4 - luckyPeers)
 
-    when (tsToSec (now `dt` lastTurn) >= 30) $
-      moveOptimisticUnchoke peers
+    when (tsToSec (now `dt` lastTurn) >= 30) $ do
+      currentOpt <- readIORef (sessCurrentOptUnchoke sess)
+      newOpt <- moveOptimisticUnchoke currentOpt peers
+      writeIORef (sessCurrentOptUnchoke sess) (Just newOpt)
 
     -- We wait 10 seconds to prevent fibrillation.
     threadDelay (10 * 1000000)
@@ -59,11 +64,35 @@ sendInteresteds :: [IORef PeerConn] -> Int -> IO ()
 sendInteresteds _ _ = return () -- TODO: Implement this
 
 sendNotInterested :: IORef PeerConn -> IO ()
-sendNotInterested _ = return ()
+sendNotInterested pc = do
+    pc' <- atomicModifyIORef' pc $ \pc' -> let pc'' = pc'{pcInterested=False} in (pc'', pc'')
+    void $ sendMessage pc' NotInterested
 
--- NOTE: We should unchoke peers that we downloaded the most from
+-- FIXME: We should unchoke peers that we downloaded the most from
 sendUnchokes :: [IORef PeerConn] -> Int -> IO ()
-sendUnchokes _ _ = return () -- TODO: implement this
+sendUnchokes pcs amt = do
+    chokeds <- filterM (fmap pcChoking . readIORef) pcs
+    idxs <- replicateM amt (randomRIO (0, length chokeds - 1))
+    mapM_ (sendUnchoke . (chokeds !!)) idxs
 
-moveOptimisticUnchoke :: [IORef PeerConn] -> IO ()
-moveOptimisticUnchoke _ = return () -- TODO: implement this
+moveOptimisticUnchoke :: Maybe (IORef PeerConn) -> [IORef PeerConn] -> IO (IORef PeerConn)
+moveOptimisticUnchoke currentOpt pcs = do
+    notChoking <- filterM (fmap (not . pcChoking) . readIORef) pcs
+    rand <- pickRandom notChoking
+    maybe (return ()) sendChoke $ currentOpt
+    sendUnchoke rand
+    return rand
+
+sendUnchoke :: IORef PeerConn -> IO ()
+sendUnchoke pc = do
+    pc' <- atomicModifyIORef' pc $ \pc' -> let pc'' = pc'{pcChoking=False} in (pc'', pc'')
+    void $ sendMessage pc' Unchoke
+
+sendChoke :: IORef PeerConn -> IO ()
+sendChoke pc = do
+    pc' <- atomicModifyIORef' pc $ \pc' -> let pc'' = pc'{pcChoking=True} in (pc'', pc'')
+    void $ sendMessage pc' Choke
+
+pickRandom :: [a] -> IO a
+pickRandom []  = error "pickRandom: Empty list"
+pickRandom lst = (lst !!) <$> randomRIO (0, length lst - 1)
