@@ -1,5 +1,5 @@
-{-# LANGUAGE DeriveAnyClass, DeriveDataTypeable, DeriveGeneric,
-             FlexibleInstances, OverloadedStrings, RecordWildCards #-}
+{-# LANGUAGE DeriveAnyClass, DeriveGeneric, FlexibleInstances,
+             OverloadedStrings, RecordWildCards #-}
 
 module Rho.Metainfo where
 
@@ -11,7 +11,6 @@ import qualified Data.BEncode.BDict   as BE
 import qualified Data.ByteString      as B
 import qualified Data.ByteString.Lazy as LB
 import           Data.Maybe           (fromMaybe)
-import           Data.Typeable
 import           Data.Word
 import           GHC.Generics
 
@@ -28,7 +27,7 @@ data Metainfo = Metainfo
   , mCreatedBy    :: Maybe B.ByteString
   , mEncoding     :: Maybe B.ByteString
   , mInfo         :: Info
-  } deriving (Show, Eq, Typeable, Generic, NFData)
+  } deriving (Show, Eq, Generic, NFData)
 
 data Info = Info
   { iName        :: B.ByteString
@@ -38,7 +37,7 @@ data Info = Info
   , iPrivate     :: Bool
   , iFiles       :: Either File [File]
     -- ^ Left: single-file mode, Right: multi-file mode
-  } deriving (Show, Eq, Typeable, Generic, NFData)
+  } deriving (Show, Eq, Generic, NFData)
 
 torrentSize :: Info -> Word64
 torrentSize Info{iFiles=Left (File len _ _)} = len
@@ -52,7 +51,7 @@ data File = File
   , fMd5Sum :: Maybe B.ByteString
   , fPath   :: [B.ByteString]
     -- ^ empty in single-file mode
-  } deriving (Show, Eq, Typeable, Generic, NFData)
+  } deriving (Show, Eq, Generic, NFData)
 
 -- | Parse contents of a .torrent file.
 parseMetainfo :: B.ByteString -> Either String Metainfo
