@@ -78,10 +78,10 @@ handleMessage' _ peer (Have piece) = do
         BF.set bf (fromIntegral piece)
 
 handleMessage' _ peer Choke =
-    atomicModifyIORef_ peer $ \pc -> pc{pcChoking = True}
+    atomicModifyIORef_ peer $ \pc -> pc{pcPeerChoking = True}
 
 handleMessage' sess peer Unchoke = do
-    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcChoking = False} in (pc', pc')
+    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcPeerChoking = False} in (pc', pc')
     case pcRequest pc of
       Nothing   ->
         warning "We got unchoked before requesting any pieces"
@@ -152,7 +152,7 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
 
 handleMessage' sess peer (Request pIdx pOffset pLen) = do
     pc <- readIORef peer
-    unless (pcPeerChoking pc) $ do
+    unless (pcChoking pc) $ do
       pm <- readMVar $ sessPieceMgr sess
       case pm of
         Just pm' -> do
@@ -231,7 +231,7 @@ handleMessage' _ _ msg = notice $ "Unhandled peer msg: " ++ show msg
 
 unchokePeer :: IORef PeerConn -> IO ()
 unchokePeer peer = do
-    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcPeerChoking=False} in (pc', pc')
+    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcChoking=False} in (pc', pc')
     void $ sendMessage pc Unchoke
 
 sendInterested :: IORef PeerConn -> Word32 -> IO ()
