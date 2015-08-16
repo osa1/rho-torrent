@@ -87,7 +87,7 @@ metadataTransferTest = TestCase $ do
     -- FIXME: We're having a race conditions here -- when the tracker
     -- returns two peers to both peers, both peers get stuck.
     opentracker <- spawnTracker "tests/should_parse/" []
-    let ts = [UDPTracker "127.0.0.1" (fromIntegral 6969)]
+    let ts = [UDPTracker "127.0.0.1" (fromIntegral (6969 :: Int))]
     Metainfo{mInfo=info} <- parseMIAssertion "tests/should_parse/archlinux-2014.11.01-dual.iso.torrent"
     let infoSize = fromIntegral $ LB.length $ BE.encode info
         pid1     = mkPeerId 1
@@ -172,7 +172,7 @@ metadataTransferTest = TestCase $ do
 torrentTransferTest :: Test
 torrentTransferTest = TestCase $ do
     opentracker <- spawnTracker "tests/should_parse/" []
-    let ts = [UDPTracker "127.0.0.1" (fromIntegral 6969)]
+    let ts = [UDPTracker "127.0.0.1" (fromIntegral (6969 :: Int))]
     pwd <- getCurrentDirectory
     Metainfo{mInfo=info} <- parseMIAssertion (pwd </> "test/test.torrent")
     let pid1 = mkPeerId 1

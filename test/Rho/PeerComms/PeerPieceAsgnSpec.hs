@@ -65,12 +65,12 @@ spec = do
         -- trace ("done: " ++ show peers ++ "\ngenerating missings") $ do
         missings <- genPieceData 100
         -- trace ("done: " ++ show missings ++ "\ngenerating peerPieces") $ do
-        peerPieces <- genPeerPieces peers missings
+        peerPcs <- genPeerPieces peers missings
 
-        let ex = showCounterExample missings peerPieces
+        let ex = showCounterExample missings peerPcs
         -- trace ("\nrunning example: " ++ ex) $ do
 
-        let asgns = assignPieces missings peerPieces
+        let asgns = assignPieces missings peerPcs
             prop1 = -- pieces should be assigned to at most one peer
               S.size (S.fromList (map snd asgns)) == length asgns
             prop2 = -- peers should be assigned at most once
