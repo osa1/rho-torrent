@@ -188,7 +188,9 @@ handleMessage' sess peer (Extended (ExtendedHandshake msgTbl msgData hsData)) = 
           Nothing -> do
             pm' <- newPieceMgr s (2 ^ (14 :: Word32))
             void $ tryPutMVar (sessMIPieceMgr sess) pm'
-          Just _ -> return ()
+          Just _ ->
+            -- TODO: Maybe do a consistency check here.
+            return ()
 
 handleMessage' sess peer (Extended (MetadataRequest pIdx)) = do
     miPieces <- tryReadMVar (sessMIPieceMgr sess)
