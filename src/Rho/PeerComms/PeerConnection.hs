@@ -52,17 +52,16 @@ handleMessage' _ _ KeepAlive = return () -- TODO: should we ignore keep-alives?
 
 handleMessage' sess peer (Bitfield bytes) = do
     pm <- takeMVar $ sessPieceMgr sess
-    case pm of
-      Nothing -> do
-        -- we don't know how many pieces we have yet, just set it using
-        -- parsed bitfield
-        bf <- BF.fromBS bytes (B.length bytes * 8)
-        atomicModifyIORef_ peer $ \pc -> pc{pcPieces = Just bf}
-      Just pm' -> do
-        -- TODO: Check spare bits and close the connection if they're
-        -- not 0
-        bf <- BF.fromBS bytes (fromIntegral $ pmPieces pm')
-        atomicModifyIORef_ peer $ \pc -> pc{pcPieces = Just bf}
+    bf <- case pm of
+            Nothing ->
+              -- we don't know how many pieces we have yet, just set it using
+              -- parsed bitfield
+              BF.fromBS bytes (B.length bytes * 8)
+            Just pm' ->
+              -- TODO: Check spare bits and close the connection if they're
+              -- not 0
+              BF.fromBS bytes (fromIntegral $ pmPieces pm')
+    atomicModifyIORef_ peer $ \pc -> pc{pcPieces = Just bf}
     putMVar (sessPieceMgr sess) pm
 
 handleMessage' _ peer (Have piece) = do
