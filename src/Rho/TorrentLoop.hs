@@ -67,7 +67,8 @@ sendInteresteds pcs missings amt = return () -- TODO: implement this
 
 sendNotInterested :: IORef PeerConn -> IO ()
 sendNotInterested pc = do
-    pc' <- atomicModifyIORef' pc $ \pc' -> let pc'' = pc'{pcInterested=False} in (pc'', pc'')
+    pc' <- atomicModifyIORef' pc $ \pc' ->
+             let pc'' = pc'{pcInterested=False, pcRequest=Nothing} in (pc'', pc'')
     void $ sendMessage pc' NotInterested
 
 -- FIXME: We should unchoke peers that we downloaded the most from
