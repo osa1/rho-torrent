@@ -106,10 +106,10 @@ handleMessage' sess peer Unchoke = do
               Just (pOffset, pLen) ->
                 sendPieceRequest peer pIdx pOffset (min pLen $ pcMaxPieceSize pc)
 
-handleMessage' _ peer Interested = do
+handleMessage' _ peer Interested =
+    -- Unchoking is handled by the torrent loop(TorrentLoop.torrentLoop), we
+    -- just mark it as interested here.
     atomicModifyIORef_ peer $ \pc -> pc{pcPeerInterested = True}
-    -- FIXME: we're just unchoking every peer for now
-    unchokePeer peer
 
 handleMessage' _ peer NotInterested =
     atomicModifyIORef_ peer $ \pc -> pc{pcPeerInterested = False}
