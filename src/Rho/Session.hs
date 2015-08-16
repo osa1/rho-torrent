@@ -20,6 +20,7 @@ import           Network.Socket                  hiding (KeepAlive, recv,
                                                   recvFrom, recvLen, send,
                                                   sendTo)
 import           Network.Socket.ByteString
+import           System.Clock
 import           System.Directory                (createDirectoryIfMissing)
 import           System.FilePath                 (takeDirectory)
 import qualified System.Log.Logger               as L
@@ -38,6 +39,7 @@ import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr                    hiding (notice)
 import           Rho.SessionState
+import           Rho.TorrentLoop
 import           Rho.Tracker
 import           Rho.TrackerComms.TrackerManager (runTrackerManager)
 
@@ -110,8 +112,7 @@ runMagnetSession sess@Session{sessInfoHash=hash} = do
       loop pieces
 
 runTorrentSession :: Session -> Info -> IO Bool
-runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
-                               sessRequestedPieces=requests} info = do
+runTorrentSession sess@Session{sessPieceMgr=pieces} info = do
     (newPeers, _) <- runTrackerManager sess
     void $ async $ handshakeWithNewPeers sess newPeers
 
@@ -132,7 +133,8 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
     torrentDoneThread <- async $ readMVar torrentDone
 
     -- start the loop
-    loopThread <- async $ loop pmgr
+    now <- getTime Monotonic
+    loopThread <- torrentLoop sess now
 
     -- loop until the torrent is complete
     void $ waitAnyCancel [loopThread, torrentDoneThread]
@@ -148,13 +150,6 @@ runTorrentSession sess@Session{sessPeers=peers, sessPieceMgr=pieces,
         writeFiles =<< generateFiles pmgr info
         return True
   where
-    loop pmgr = do
-      peersMap <- readMVar peers
-      reqs <- readMVar requests
-      sendPieceRequests peersMap reqs pmgr
-      threadDelay (1000000 * 5)
-      loop pmgr
-
     writeFiles :: [(FilePath, B.ByteString)] -> IO ()
     writeFiles [] = return ()
     writeFiles ((f, c) : rest) = do

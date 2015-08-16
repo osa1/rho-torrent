@@ -34,6 +34,7 @@ library
     Rho.PieceMgr
     Rho.Session
     Rho.SessionState
+    Rho.TorrentLoop
     Rho.Tracker
     Rho.TrackerComms.HTTP
     Rho.TrackerComms.PeerRequest
