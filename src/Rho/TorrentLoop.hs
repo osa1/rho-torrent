@@ -73,20 +73,15 @@ sendUnchokes :: [IORef PeerConn] -> Int -> IO ()
 sendUnchokes pcs amt = do
     chokeds <- filterM (fmap pcChoking . readIORef) pcs
     idxs <- replicateM amt (randomRIO (0, length chokeds - 1))
-    mapM_ (sendUnchoke . (chokeds !!)) idxs
+    mapM_ (unchokePeer . (chokeds !!)) idxs
 
 moveOptimisticUnchoke :: Maybe (IORef PeerConn) -> [IORef PeerConn] -> IO (IORef PeerConn)
 moveOptimisticUnchoke currentOpt pcs = do
     notChoking <- filterM (fmap (not . pcChoking) . readIORef) pcs
     rand <- pickRandom notChoking
     maybe (return ()) sendChoke $ currentOpt
-    sendUnchoke rand
+    unchokePeer rand
     return rand
-
-sendUnchoke :: IORef PeerConn -> IO ()
-sendUnchoke pc = do
-    pc' <- atomicModifyIORef' pc $ \pc' -> let pc'' = pc'{pcChoking=False} in (pc'', pc'')
-    void $ sendMessage pc' Unchoke
 
 sendChoke :: IORef PeerConn -> IO ()
 sendChoke pc = do
