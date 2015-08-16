@@ -11,11 +11,12 @@ import           System.Random                (randomRIO)
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
 import           Rho.PeerComms.PeerConnState
+import           Rho.PieceMgr
 import           Rho.SessionState
 import           Rho.Utils
 
-torrentLoop :: Session -> TimeSpec -> IO (Async ())
-torrentLoop sess lastTurn = async $ forever $ do
+torrentLoop :: Session -> PieceMgr -> TimeSpec -> IO (Async ())
+torrentLoop sess pMgr lastTurn = async $ forever $ do
     now <- getTime Monotonic
     peers <- M.elems <$> readMVar (sessPeers sess)
 
@@ -26,8 +27,9 @@ torrentLoop sess lastTurn = async $ forever $ do
 
     forgetNonresponsiveInterestMsgs peers
 
-    when (is < 5) $
-      sendInteresteds peers (5 - is)
+    when (is < 5) $ do
+      missings <- missingPieces pMgr
+      sendInteresteds peers missings (5 - is)
 
     when (luckyPeers < 4) $
       sendUnchokes peers (4 - luckyPeers)
@@ -60,8 +62,8 @@ forgetNonresponsiveInterestMsgs pcs =
       pc' <- readIORef pc
       when (pcInterested pc' && pcPeerChoking pc') $ sendNotInterested pc
 
-sendInteresteds :: [IORef PeerConn] -> Int -> IO ()
-sendInteresteds _ _ = return () -- TODO: Implement this
+sendInteresteds :: [IORef PeerConn] -> [PieceIdx] -> Int -> IO ()
+sendInteresteds pcs missings amt = return () -- TODO: implement this
 
 sendNotInterested :: IORef PeerConn -> IO ()
 sendNotInterested pc = do
