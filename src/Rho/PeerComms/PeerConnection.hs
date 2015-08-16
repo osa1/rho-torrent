@@ -16,6 +16,7 @@ import           Data.Word
 import           Network.Socket              hiding (KeepAlive, recv, recvFrom,
                                               recvLen, send, sendTo)
 import           Network.Socket.ByteString
+import           Safe                        (headMay)
 import qualified System.Log.Logger           as L
 
 import qualified Rho.Bitfield                as BF
@@ -172,8 +173,7 @@ handleMessage' sess peer (Request pIdx pOffset pLen) = do
 handleMessage' sess peer (Extended (ExtendedHandshake msgTbl msgData hsData)) = do
     info "Got extended handshake."
     metadataSize <- atomicModifyIORef' peer $ \pc' ->
-      let metadataSize = find (\case UtMetadataSize{} -> True
-                                     _ -> False) msgData >>= \(UtMetadataSize i) -> return i in
+      let metadataSize = headMay [ i | UtMetadataSize i <- msgData ] in
       (pc'{pcExtendedMsgTbl = msgTbl,
            pcMetadataSize   = metadataSize,
            pcClientName     = ehdV hsData,
