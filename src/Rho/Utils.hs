@@ -217,8 +217,3 @@ tsToSec (TimeSpec s _) = fromIntegral s
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM c a = c >>= \case { True -> a; False -> return () }
 {-# INLINE whenM #-}
-
-whenJust :: Monad m => Maybe a -> (a -> m ()) -> m ()
-whenJust Nothing  _ = return ()
-whenJust (Just a) m = m a
-{-# INLINE whenJust #-}

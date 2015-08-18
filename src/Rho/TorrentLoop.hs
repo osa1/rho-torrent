@@ -5,6 +5,7 @@ module Rho.TorrentLoop where
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
+import           Data.Foldable                (for_)
 import           Data.IORef
 import           Data.List                    (sortBy, uncons)
 import qualified Data.Map                     as M
@@ -65,7 +66,7 @@ maybeRotateOptimisticUnchoke Session{sessPeers=peers, sessCurrentOptUnchoke=curr
         sorted =
           sortBy (\p1 p2 -> pcLastUnchoke (snd p1) `compare` pcLastUnchoke (snd p2)) potentials
 
-      whenJust (uncons sorted) $ \(h, t) -> do
+      for_ (uncons sorted) $ \(h, t) -> do
         -- In case we have multiple peers with same "last unchoked" times, we
         -- pick someone random.
         let t' = takeWhile ((pcLastUnchoke (snd h) ==) . pcLastUnchoke . snd) t
