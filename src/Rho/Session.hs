@@ -136,7 +136,7 @@ runTorrentSession sess@Session{sessPieceMgr=pieces} info = do
 
     -- start the loop
     now <- getTime Monotonic
-    loopThread <- torrentLoop sess pmgr now
+    loopThread <- torrentLoop sess pmgr
 
     -- loop until the torrent is complete
     void $ waitAnyCancel [loopThread, torrentDoneThread]

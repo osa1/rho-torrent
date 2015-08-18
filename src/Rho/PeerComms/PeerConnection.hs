@@ -17,6 +17,7 @@ import           Network.Socket              hiding (KeepAlive, recv, recvFrom,
                                               recvLen, send, sendTo)
 import           Network.Socket.ByteString
 import           Safe                        (headMay)
+import           System.Clock
 import qualified System.Log.Logger           as L
 
 import qualified Rho.Bitfield                as BF
@@ -232,7 +233,9 @@ handleMessage' _ _ msg = notice $ "Unhandled peer msg: " ++ show msg
 
 unchokePeer :: IORef PeerConn -> IO ()
 unchokePeer peer = do
-    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcChoking=False} in (pc', pc')
+    now <- getTime Monotonic
+    pc <- atomicModifyIORef' peer $ \pc ->
+            let pc' = pc{pcChoking=False, pcLastUnchoke=now} in (pc', pc')
     void $ sendMessage pc Unchoke
 
 sendInterested :: IORef PeerConn -> PieceIdx -> IO ()

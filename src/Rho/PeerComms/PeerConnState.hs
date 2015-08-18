@@ -4,6 +4,7 @@ import qualified Data.ByteString         as B
 import qualified Data.Map                as M
 import           Data.Word
 import           Network.Socket          (SockAddr, Socket)
+import           System.Clock            (TimeSpec (..))
 
 import qualified Rho.Bitfield            as BF
 import           Rho.Listener
@@ -51,6 +52,13 @@ data PeerConn = PeerConn
     -- "Client name and version (as a utf-8 string). This is a much more
     -- reliable way of identifying the client than relying on the peer id
     -- encoding."
+  , pcLastUnchoke    :: TimeSpec
+    -- ^ We update this whenever we unchoke the peer. This is later used in the
+    -- "optimistic unchoking" algorithm, where we unchoke some random peer that
+    -- wasn't unchoked for a while to give a chance to everyone in the swarm.
+    -- Initially this is `TimeSpec 0 0`, this is important because before
+    -- choosing which peer to unchoke, we first sort them according to when we
+    -- unchoked last time. We then pick one at random to break ties.
   }
 
 instance Ord PeerConn where
@@ -73,3 +81,4 @@ newPeerConn peerId extension sock sockAddr l =
            (2 ^ (14 :: Word32)) -- 16Kb for now, we may need to dynamically adjust the value
            250 -- default value of libtorrent
            Nothing
+           (TimeSpec 0 0)

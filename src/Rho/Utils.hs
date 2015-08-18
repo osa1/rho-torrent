@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 -- | ... because every project needs one.
 module Rho.Utils where
 
@@ -210,3 +212,13 @@ dt (TimeSpec s1 ns1) ts2@(TimeSpec s2 ns2)
 -- | Convert a timespec to seconds, ignoring nanoseconds part.
 tsToSec :: TimeSpec -> Int
 tsToSec (TimeSpec s _) = fromIntegral s
+
+-- | Just like `Control.Monad.when`, but runs condition in the monad.
+whenM :: Monad m => m Bool -> m () -> m ()
+whenM c a = c >>= \case { True -> a; False -> return () }
+{-# INLINE whenM #-}
+
+whenJust :: Monad m => Maybe a -> (a -> m ()) -> m ()
+whenJust Nothing  _ = return ()
+whenJust (Just a) m = m a
+{-# INLINE whenJust #-}

@@ -1,9 +1,12 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Rho.TorrentLoop where
 
 import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
 import           Data.IORef
+import           Data.List                    (sortBy, uncons)
 import qualified Data.Map                     as M
 import           System.Clock
 import           System.Random                (randomRIO)
@@ -11,13 +14,13 @@ import           System.Random                (randomRIO)
 import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
 import           Rho.PeerComms.PeerConnState
+import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr
 import           Rho.SessionState
 import           Rho.Utils
 
-torrentLoop :: Session -> PieceMgr -> TimeSpec -> IO (Async ())
-torrentLoop sess pMgr lastTurn = async $ forever $ do
-    now <- getTime Monotonic
+torrentLoop :: Session -> PieceMgr -> IO (Async ())
+torrentLoop sess pMgr = async $ forever $ do
     peers <- M.elems <$> readMVar (sessPeers sess)
 
     is <- numInterested peers
@@ -34,13 +37,47 @@ torrentLoop sess pMgr lastTurn = async $ forever $ do
     when (luckyPeers < 4) $
       sendUnchokes peers (4 - luckyPeers)
 
-    when (tsToSec (now `dt` lastTurn) >= 30) $ do
-      currentOpt <- readIORef (sessCurrentOptUnchoke sess)
-      newOpt <- moveOptimisticUnchoke currentOpt peers
-      writeIORef (sessCurrentOptUnchoke sess) (Just newOpt)
+    maybeRotateOptimisticUnchoke sess
 
     -- We wait 10 seconds to prevent fibrillation.
     threadDelay (10 * 1000000)
+
+maybeRotateOptimisticUnchoke :: Session -> IO ()
+maybeRotateOptimisticUnchoke Session{sessPeers=peers, sessCurrentOptUnchoke=currentRef} =
+    readIORef currentRef >>= \case
+      Nothing ->
+        -- We haven't unchoked any peers so far, go ahead.
+        rotateOptimisticUnchoke Nothing
+      Just current -> do
+        -- Rotate only if we gave a chance to current peer for at least 30
+        -- seconds.
+        now <- getTime Monotonic
+        currentPC <- readIORef current
+        when (tsToSec (now `dt` pcLastUnchoke currentPC) >= 30) $
+          rotateOptimisticUnchoke (Just $ pcPeerId currentPC)
+  where
+    rotateOptimisticUnchoke :: Maybe PeerId -> IO ()
+    rotateOptimisticUnchoke pid = do
+      peers' <- M.elems <$> readMVar peers
+      peerConns <- zip peers' <$> mapM readIORef peers'
+      let
+        potentials = filter (peerFilter pid . snd) peerConns
+        sorted =
+          sortBy (\p1 p2 -> pcLastUnchoke (snd p1) `compare` pcLastUnchoke (snd p2)) potentials
+
+      whenJust (uncons sorted) $ \(h, t) -> do
+        -- In case we have multiple peers with same "last unchoked" times, we
+        -- pick someone random.
+        let t' = takeWhile ((pcLastUnchoke (snd h) ==) . pcLastUnchoke . snd) t
+        newPeer <- pickRandom (h : t')
+        unchokePeer (fst newPeer)
+        writeIORef currentRef $ Just (fst newPeer)
+
+    -- | We choose 1) a different peer 2) a peer that is interested in something
+    -- we have.
+    peerFilter :: Maybe PeerId -> PeerConn -> Bool
+    peerFilter Nothing    pc = pcPeerInterested pc
+    peerFilter (Just pid) pc = pid /= pcPeerId pc && pcPeerInterested pc
 
 -- TODO: Make sure these are optimized to non-allocating loops
 

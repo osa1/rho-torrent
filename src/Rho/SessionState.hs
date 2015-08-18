@@ -36,8 +36,10 @@ data Session = Session
     -- ^ callback to call when torrent download completed
   , sessDownloaded        :: IORef Word64
   , sessUploaded          :: IORef Word64
-
   , sessCurrentOptUnchoke :: IORef (Maybe (IORef PeerConn))
+    -- ^ Lucky peer chosen for optimistic unchoke. We rotate this in every 30
+    -- seconds. When we unchoked the current peer can be seen in pcLastUnchoke
+    -- field of PeerConn.
   }
 
 initSession
