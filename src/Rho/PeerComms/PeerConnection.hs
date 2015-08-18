@@ -8,7 +8,6 @@ import           Control.Concurrent
 import           Control.Monad
 import qualified Data.ByteString             as B
 import           Data.IORef
-import           Data.List                   (find)
 import qualified Data.Map                    as M
 import           Data.Maybe
 import qualified Data.Set                    as S
