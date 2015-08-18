@@ -61,6 +61,8 @@ genBytes = return . loop
     loop 0 = []
     loop i = fromIntegral i : loop (i - 1)
 
+-- | Generate a piece manager of given total and piece size, completely filled
+-- with dummy data.
 generatePieceMgr :: Word64 -> Word32 -> IO PieceMgr
 generatePieceMgr totalSize pieceSize = PieceMgr pieceSize totalSize pieces <$> pmDataGen
   where
