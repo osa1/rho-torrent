@@ -27,6 +27,8 @@ data Session = Session
     -- ^ piece manager for torrent data
   , sessPieceStats        :: MVar PieceStats
     -- TODO: Should this be an MVar?
+    -- TODO: We should remove pieces that we completed from PieceStats.
+    -- TODO: We should remove disconnected peers from PieceStats.
   , sessMIPieceMgr        :: MVar PieceMgr
     -- ^ piece manager for info dictionary
   , sessRequestedPieces   :: MVar (S.Set Word32)
