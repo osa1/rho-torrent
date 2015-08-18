@@ -24,17 +24,15 @@ torrentLoop :: Session -> PieceMgr -> IO (Async ())
 torrentLoop sess pMgr = async $ forever $ do
     peers <- M.elems <$> readMVar (sessPeers sess)
 
-    is <- numInterested peers
-
-    -- We keep 4 interested peers at unchoked state
-    luckyPeers <- numUnchokedAndInterested peers
-
     forgetNonresponsiveInterestMsgs peers
 
+    is <- numInterested peers
     when (is < 5) $ do
       missings <- missingPieces pMgr
       sendInteresteds peers missings (5 - is)
 
+    -- We keep 4 interested peers at unchoked state
+    luckyPeers <- numUnchokedAndInterested peers
     when (luckyPeers < 4) $
       sendUnchokes peers (4 - luckyPeers)
 
