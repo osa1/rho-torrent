@@ -32,6 +32,10 @@ main = defaultMain
 
   , env parseMsgFiles $ \msgs ->
       bench "parsing peer messages" $ nf parsePeerMsg msgs
+
+  , env (newPieceMgr (16 * 10000) 16) $ \pMgr ->
+      bench "generating missing pieces for piece manager with 10000 pieces" $
+        nfIO $ missingPieces pMgr
   ]
 
 root :: FilePath
