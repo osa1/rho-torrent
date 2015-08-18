@@ -9,14 +9,18 @@ module Rho.PieceStats
   , initPieceStats
   , addPiece
   , takeMins
+  , removePeer
+  , removePiece
   ) where
 
 import qualified Data.IntPSQ          as PQ
+import           Data.List            (foldl')
 import qualified Data.Set             as S
 
 import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr         (PieceIdx)
 
+-- INVARIANT: Priority == size of the set
 newtype PieceStats = PieceStats (PQ.IntPSQ Int (S.Set PeerId))
 
 initPieceStats :: PieceStats
@@ -43,3 +47,20 @@ takeMins (PieceStats pq) n =
   where
     f (pIdx, _, ps) =
       (fromIntegral pIdx, ps) : takeMins (PieceStats $ PQ.deleteMin pq) (n - 1)
+
+-- | Remove a peer from the queue. Updates priorities of pieces accordingly.
+removePeer :: PeerId -> PieceStats -> PieceStats
+removePeer pid (PieceStats pq) = PieceStats $ foldl' f pq ks
+  where
+    ks = PQ.keys pq
+
+    f :: PQ.IntPSQ Int (S.Set PeerId) -> Int -> PQ.IntPSQ Int (S.Set PeerId)
+    f q k = snd $ PQ.alter alter k q
+
+    alter :: Maybe (Int, S.Set PeerId) -> ((), Maybe (Int, S.Set PeerId))
+    alter Nothing        = ((), Nothing)
+    alter (Just (_, ps)) = let ps' = S.delete pid ps in ((), Just (S.size ps', ps'))
+
+-- | Remove a piece from the queue.
+removePiece :: PieceIdx -> PieceStats -> PieceStats
+removePiece pid (PieceStats pq) = PieceStats $ PQ.delete (fromIntegral pid) pq
