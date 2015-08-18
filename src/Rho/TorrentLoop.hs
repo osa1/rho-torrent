@@ -74,11 +74,11 @@ maybeRotateOptimisticUnchoke Session{sessPeers=peers, sessCurrentOptUnchoke=curr
         unchokePeer (fst newPeer)
         writeIORef currentRef $ Just (fst newPeer)
 
-    -- | We choose 1) a different peer 2) a peer that is interested in something
-    -- we have.
+    -- | We choose a peer that is 1) different than currently unchoked one 2)
+    -- currently choked 3) interested in something we have.
     peerFilter :: Maybe PeerId -> PeerConn -> Bool
-    peerFilter Nothing    pc = pcPeerInterested pc
-    peerFilter (Just pid) pc = pid /= pcPeerId pc && pcPeerInterested pc
+    peerFilter Nothing    pc = pcPeerInterested pc && pcChoking pc
+    peerFilter (Just pid) pc = pid /= pcPeerId pc && pcPeerInterested pc && pcChoking pc
 
 -- TODO: Make sure these are optimized to non-allocating loops
 
