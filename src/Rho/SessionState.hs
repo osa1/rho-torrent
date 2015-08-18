@@ -11,6 +11,7 @@ import           Rho.InfoHash
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerId
 import           Rho.PieceMgr
+import           Rho.PieceStats
 import           Rho.Tracker
 
 data Session = Session
@@ -24,6 +25,8 @@ data Session = Session
     -- ^ connected peers
   , sessPieceMgr          :: MVar (Maybe PieceMgr)
     -- ^ piece manager for torrent data
+  , sessPieceStats        :: MVar PieceStats
+    -- TODO: Should this be an MVar?
   , sessMIPieceMgr        :: MVar PieceMgr
     -- ^ piece manager for info dictionary
   , sessRequestedPieces   :: MVar (S.Set Word32)
@@ -50,13 +53,14 @@ initSession peerId infoHash port trackers pieces miPieces = do
     peers  <- newMVar M.empty
     pmgr   <- newMVar pieces
     miPMgr <- maybe newEmptyMVar newMVar miPieces
+    pstats <- newMVar initPieceStats
     reqs   <- newMVar S.empty
     miCb   <- newMVar (return ())
     tCb    <- newMVar (return ())
     dr     <- newIORef 0
     ur     <- newIORef 0
     opt    <- newIORef Nothing
-    return $ Session peerId infoHash ts peers pmgr miPMgr reqs port miCb tCb dr ur opt
+    return $ Session peerId infoHash ts peers pmgr pstats miPMgr reqs port miCb tCb dr ur opt
 
 type SessStats = (Word64, Word64, Word64)
 
