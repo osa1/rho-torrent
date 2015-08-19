@@ -217,3 +217,8 @@ tsToSec (TimeSpec s _) = fromIntegral s
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM c a = c >>= \case { True -> a; False -> return () }
 {-# INLINE whenM #-}
+
+infixl 4 <.>
+(<.>) :: Functor f => (b -> c) -> (a -> f b) -> (a -> f c)
+f1 <.> f2 = fmap f1 . f2
+{-# INLINE (<.>) #-}

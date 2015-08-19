@@ -147,5 +147,5 @@ checkRange bits@(Bitfield _ len) start end
 
 collectBits :: (Bool -> Bool) -> Bitfield -> IO (S.Set Int)
 collectBits p bf@(Bitfield _ len) =
-    S.fromList `fmap` filterM (\bIdx -> p `fmap` test bf bIdx) [0..len-1]
+    S.fromList `fmap` filterM (p <.> test bf) [0..len-1]
 {-# INLINE collectBits #-}

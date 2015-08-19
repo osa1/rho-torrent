@@ -42,6 +42,7 @@ import           Rho.SessionState
 import           Rho.TorrentLoop
 import           Rho.Tracker
 import           Rho.TrackerComms.TrackerManager (runTrackerManager)
+import           Rho.Utils
 
 -- | Initialize listeners, data structures etc. for peer communications,
 -- using magnet URI.
@@ -278,7 +279,7 @@ handleHandshake sess@Session{sessPeers=peers} sock addr listener hs = do
         -- one peer, we need to check peer id here, because these two
         -- connections will have different 'SockAddr's.
         -- FIXME: This may turn out to be too inefficient.
-        ps <- S.fromList <$> mapM (fmap pcPeerId . readIORef) (M.elems peers')
+        ps <- S.fromList <$> mapM (pcPeerId <.> readIORef) (M.elems peers')
         if S.member (hPeerId hs) ps
           then putMVar peers peers'
           else do

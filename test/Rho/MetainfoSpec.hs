@@ -23,6 +23,7 @@ import           Rho.MagnetSpec            (trackerGen)
 import           Rho.Metainfo
 import           Rho.TestUtils
 import           Rho.Tracker
+import           Rho.Utils
 
 main :: IO ()
 main = hspec spec
@@ -86,7 +87,7 @@ ppProp mi = assertEqual "printed info now same with original one"
 
 -- | Recursively walk filesystem to collect files.
 getFiles :: FilePath -> IO [(FilePath, B.ByteString)]
-getFiles root = getDirectoryContents root >>= fmap concat . mapM (\f -> do
+getFiles root = getDirectoryContents root >>= concat <.> mapM (\f -> do
   let p = root </> f
   isDir <- doesDirectoryExist p
   if | head f == '.' -> return []

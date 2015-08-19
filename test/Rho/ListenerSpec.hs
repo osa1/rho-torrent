@@ -17,6 +17,7 @@ import           Test.QuickCheck
 
 import           Rho.Listener
 import           Rho.TestUtils
+import           Rho.Utils
 
 main :: IO ()
 main = hspec spec
@@ -173,9 +174,9 @@ spec = do
 
 checkLocks :: Listener -> Assertion
 checkLocks listener_ = do
-    stopped_ <- fmap not . isEmptyMVar $ stopped listener_
-    updated_ <- fmap not . isEmptyMVar $ updated listener_
-    unlocked <- fmap not . isEmptyMVar $ lock listener_
+    stopped_ <- not <.> isEmptyMVar $ stopped listener_
+    updated_ <- not <.> isEmptyMVar $ updated listener_
+    unlocked <- not <.> isEmptyMVar $ lock listener_
     assertBool "stopped is not signalled" stopped_
     assertBool "updated is not signalled" updated_
     assertBool "lock is not free"  unlocked

@@ -15,6 +15,7 @@ import           Network.URI             (unEscapeString)
 
 import           Rho.InfoHash
 import           Rho.Tracker
+import           Rho.Utils
 
 data Magnet = Magnet
   { mHash        :: InfoHash
@@ -85,7 +86,7 @@ parseInfoHash = InfoHash . LB.toStrict . BB.toLazyByteString . go
 parseArgs :: B.ByteString -> [(B.ByteString, B.ByteString)]
 parseArgs =
     -- split to (key, val) pairs
-      map (fmap BC.tail . BC.span (/= '='))
+      map (BC.tail <.> BC.span (/= '='))
     -- split to key=val strings
     . BC.split '&'
     -- drop the prefix

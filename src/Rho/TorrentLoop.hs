@@ -81,14 +81,14 @@ maybeRotateOptimisticUnchoke Session{sessPeers=peers, sessCurrentOptUnchoke=curr
 -- TODO: Make sure these are optimized to non-allocating loops
 
 numInterested :: [IORef PeerConn] -> IO Int
-numInterested pcs = length <$> filterM (fmap pcInterested . readIORef) pcs
+numInterested pcs = length <$> filterM (pcInterested <.> readIORef) pcs
 
 numPeerInterested :: [IORef PeerConn] -> IO Int
-numPeerInterested pcs = length <$> filterM (fmap pcPeerInterested . readIORef) pcs
+numPeerInterested pcs = length <$> filterM (pcPeerInterested <.> readIORef) pcs
 
 numUnchokedAndInterested :: [IORef PeerConn] -> IO Int
-numUnchokedAndInterested pcs =
-    length <$> filterM (fmap (\pc -> not (pcChoking pc) && pcPeerInterested pc) . readIORef) pcs
+numUnchokedAndInterested =
+    length <.> filterM ((\pc -> not (pcChoking pc) && pcPeerInterested pc) <.> readIORef)
 
 -- | Send NotInterested messages to peers that are not unchoked us since our
 -- interested message in last turn.
@@ -110,7 +110,7 @@ sendNotInterested pc = do
 -- FIXME: We should unchoke peers that we downloaded the most from
 sendUnchokes :: [IORef PeerConn] -> Int -> IO ()
 sendUnchokes pcs amt = do
-    chokeds <- filterM (fmap pcChoking . readIORef) pcs
+    chokeds <- filterM (pcChoking <.> readIORef) pcs
     idxs <- replicateM amt (randomRIO (0, length chokeds - 1))
     mapM_ (unchokePeer . (chokeds !!)) idxs
 
