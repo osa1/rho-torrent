@@ -48,7 +48,9 @@ takeMins (PieceStats pq) n =
     f (pIdx, _, ps) =
       (fromIntegral pIdx, ps) : takeMins (PieceStats $ PQ.deleteMin pq) (n - 1)
 
--- | Remove a peer from the queue. Updates priorities of pieces accordingly.
+-- | Remove a peer from the queue. Updates priorities of pieces accordingly. If
+-- a piece lost it's last provider after removing the peer, we remove it from
+-- the queue.
 removePeer :: PeerId -> PieceStats -> PieceStats
 removePeer pid (PieceStats pq) = PieceStats $ foldl' f pq ks
   where
@@ -59,7 +61,11 @@ removePeer pid (PieceStats pq) = PieceStats $ foldl' f pq ks
 
     alter :: Maybe (Int, S.Set PeerId) -> ((), Maybe (Int, S.Set PeerId))
     alter Nothing        = ((), Nothing)
-    alter (Just (_, ps)) = let ps' = S.delete pid ps in ((), Just (S.size ps', ps'))
+    alter (Just (_, ps)) =
+        if size == 0 then ((), Nothing) else ((), Just (size, ps'))
+      where
+        ps'  = S.delete pid ps
+        size = S.size ps'
 
 -- | Remove a piece from the queue.
 removePiece :: PieceIdx -> PieceStats -> PieceStats
