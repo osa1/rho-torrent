@@ -31,7 +31,7 @@ data Session = Session
     -- TODO: We should remove disconnected peers from PieceStats.
   , sessMIPieceMgr        :: MVar PieceMgr
     -- ^ piece manager for info dictionary
-  , sessRequestedPieces   :: MVar (S.Set Word32)
+  , sessRequestedPieces   :: MVar (S.Set PieceIdx)
     -- ^ set of pieces we've requested
   , sessPort              :: PortNumber
     -- ^ port number of the socket that we use for incoming handshakes
