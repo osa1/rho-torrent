@@ -3,6 +3,9 @@
 -- priorities, and peers that have the piece as keys.
 --
 -- TODO: Find a better name.
+-- TODO: Test this module with all the properties. (e.g. `removePeer` should
+-- remove the piece if the piece has no providers left, `addPiece` should be
+-- idempotent)
 --
 module Rho.PieceStats
   ( PieceStats
@@ -22,6 +25,7 @@ import           Rho.PieceMgr         (PieceIdx)
 
 -- INVARIANT: Priority == size of the set
 newtype PieceStats = PieceStats (PQ.IntPSQ Int (S.Set PeerId))
+  deriving (Show, Eq)
 
 initPieceStats :: PieceStats
 initPieceStats = PieceStats PQ.empty
@@ -30,6 +34,8 @@ initPieceStats = PieceStats PQ.empty
 -- > addPiece p1 1
 -- > addPiece p1 1 again.
 
+-- | Add a piece to the queue. This operation is idempotent, adding same pieces
+-- with same peers doesn't effect the priorities.
 addPiece :: PeerId -> PieceIdx -> PieceStats -> PieceStats
 addPiece pid pIdx (PieceStats pq) =
     PieceStats . snd $ PQ.alter alter (fromIntegral pIdx) pq
