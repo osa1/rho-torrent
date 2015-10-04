@@ -9,11 +9,13 @@
 --
 module Rho.PieceStats
   ( PieceStats
-  , initPieceStats
   , addPiece
-  , takeMins
+  , addPieces
+  , initPieceStats
+  , piecePriority
   , removePeer
   , removePiece
+  , takeMins
   ) where
 
 import qualified Data.IntPSQ          as PQ
@@ -43,6 +45,9 @@ addPiece pid pIdx (PieceStats pq) =
     alter :: Maybe (Int, S.Set PeerId) -> ((), Maybe (Int, S.Set PeerId))
     alter Nothing       = ((), Just (1, S.singleton pid))
     alter (Just (p, v)) = ((), Just (p + 1, S.insert pid v))
+
+addPieces :: PeerId -> [PieceIdx] -> PieceStats -> PieceStats
+addPieces pid pIdxs pq = foldl' (flip $ addPiece pid) pq pIdxs
 
 -- | Return at most N pieces with minimum availability. Returns less results
 -- when there aren't enough pieces in the queue.
@@ -76,3 +81,6 @@ removePeer pid (PieceStats pq) = PieceStats $ foldl' f pq ks
 -- | Remove a piece from the queue.
 removePiece :: PieceIdx -> PieceStats -> PieceStats
 removePiece pid (PieceStats pq) = PieceStats $ PQ.delete (fromIntegral pid) pq
+
+piecePriority :: PieceIdx -> PieceStats -> Maybe Int
+piecePriority pIdx (PieceStats pq) = fst <$> PQ.lookup (fromIntegral pIdx) pq
