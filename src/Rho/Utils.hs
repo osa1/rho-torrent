@@ -186,6 +186,10 @@ atomicModifyIORef_ :: IORef a -> (a -> a) -> IO ()
 atomicModifyIORef_ ref f = atomicModifyIORef' ref $ \v -> (f v, ())
 {-# INLINE atomicModifyIORef_ #-}
 
+amIORef :: IORef a -> (a -> a) -> IO a
+amIORef ref f = atomicModifyIORef' ref $ \v -> let ret = f v in (ret, ret)
+{-# INLINE amIORef #-}
+
 -- | Convert a ByteString into a storable Vector.
 bsToByteVector :: ByteString -> Vector Word8
 bsToByteVector (PS fptr offset idx) = unsafeFromForeignPtr fptr offset idx

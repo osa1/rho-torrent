@@ -62,7 +62,7 @@ handleMessage' sess peer (Bitfield bytes) = do
               -- TODO: Check spare bits and close the connection if they're
               -- not 0
               BF.fromBS bytes (fromIntegral $ pmPieces pm')
-    atomicModifyIORef_ peer $ \pc -> pc{pcPieces = Just bf}
+    pc <- amIORef peer $ \pc -> pc{pcPieces = Just bf}
     putMVar (sessPieceMgr sess) pm
 
 handleMessage' _ peer (Have piece) = do
@@ -81,7 +81,7 @@ handleMessage' _ peer Choke =
     atomicModifyIORef_ peer $ \pc -> pc{pcPeerChoking = True}
 
 handleMessage' sess peer Unchoke = do
-    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcPeerChoking = False} in (pc', pc')
+    pc <- amIORef peer $ \pc -> pc{pcPeerChoking = False}
     case pcRequest pc of
       Nothing   ->
         warning "We got unchoked before requesting any pieces"
@@ -233,19 +233,17 @@ handleMessage' _ _ msg = notice $ "Unhandled peer msg: " ++ show msg
 unchokePeer :: IORef PeerConn -> IO ()
 unchokePeer peer = do
     now <- getTime Monotonic
-    pc <- atomicModifyIORef' peer $ \pc ->
-            let pc' = pc{pcChoking=False, pcLastUnchoke=now} in (pc', pc')
+    pc <- amIORef peer $ \pc -> pc{pcChoking=False, pcLastUnchoke=now}
     void $ sendMessage pc Unchoke
 
 sendInterested :: IORef PeerConn -> PieceIdx -> IO ()
 sendInterested peer pIdx = do
-    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcInterested=True, pcRequest=Just pIdx}
-                                           in (pc', pc')
+    pc <- amIORef peer $ \pc -> pc{pcInterested=True, pcRequest=Just pIdx}
     void $ sendMessage pc Interested
 
 sendPieceRequest :: IORef PeerConn -> PieceIdx -> PieceOffset -> PieceRequestLen -> IO ()
 sendPieceRequest peer pIdx pOffset pLen = do
-    pc <- atomicModifyIORef' peer $ \pc -> let pc' = pc{pcRequest=Just pIdx} in (pc', pc')
+    pc <- amIORef peer $ \pc -> pc{pcRequest=Just pIdx}
     void $ sendMessage pc (Request pIdx pOffset pLen)
 
 sendMessage :: PeerConn -> PeerMsg -> IO (Maybe String)

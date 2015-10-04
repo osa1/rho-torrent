@@ -103,8 +103,7 @@ sendInteresteds pcs missings amt = return () -- TODO: implement this
 
 sendNotInterested :: IORef PeerConn -> IO ()
 sendNotInterested pc = do
-    pc' <- atomicModifyIORef' pc $ \pc' ->
-             let pc'' = pc'{pcInterested=False, pcRequest=Nothing} in (pc'', pc'')
+    pc' <- amIORef pc $ \pc' -> pc'{pcInterested=False, pcRequest=Nothing}
     void $ sendMessage pc' NotInterested
 
 -- FIXME: We should unchoke peers that we downloaded the most from
@@ -116,7 +115,7 @@ sendUnchokes pcs amt = do
 
 sendChoke :: IORef PeerConn -> IO ()
 sendChoke pc = do
-    pc' <- atomicModifyIORef' pc $ \pc' -> let pc'' = pc'{pcChoking=True} in (pc'', pc'')
+    pc' <- amIORef pc $ \pc' -> pc'{pcChoking=True}
     void $ sendMessage pc' Choke
 
 pickRandom :: [a] -> IO a
