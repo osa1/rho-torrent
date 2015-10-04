@@ -84,8 +84,7 @@ initListener' recv dt = do
 downloadSpeed :: Listener -> IO Float
 downloadSpeed Listener{recvHistoryTimeout=dt, recvHistory=recvH} = do
     ct <- currentTimeMillis
-    recvs <- atomicModifyIORef' recvH $ \rs -> let rs' = filter (\(_, t) -> ct - t < dt) rs
-                                                in (rs', rs')
+    recvs <- amIORef recvH $ filter (\(_, t) -> ct - t < dt)
     return $ fromIntegral (sum (map fst recvs)) / fromIntegral dt
 
 -- | Try to receive message of given length. A smaller message is returned
