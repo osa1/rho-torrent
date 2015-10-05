@@ -135,7 +135,7 @@ test-suite test
     , filepath
     , hspec
     , hspec-contrib
-    , HUnit
+    , HUnit >= 1.3.0 && < 1.4
     , network >= 2.6 && < 2.7
     , network-uri >= 2.6 && < 2.7
     , process

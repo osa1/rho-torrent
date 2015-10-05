@@ -17,7 +17,7 @@ import           Test.QuickCheck
 type Assertion' = IO
 
 assertFailure' :: String -> Assertion' a
-assertFailure' msg = msg `deepseq` E.throwIO (HUnitFailure msg)
+assertFailure' msg = msg `deepseq` E.throwIO (HUnitFailure Nothing msg)
 
 genMaybe :: Gen a -> Gen (Maybe a)
 genMaybe g = do
