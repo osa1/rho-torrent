@@ -6,6 +6,7 @@ import qualified Data.Map                    as M
 import qualified Data.Set                    as S
 import           Data.Word
 import           Network.Socket              (PortNumber, SockAddr)
+import           Safe                        (headMay)
 
 import           Rho.InfoHash
 import           Rho.PeerComms.PeerConnState
@@ -21,7 +22,7 @@ data Session = Session
     -- ^ info hash of the torrent we're downloading/seeding
   , sessTrackers          :: MVar [Tracker]
     -- ^ trackers we use to request peers
-  , sessPeers             :: MVar (M.Map SockAddr (IORef PeerConn))
+  , sessPeers             :: MVar (M.Map PeerId (IORef PeerConn))
     -- ^ connected peers
   , sessPieceMgr          :: MVar (Maybe PieceMgr)
     -- ^ piece manager for torrent data
@@ -75,3 +76,11 @@ stats Session{sessDownloaded=d, sessUploaded=u, sessPieceMgr=pm} = do
               Nothing -> 0
               Just PieceMgr{pmTotalSize=ts} -> ts - d'
     return (d', l, u')
+
+--------------------------------------------------------------------------------
+
+-- | Check whether we've an active connection with the given socket address.
+checkActiveConnection :: Session -> SockAddr -> IO (Maybe PeerConn)
+checkActiveConnection sess addr = do
+    peers <- mapM readIORef =<< M.elems <$> readMVar (sessPeers sess)
+    return $ headMay $ filter ((addr ==) . pcSockAddr) peers

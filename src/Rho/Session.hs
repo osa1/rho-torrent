@@ -14,7 +14,7 @@ import qualified Data.ByteString                 as B
 import qualified Data.ByteString.Lazy            as LB
 import           Data.IORef
 import qualified Data.Map                        as M
-import qualified Data.Set                        as S
+import           Data.Maybe                      (fromJust, isJust)
 import           Data.Word
 import           Network.Socket                  hiding (KeepAlive, recv,
                                                   recvFrom, recvLen, send,
@@ -108,9 +108,25 @@ runMagnetSession sess@Session{sessInfoHash=hash} = do
   where
     loop pieces = do
       peersMap <- readMVar $ sessPeers sess
-      sendMetainfoRequests peersMap pieces
+      sendMetainfoRequests (M.elems peersMap) pieces
       threadDelay (1000000 * 5)
       loop pieces
+
+sendMetainfoRequests :: [IORef PeerConn] -> PieceMgr -> IO ()
+sendMetainfoRequests peerRefs pieces = do
+    missings <- missingPieces pieces
+    peerVals <- mapM readIORef peerRefs
+    let peerRefsMap    = M.fromList $ zip peerVals peerRefs
+        availablePeers = filter peerFilter peerVals
+        asgns          = zip availablePeers missings
+    info $ "assignments: " ++ show asgns
+    forM_ asgns $ \(pc, pIdx) -> do
+      void $ sendMessage pc $ Extended $ MetadataRequest pIdx
+      atomicModifyIORef_ (fromJust $ M.lookup pc peerRefsMap) $ \pc' -> pc'{pcRequest=Just pIdx}
+  where
+    peerFilter :: PeerConn -> Bool
+    peerFilter PeerConn{pcMetadataSize=Just{}, pcRequest=Nothing} = True
+    peerFilter _                                                  = False
 
 runTorrentSession :: Session -> Info -> IO Bool
 runTorrentSession sess@Session{sessPieceMgr=pieces} info = do
@@ -175,7 +191,7 @@ handshakeWithNewPeers :: Session -> Chan SockAddr -> IO ()
 handshakeWithNewPeers sess chan = forever $ do
     newPeer <- readChan chan
     connectedPeers <- readMVar (sessPeers sess)
-    unless (M.member newPeer connectedPeers) $
+    unlessM (isJust <$> checkActiveConnection sess newPeer) $
       void $ forkIO $ void $ handshake sess newPeer
 
 -- | Wait for an incoming handshake, update peers state upon successfully
@@ -269,29 +285,19 @@ sendExtendedHs sess pc = do
 -- | Process incoming handshake; update data structures, spawn socket
 -- listener.
 handleHandshake :: Session -> Socket -> SockAddr -> Listener -> Handshake -> IO ()
-handleHandshake sess@Session{sessPeers=peers} sock addr listener hs = do
-    peers' <- takeMVar peers
-    case M.lookup addr peers' of
-      Nothing -> do
-        -- let's say a peer is listening port_1 and sending handshakes from
-        -- port_2, and we sent and handshake to port_1 and the peer sent
-        -- a handshake to us using port_2. to not have two connections with
-        -- one peer, we need to check peer id here, because these two
-        -- connections will have different 'SockAddr's.
-        -- FIXME: This may turn out to be too inefficient.
-        ps <- S.fromList <$> mapM (pcPeerId <.> readIORef) (M.elems peers')
-        if S.member (hPeerId hs) ps
-          then putMVar peers peers'
-          else do
-            let pc    = newPeerConn (hPeerId hs) (hExtension hs) sock addr listener
-            peerConn <- newIORef pc
-            void $ async $ do
-              listenConnectedSock sess peerConn listener
-              modifyMVar_ peers $ return . M.delete addr
-            sendBitfield sess pc
-            sendExtendedHs sess pc
-            putMVar peers $ M.insert addr peerConn peers'
-      Just _ -> putMVar peers peers'
+handleHandshake sess@Session{sessPeers=peers} sock addr listener hs@Handshake{hPeerId=pId} =
+    modifyMVar_ peers $ \peers' ->
+      case M.lookup pId peers' of
+        Just _  -> return peers'
+        Nothing -> do
+          let pc = newPeerConn pId (hExtension hs) sock addr listener
+          peerConn <- newIORef pc
+          void $ async $ do
+            listenConnectedSock sess peerConn listener
+            modifyMVar_ peers $ return . M.delete pId
+          sendBitfield sess pc
+          sendExtendedHs sess pc
+          return $ M.insert pId peerConn peers'
 
 sendBitfield :: Session -> PeerConn -> IO ()
 sendBitfield Session{sessPieceMgr=pieces} pc = do
@@ -308,4 +314,5 @@ logger = "Rho.Session"
 
 warning, notice :: String -> IO ()
 warning  = L.warningM logger
+info     = L.infoM logger
 notice   = L.noticeM logger

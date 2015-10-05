@@ -222,6 +222,11 @@ whenM :: Monad m => m Bool -> m () -> m ()
 whenM c a = c >>= \case { True -> a; False -> return () }
 {-# INLINE whenM #-}
 
+-- | Just like `Control.Monad.unless`, but runs condition in the monad.
+unlessM :: Monad m => m Bool -> m () -> m ()
+unlessM c a = c >>= \case { False -> a; True -> return () }
+{-# INLINE unlessM #-}
+
 infixl 4 <.>
 (<.>) :: Functor f => (b -> c) -> (a -> f b) -> (a -> f c)
 f1 <.> f2 = fmap f1 . f2
