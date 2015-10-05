@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, ScopedTypeVariables, TupleSections #-}
 
 module Rho.TorrentLoop where
 
@@ -6,9 +6,9 @@ import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Monad
 import           Data.Foldable                (for_)
-import           Data.IORef
-import           Data.List                    (sortBy, uncons)
+import           Data.List                    (sortOn, uncons)
 import qualified Data.Map                     as M
+import           Data.Maybe                   (catMaybes)
 import           System.Clock
 import           System.Random                (randomRIO)
 
@@ -16,25 +16,26 @@ import           Rho.PeerComms.Message
 import           Rho.PeerComms.PeerConnection
 import           Rho.PeerComms.PeerConnState
 import           Rho.PeerComms.PeerId
+import           Rho.PeerComms.PeerPieceAsgn
 import           Rho.PieceMgr
 import           Rho.SessionState
 import           Rho.Utils
 
 torrentLoop :: Session -> PieceMgr -> IO (Async ())
 torrentLoop sess pMgr = async $ forever $ do
-    peers <- M.elems <$> readMVar (sessPeers sess)
+    peers :: [PeerConnRef'] <- readPeers sess
 
     forgetNonresponsiveInterestMsgs peers
 
-    is <- numInterested peers
-    when (is < 5) $ do
-      missings <- missingPieces pMgr
-      sendInteresteds peers missings (5 - is)
+    when (numInterested peers < 5) $ do
+      ps <- piecesToReq sess
+      let asgn = assignPieces' ps
+      ps' <- catMaybes <$> mapM (\(pId, pIdx) -> fmap (, pIdx) <$> peerConnRefFromId sess pId) asgn
+      sendInteresteds ps'
 
     -- We keep 4 interested peers at unchoked state
-    luckyPeers <- numUnchokedAndInterested peers
-    when (luckyPeers < 4) $
-      sendUnchokes peers (4 - luckyPeers)
+    let luckyPeers = numUnchokedAndInterested peers
+    when (luckyPeers < 4) $ sendUnchokes peers (4 - luckyPeers)
 
     maybeRotateOptimisticUnchoke sess
 
@@ -42,8 +43,8 @@ torrentLoop sess pMgr = async $ forever $ do
     threadDelay (10 * 1000000)
 
 maybeRotateOptimisticUnchoke :: Session -> IO ()
-maybeRotateOptimisticUnchoke Session{sessPeers=peers, sessCurrentOptUnchoke=currentRef} =
-    readIORef currentRef >>= \case
+maybeRotateOptimisticUnchoke sess@Session{sessPeers=peers} =
+    currentOptUnchoke sess >>= \case
       Nothing ->
         -- We haven't unchoked any peers so far, go ahead.
         rotateOptimisticUnchoke Nothing
@@ -51,26 +52,29 @@ maybeRotateOptimisticUnchoke Session{sessPeers=peers, sessCurrentOptUnchoke=curr
         -- Rotate only if we gave a chance to current peer for at least 30
         -- seconds.
         now <- getTime Monotonic
-        currentPC <- readIORef current
+        currentPC <- fst <$> readPeerConnRef current
         when (tsToSec (now `dt` pcLastUnchoke currentPC) >= 30) $
           rotateOptimisticUnchoke (Just $ pcPeerId currentPC)
   where
     rotateOptimisticUnchoke :: Maybe PeerId -> IO ()
     rotateOptimisticUnchoke pid = do
-      peers' <- M.elems <$> readMVar peers
-      peerConns <- zip peers' <$> mapM readIORef peers'
+      peerConns :: [PeerConnRef'] <-
+        mapM readPeerConnRef =<< M.toList <$> readMVar peers
+
+      current <- currentOptUnchoke sess >>= \case
+                   Nothing -> return Nothing
+                   Just r  -> Just . pcPeerId . fst <$> readPeerConnRef r
       let
-        potentials = filter (peerFilter pid . snd) peerConns
-        sorted =
-          sortBy (\p1 p2 -> pcLastUnchoke (snd p1) `compare` pcLastUnchoke (snd p2)) potentials
+        potentials = filter (peerFilter current . fst) peerConns
+        sorted     = sortOn (pcLastUnchoke . fst) potentials
 
       for_ (uncons sorted) $ \(h, t) -> do
         -- In case we have multiple peers with same "last unchoked" times, we
         -- pick someone random.
-        let t' = takeWhile ((pcLastUnchoke (snd h) ==) . pcLastUnchoke . snd) t
+        let t' = takeWhile ((pcLastUnchoke (fst h) ==) . pcLastUnchoke . fst) t
         newPeer <- pickRandom (h : t')
-        unchokePeer (fst newPeer)
-        writeIORef currentRef $ Just (fst newPeer)
+        unchokePeer (snd newPeer)
+        setCurrentOptUnchoke sess (Just (pcPeerId (fst newPeer), snd newPeer))
 
     -- | We choose a peer that is 1) different than currently unchoked one 2)
     -- currently choked 3) interested in something we have.
@@ -80,43 +84,40 @@ maybeRotateOptimisticUnchoke Session{sessPeers=peers, sessCurrentOptUnchoke=curr
 
 -- TODO: Make sure these are optimized to non-allocating loops
 
-numInterested :: [IORef PeerConn] -> IO Int
-numInterested pcs = length <$> filterM (pcInterested <.> readIORef) pcs
+numInterested :: [PeerConnRef'] -> Int
+numInterested = length . filter (pcInterested . fst)
 
-numPeerInterested :: [IORef PeerConn] -> IO Int
-numPeerInterested pcs = length <$> filterM (pcPeerInterested <.> readIORef) pcs
+numPeerInterested :: [PeerConnRef] -> IO Int
+numPeerInterested = length <.> filterM (pcPeerInterested <.> peerConn)
 
-numUnchokedAndInterested :: [IORef PeerConn] -> IO Int
+numUnchokedAndInterested :: [PeerConnRef'] -> Int
 numUnchokedAndInterested =
-    length <.> filterM ((\pc -> not (pcChoking pc) && pcPeerInterested pc) <.> readIORef)
+    length . filter (\(pc, _) -> not (pcChoking pc) && pcPeerInterested pc)
 
 -- | Send NotInterested messages to peers that are not unchoked us since our
 -- interested message in last turn.
-forgetNonresponsiveInterestMsgs :: [IORef PeerConn] -> IO ()
+forgetNonresponsiveInterestMsgs :: [PeerConnRef'] -> IO ()
 forgetNonresponsiveInterestMsgs pcs =
-    forM_ pcs $ \pc -> do
-      pc' <- readIORef pc
-      when (pcInterested pc' && pcPeerChoking pc') $ sendNotInterested pc
+    forM_ pcs $ \ref@(pc, _) ->
+      when (pcInterested pc && pcPeerChoking pc) $ sendNotInterested ref
 
-sendInteresteds :: [IORef PeerConn] -> [PieceIdx] -> Int -> IO ()
-sendInteresteds pcs missings amt = return () -- TODO: implement this
+sendInteresteds :: [(PeerConnRef, PieceIdx)] -> IO ()
+sendInteresteds pcs =
+    forM_ pcs $ \(r, pIdx) -> do
+      (_, ref) <- readPeerConnRef r
+      sendInterested ref pIdx
 
-sendNotInterested :: IORef PeerConn -> IO ()
-sendNotInterested pc = do
-    pc' <- amIORef pc $ \pc' -> pc'{pcInterested=False, pcRequest=Nothing}
+sendNotInterested :: PeerConnRef' -> IO ()
+sendNotInterested (pc, ref) = do
+    pc' <- amIORef ref $ \pc' -> pc'{pcInterested=False, pcRequest=Nothing}
     void $ sendMessage pc' NotInterested
 
 -- FIXME: We should unchoke peers that we downloaded the most from
-sendUnchokes :: [IORef PeerConn] -> Int -> IO ()
+sendUnchokes :: [PeerConnRef'] -> Int -> IO ()
 sendUnchokes pcs amt = do
-    chokeds <- filterM (pcChoking <.> readIORef) pcs
+    let chokeds = filter (pcChoking . fst) pcs
     idxs <- replicateM amt (randomRIO (0, length chokeds - 1))
-    mapM_ (unchokePeer . (chokeds !!)) idxs
-
-sendChoke :: IORef PeerConn -> IO ()
-sendChoke pc = do
-    pc' <- amIORef pc $ \pc' -> pc'{pcChoking=True}
-    void $ sendMessage pc' Choke
+    mapM_ (unchokePeer . snd . (chokeds !!)) idxs
 
 pickRandom :: [a] -> IO a
 pickRandom []  = error "pickRandom: Empty list"

@@ -1,7 +1,10 @@
+{-# LANGUAGE UnboxedTuples #-}
+
 module Rho.PeerComms.PeerConnState where
 
 import qualified Data.ByteString         as B
 import qualified Data.Map                as M
+import           Data.Set                as S
 import           Data.Word
 import           Network.Socket          (SockAddr, Socket)
 import           System.Clock            (TimeSpec (..))
@@ -82,3 +85,7 @@ newPeerConn peerId extension sock sockAddr l =
            250 -- default value of libtorrent
            Nothing
            (TimeSpec 0 0)
+
+peerPieces :: PeerConn -> IO (S.Set PieceIdx)
+peerPieces PeerConn{pcPieces=Nothing} = return S.empty
+peerPieces PeerConn{pcPieces=Just bf} = S.map fromIntegral <$> BF.availableBits bf

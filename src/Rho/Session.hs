@@ -312,7 +312,7 @@ sendBitfield Session{sessPieceMgr=pieces} pc = do
 logger :: String
 logger = "Rho.Session"
 
-warning, notice :: String -> IO ()
+warning, info, notice :: String -> IO ()
 warning  = L.warningM logger
 info     = L.infoM logger
 notice   = L.noticeM logger

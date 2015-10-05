@@ -65,8 +65,13 @@ handleMessage' sess peer (Bitfield bytes) = do
     atomicModifyIORef_ peer $ \pc -> pc{pcPieces = Just bf}
     putMVar (sessPieceMgr sess) pm
 
-handleMessage' _ peer (Have piece) = do
+    bits <- map fromIntegral . S.toList <$> BF.availableBits bf
     pc <- readIORef peer
+    addPieces sess (pcPeerId pc) bits
+
+handleMessage' sess peer (Have piece) = do
+    pc <- readIORef peer
+    addPiece sess (pcPeerId pc) piece
     case pcPieces pc of
       Nothing -> do
         -- we need to initialize bitfield with big-enough size for `piece`
@@ -123,29 +128,34 @@ handleMessage' sess peer (Piece pIdx offset pData) = do
         newBytes <- writePiece pieces pIdx offset pData
         atomicModifyIORef_ (sessDownloaded sess) (+ fromIntegral newBytes)
         -- request next missing part of the piece
-        missing <- nextMissingPart pieces pIdx
-        case missing of
+        nextMissingPart pieces pIdx >>= \case
           Nothing -> do
-            -- piece is complete.
+            -- piece is complete, update piece stats.
+            markPieceComplete sess pIdx
             -- TODO: maybe check the hash here?
             info "downloaded a piece"
             -- request a new pieces, or call the callback if we're done
-            missings <- missingPieces pieces
-            case missings of
-              [] -> do
+            hasMissingPieces pieces >>= \case
+              False -> do
                 modifyMVar_ (sessRequestedPieces sess) $ return . S.delete pIdx
                 atomicModifyIORef_ peer $ \pc -> pc{pcRequest=Nothing}
                 cb <- modifyMVar (sessOnTorrentComplete sess) $ \cb -> return (return (), cb)
                 cb
-              (pIdx' : _) -> do
-                modifyMVar_ (sessRequestedPieces sess) $ return . S.insert pIdx' . S.delete pIdx
-                atomicModifyIORef_ peer $ \pc -> pc{pcRequest=Just pIdx'}
-                nextMissingPart pieces pIdx' >>=
-                  \case Nothing -> error $ "Missing pieces returned " ++ show pIdx'
-                                             ++ ", but nextMissingPart returned Nothing"
-                        Just (pOffset, len) -> do
-                          pc <- readIORef peer
-                          void $ sendMessage pc $ Request pIdx' pOffset (min len $ pcMaxPieceSize pc)
+              True -> do
+                pc <- readIORef peer
+                pieceReqForPeer sess pc >>= \case
+                  Nothing -> do
+                    modifyMVar_ (sessRequestedPieces sess) $ return . S.delete pIdx
+                    return ()
+                  Just pIdx' -> do
+                    modifyMVar_ (sessRequestedPieces sess) $ return . S.insert pIdx' . S.delete pIdx
+                    atomicModifyIORef_ peer $ \pc -> pc{pcRequest=Just pIdx'}
+                    nextMissingPart pieces pIdx' >>=
+                      \case Nothing -> error $ "Missing pieces returned " ++ show pIdx'
+                                                 ++ ", but nextMissingPart returned Nothing"
+                            Just (pOffset, len) -> do
+                              pc <- readIORef peer
+                              void $ sendMessage pc $ Request pIdx' pOffset (min len $ pcMaxPieceSize pc)
           Just (pOffset, len) -> do
             pc <- readIORef peer
             void $ sendMessage pc $ Request pIdx pOffset (min len $ pcMaxPieceSize pc)
