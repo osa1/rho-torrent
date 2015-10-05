@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 -- | Strategies for assigning pieces to peers.
 -- (to be used in sending piece requests)
 module Rho.PeerComms.PeerPieceAsgn where
@@ -21,7 +23,7 @@ assignPieces
   -> [(PeerConn, PieceIdx)] -- ^ assignments of pieces to peers
 assignPieces missings peers = assignPieces' (piecePeers missings peers)
 
-assignPieces' :: [(PieceIdx, S.Set PeerConn)] -> [(PeerConn, PieceIdx)]
+assignPieces' :: forall a . Ord a => [(PieceIdx, S.Set a)] -> [(a, PieceIdx)]
 assignPieces' pps =
   let
     -- we first assign a piece to a peer when the peer is only provider
@@ -34,11 +36,11 @@ assignPieces' pps =
       (((pd, pcs) : _), others) ->
         let
           -- generate assignments
-          asgn :: (PeerConn, PieceIdx)
+          asgn :: (a, PieceIdx)
           asgn = (S.elemAt 0 pcs, pd)
 
           -- remove assigned peer from sets of providers
-          updatedPps :: [(PieceIdx, S.Set PeerConn)]
+          updatedPps :: [(PieceIdx, S.Set a)]
           updatedPps =
             filter (not . S.null . snd) $
               map (fmap (S.delete $ fst asgn)) others
@@ -57,7 +59,7 @@ assignPieces' pps =
 
           -- (no need to filter empties here, because we know all sets
           -- had at least 2 elements)
-          updatedPps :: [(PieceIdx, S.Set PeerConn)]
+          updatedPps :: [(PieceIdx, S.Set a)]
           updatedPps = map (fmap (S.delete usedPeer)) ps
 
           rest = assignPieces' updatedPps
