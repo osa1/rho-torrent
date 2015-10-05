@@ -118,7 +118,7 @@ sendUnchokes pcs amt =
     case filter (pcChoking . fst) pcs of
       []      -> return ()
       chokeds -> do
-        idxs <- replicateM amt (randomRIO (0, length chokeds - 1))
+        idxs <- replicateM (min amt (length chokeds)) (randomRIO (0, length chokeds - 1))
         mapM_ (unchokePeer . snd . (chokeds !!)) idxs
 
 pickRandom :: [a] -> IO a
