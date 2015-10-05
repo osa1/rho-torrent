@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings #-}
 
 module Rho.ClientSpec where
 
@@ -211,9 +211,8 @@ torrentTransferTest = TestCase $ do
     terminateProcess opentracker
   where
     checkPiecesComplete :: MVar (Maybe PieceMgr) -> Assertion
-    checkPiecesComplete var = do
-      pmgr <- readMVar var
-      case pmgr of
+    checkPiecesComplete var =
+      readMVar var >>= \case
         Nothing -> assertFailure "Piece manager is not initialized"
         Just ps -> do
           missings <- missingPieces ps
