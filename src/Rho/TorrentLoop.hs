@@ -115,7 +115,7 @@ sendNotInterested (pc, ref) = do
 -- FIXME: We should unchoke peers that we downloaded the most from
 sendUnchokes :: [PeerConnRef'] -> Int -> IO ()
 sendUnchokes pcs amt =
-    case filter (pcChoking . fst) pcs of
+    case filter ((\p -> pcChoking p && pcPeerInterested p) . fst) pcs of
       []      -> return ()
       chokeds -> do
         idxs <- replicateM (min amt (length chokeds)) (randomRIO (0, length chokeds - 1))
