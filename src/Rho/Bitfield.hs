@@ -117,6 +117,23 @@ set (Bitfield v len) i
 missingBits :: Bitfield -> IO (S.Set Int)
 missingBits = collectBits not
 
+-- | Effectively same as checking if `missingBits` is empty, but faster.
+--
+-- >>> hasMissingBits =<< fromBS (B.pack [0xFF]) 8
+-- False
+--
+-- >>> hasMissingBits =<< fromBS (B.pack [0xFF - 1]) 8
+-- True
+--
+hasMissingBits :: Bitfield -> IO Bool
+hasMissingBits bits@(Bitfield bf len) = go 0
+  where
+    go idx
+      | idx == len = return False
+      | otherwise  = do
+          b <- test bits idx
+          if b then go (idx + 1) else return True
+
 -- | Generate set of indexes of one bits.
 --
 -- >>> availableBits =<< fromBS (B.pack [1, 2, 3]) 20

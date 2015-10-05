@@ -161,6 +161,11 @@ missingPieces (PieceMgr _ _ ps m) = do
     withMVar m $ \(_, _, pBits) ->
       filterM (\pIdx -> not <$> BF.test pBits (fromIntegral pIdx)) [0..ps-1]
 
+-- | Effectively `not . null <.> missingPieces`, but faster.
+hasMissingPieces :: PieceMgr -> IO Bool
+hasMissingPieces (PieceMgr _ _ ps m) = do
+    withMVar m $ \(_, _, pBits) -> BF.hasMissingBits pBits
+
 -- | Generate hash of a downloaded piece.
 generatePieceHash :: PieceMgr -> PieceIdx -> IO B.ByteString
 generatePieceHash (PieceMgr pSize totalSize pieces pData) pIdx = do
