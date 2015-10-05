@@ -139,7 +139,7 @@ runTorrentSession sess@Session{sessPieceMgr=pieces} info = do
     pieces' <- takeMVar pieces
     pmgr <- case pieces' of
               Nothing   -> do
-                pmgr <- fst <$> tryReadFiles info ""
+                pmgr <- newPieceMgrFromInfo info
                 putMVar pieces (Just pmgr)
                 return pmgr
               Just pmgr -> do

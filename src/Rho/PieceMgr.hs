@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE MultiWayIf, TupleSections #-}
 
 module Rho.PieceMgr
   ( module Rho.PieceMgr
@@ -46,6 +46,9 @@ newPieceMgr totalSize pieceLength = do
     pieceBits <- BF.empty (fromIntegral pieces)
     var  <- newMVar (arr, bits, pieceBits)
     return $ PieceMgr pieceLength totalSize (fromIntegral pieces) var
+
+newPieceMgrFromInfo :: Info -> IO PieceMgr
+newPieceMgrFromInfo info = newPieceMgr (torrentSize info) (iPieceLength info)
 
 newPieceMgrFromData :: B.ByteString -> Word32 -> IO PieceMgr
 newPieceMgrFromData bs pieceLength = do
@@ -246,9 +249,7 @@ tryReadFiles info root = do
         freshPieceManager
   where
     freshPieceManager :: IO (PieceMgr, Bool)
-    freshPieceManager = do
-      pieces <- newPieceMgr (torrentSize info) (iPieceLength info)
-      return (pieces, False)
+    freshPieceManager = (,False) <$> newPieceMgrFromInfo info
 
 notice :: String -> IO ()
 notice = L.noticeM "Rho.PieceMgr"
