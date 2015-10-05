@@ -62,7 +62,7 @@ handleMessage' sess peer (Bitfield bytes) = do
               -- TODO: Check spare bits and close the connection if they're
               -- not 0
               BF.fromBS bytes (fromIntegral $ pmPieces pm')
-    pc <- amIORef peer $ \pc -> pc{pcPieces = Just bf}
+    atomicModifyIORef_ peer $ \pc -> pc{pcPieces = Just bf}
     putMVar (sessPieceMgr sess) pm
 
 handleMessage' _ peer (Have piece) = do
