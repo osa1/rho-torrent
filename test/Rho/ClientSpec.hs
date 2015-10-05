@@ -175,11 +175,11 @@ torrentTransferTest = TestCase $ do
     let ts = [UDPTracker "127.0.0.1" (fromIntegral (6969 :: Int))]
     pwd <- getCurrentDirectory
     Metainfo{mInfo=info} <- parseMIAssertion (pwd </> "test/test.torrent")
-    let pid1 = mkPeerId 1
-        pid2 = mkPeerId 2
+    let seederPid  = mkPeerId' "seeder"
+        leecherPid = mkPeerId' "leecher"
 
     -- setup seeder
-    seeder <- initTorrentSession info ts pid1
+    seeder <- initTorrentSession info ts seederPid
     modifyMVar_ (sessPieceMgr seeder) $ \_ -> (Just . fst) <$> tryReadFiles info "test"
     checkPiecesComplete (sessPieceMgr seeder)
     checkDownloadedZero seeder
@@ -189,7 +189,7 @@ torrentTransferTest = TestCase $ do
     threadDelay 300000
 
     -- setup leecher
-    leecher <- initMagnetSession (Magnet (iHash info) ts Nothing) pid2
+    leecher <- initMagnetSession (Magnet (iHash info) ts Nothing) leecherPid
 
     ret <- timeout (20 * 1000000) (runMagnetSession leecher)
     cancel seederThread
@@ -285,3 +285,6 @@ mkPeerId :: Int -> PeerId
 mkPeerId i =
     let str = show i
     in PeerId $ BC.pack $ replicate (20 - length str) '0' ++ str
+
+mkPeerId' :: String -> PeerId
+mkPeerId' s = PeerId $ BC.pack $ replicate (20 - length s) '0' ++ s
