@@ -27,17 +27,21 @@ torrentLoop sess pMgr = async $ forever $ do
 
     forgetNonresponsiveInterestMsgs peers
 
-    when (numInterested peers < 5) $ do
-      ps <- piecesToReq sess
-      let asgn = assignPieces' ps
-      ps' <- catMaybes <$> mapM (\(pId, pIdx) -> fmap (, pIdx) <$> peerConnRefFromId sess pId) asgn
-      sendInteresteds ps'
+    pmgr <- readMVar (sessPieceMgr sess)
+    for_ pmgr $ \pmgr' -> do
+      whenM (hasMissingPieces pmgr') $ do
+        when (numInterested peers < 5) $ do
+          ps <- piecesToReq sess
+          let asgn = assignPieces' ps
+          ps' <- catMaybes <$>
+            mapM (\(pId, pIdx) -> fmap (, pIdx) <$> peerConnRefFromId sess pId) asgn
+          sendInteresteds ps'
 
-    -- We keep 4 interested peers at unchoked state
-    let luckyPeers = numUnchokedAndInterested peers
-    when (luckyPeers < 4) $ sendUnchokes peers (4 - luckyPeers)
+      -- We keep 4 interested peers at unchoked state
+      let luckyPeers = numUnchokedAndInterested peers
+      when (luckyPeers < 4) $ sendUnchokes peers (4 - luckyPeers)
 
-    maybeRotateOptimisticUnchoke sess
+      maybeRotateOptimisticUnchoke sess
 
     -- We wait 10 seconds to prevent fibrillation.
     threadDelay (10 * 1000000)
