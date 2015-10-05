@@ -114,10 +114,12 @@ sendNotInterested (pc, ref) = do
 
 -- FIXME: We should unchoke peers that we downloaded the most from
 sendUnchokes :: [PeerConnRef'] -> Int -> IO ()
-sendUnchokes pcs amt = do
-    let chokeds = filter (pcChoking . fst) pcs
-    idxs <- replicateM amt (randomRIO (0, length chokeds - 1))
-    mapM_ (unchokePeer . snd . (chokeds !!)) idxs
+sendUnchokes pcs amt =
+    case filter (pcChoking . fst) pcs of
+      []      -> return ()
+      chokeds -> do
+        idxs <- replicateM amt (randomRIO (0, length chokeds - 1))
+        mapM_ (unchokePeer . snd . (chokeds !!)) idxs
 
 pickRandom :: [a] -> IO a
 pickRandom []  = error "pickRandom: Empty list"
